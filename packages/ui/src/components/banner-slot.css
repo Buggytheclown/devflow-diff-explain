@@ -1,0 +1,35 @@
+/* Единый слот баннеров — docs/design/SPEC-elements.md §2.21. */
+
+.banner-slot {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-inner-tight);
+    padding: 14px var(--space-page) 0;
+}
+
+.banner-slot__item {
+    width: 100%;
+}
+
+.banner-slot__item--secondary {
+    padding-top: 2px;
+}
+
+.banner-slot__more {
+    align-self: flex-start;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+}
+
+/*
+ * Поля и вертикальный ритм ставит слот. Собственный `margin: 18px var(--space-page) 0` у баннеров
+ * рассчитан на показ в одиночку (карточка галереи) и в слоте удвоил бы боковое поле — с адаптивным
+ * полем разрыв тем заметнее, чем шире окно.
+ */
+.banner-slot .audit-banner,
+.banner-slot .generation-cap-banner,
+.banner-slot .ship-verdict-banner {
+    margin: 0;
+}

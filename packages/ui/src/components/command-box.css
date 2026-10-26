@@ -1,0 +1,62 @@
+/* Общий моно-бокс команды для приглашения, баннера и reconnect-поповера. */
+
+.command-box {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.command-box__row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-inner-tight);
+}
+
+.command-box__command {
+    min-width: 0;
+    flex: 1;
+    /* Высота и радиус — как у кнопки рядом (Secondary solid, §5): строка читается одним блоком. */
+    height: 29px;
+    padding: 0 var(--space-inner);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-input);
+    outline: none;
+    background: var(--surface-command);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-control);
+    white-space: nowrap;
+}
+
+.command-box__command:focus-visible {
+    border-color: var(--accent);
+}
+
+.command-box__action {
+    /* Обе подписи в одной ячейке: ширина кнопки не прыгает при отклике «Скопировано». */
+    display: grid;
+    align-items: center;
+    justify-items: center;
+    grid-template-areas: 'label';
+}
+
+.command-box__action-label {
+    grid-area: label;
+}
+
+.command-box__action-label--ghost {
+    visibility: hidden;
+}
+
+.command-box__hint {
+    font-size: var(--font-size-secondary);
+    color: var(--text-dim);
+}
+
+/* Видимый отклик запасного пути: Clipboard API нет или отказал — команда осталась выделенной. */
+.command-box__fallback {
+    font-size: var(--font-size-secondary);
+    color: var(--text-secondary);
+}

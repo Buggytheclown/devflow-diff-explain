@@ -1,0 +1,42 @@
+[
+    {
+        "path": "examples/ui/packages/grid/src",
+        "entry_id": "eid:i-dir",
+        "change_type": "modify",
+        "node_type": "dir"
+    },
+    {
+        "path": "examples/ui/packages/grid/src/index.ts",
+        "entry_id": "eid:i-index",
+        "change_type": "modify",
+        "node_type": "file",
+        "binary": false,
+        "diff_content_id": "dcid:2:index",
+        "content_ids": { "before": "cid:2:index-before", "after": "cid:1:index-after" },
+        "blob_before": "1111111111111111111111111111111111111111",
+        "blob_after": "c9ec99eb2e1a286c1319bb8ec5cd2de6f740fc62"
+    },
+    {
+        "path": "examples/ui/docs/added.md",
+        "entry_id": "eid:i-added",
+        "change_type": "add",
+        "node_type": "file",
+        "binary": false,
+        "diff_content_id": "dcid:2:added",
+        "content_ids": { "after": "cid:1:added-after" },
+        "blob_after": "2222222222222222222222222222222222222222"
+    },
+    {
+        "path": "examples/ui/assets/banner.png",
+        "entry_id": "eid:i-banner",
+        "change_type": "modify",
+        "node_type": "file",
+        "binary": false,
+        "diff_content_id": "dcid:2:banner",
+        "content_ids": { "before": "cid:1:banner-slice-before", "after": "cid:1:banner-after" },
+        "meta_before": { "size": 115 },
+        "meta_after": { "size": 108 },
+        "blob_before": "ccc0001112223334445556667778889990001112",
+        "blob_after": "bbb0001112223334445556667778889990001112"
+    }
+]

@@ -1,0 +1,182 @@
+/* Пикер снапшотов — docs/design/README.md §1 (индикатор справа в шапке) и §6 (карточка на Обзоре). */
+
+.snapshot-picker {
+    position: relative;
+    flex: none;
+}
+
+.snapshot-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    height: 30px;
+    padding: 0 var(--space-inner);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-input);
+    background: var(--surface-control);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.snapshot-pill__caret {
+    display: flex;
+    align-items: center;
+    color: var(--text-dim-strong);
+}
+
+.snapshot-picker__menu {
+    position: absolute;
+    top: 34px;
+    right: 0;
+    z-index: 60;
+    /* Ширина под самую длинную строку статуса: «коммита больше нет в PR» не режется. */
+    width: 420px;
+    overflow: hidden;
+    border: 1px solid var(--border-raised-bar);
+    border-radius: var(--radius-card);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-menu);
+}
+
+.snapshot-picker__section {
+    padding: 7px 11px 3px;
+    font-size: var(--font-size-badge);
+    color: var(--text-dim);
+}
+
+/* «Сейчас: срез …» — что смотрит вкладка; не пункт меню. */
+.snapshot-picker__now {
+    padding: 7px 11px;
+    border-bottom: 1px solid var(--border-hairline);
+    font-size: var(--font-size-badge);
+    color: var(--text-dim);
+}
+
+.snapshot-picker__now-value {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+}
+
+/* Подсказка про Shift+клик: не пункт меню, курсор на неё не встаёт. */
+.snapshot-picker__hint {
+    padding: 6px 11px 7px;
+    border-top: 1px solid var(--border-hairline);
+    font-size: var(--font-size-badge);
+    color: var(--text-dim);
+}
+
+.snapshot-picker__row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    padding: 7px 11px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.snapshot-picker__row.is-cursor {
+    background: var(--surface-selected);
+}
+
+.snapshot-picker__tick {
+    display: flex;
+    align-items: center;
+    width: 13px;
+    flex: none;
+    color: var(--accent-hover);
+}
+
+.snapshot-picker__row-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/*
+ * Диапазон среза: внутренность — полоса в тоне выделения, края — плотнее и с акцентной чертой
+ * слева. Заливка идёт картинкой поверх цвета фона, чтобы курсор под ней оставался виден.
+ */
+.snapshot-picker__row.is-slice-inside,
+.snapshot-list__row.is-slice-inside {
+    background-image: linear-gradient(var(--accent-selection), var(--accent-selection));
+    box-shadow: inset 2px 0 0 var(--accent-border);
+}
+
+.snapshot-picker__row.is-slice-edge,
+.snapshot-list__row.is-slice-edge {
+    background-image: linear-gradient(var(--accent-text-selection), var(--accent-text-selection));
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* «база» / «голова» у краёв активного среза — мелко и вторично, как время в строке. */
+.snapshot-picker__role,
+.snapshot-list__role {
+    flex: none;
+    font-size: var(--font-size-badge);
+    color: var(--text-dim);
+}
+
+.snapshot-list__role {
+    margin-left: var(--space-inner-tight);
+}
+
+/* --- Карточка «Снапшоты» на Обзоре --- */
+
+.snapshot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.snapshot-list__row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-button);
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.snapshot-list__row:hover {
+    background-color: var(--surface-chip);
+}
+
+.snapshot-list__row.is-current {
+    border-color: var(--border-control);
+    background-color: var(--surface-control);
+}
+
+.snapshot-list__line {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--text-secondary);
+}
+
+.snapshot-list__provenance {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.snapshot-list__hint {
+    margin-top: 6px;
+    padding: 0 8px;
+    font-size: var(--font-size-badge);
+    color: var(--text-dim);
+}

@@ -1,0 +1,461 @@
+/* Ширина одна на всех: её же вычитает из колонки контента панель действий (`--dock-right`). */
+.chat-panel {
+    position: sticky;
+    top: 46px;
+    display: flex;
+    flex: 0 0 var(--width-agent-panel);
+    flex-direction: column;
+    width: var(--width-agent-panel);
+    height: calc(100vh - 46px);
+    min-height: 0;
+    border-left: 1px solid var(--border-standard);
+    background: var(--surface-panel);
+    color: var(--text-secondary);
+}
+
+.chat-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-inner);
+    flex: none;
+    min-height: 57px;
+    padding: 10px 13px;
+    border-bottom: 1px solid var(--border-hairline-strong);
+}
+
+.chat-panel__title {
+    color: var(--text-primary-soft);
+    font-size: var(--font-size-section-title);
+    font-weight: 600;
+}
+
+.chat-panel__identity {
+    margin-top: 2px;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+}
+
+.chat-panel__header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+}
+
+.chat-panel__notes {
+    padding: 3px 7px;
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-badge);
+    color: var(--accent-text);
+    font-size: var(--font-size-meta);
+}
+
+/* Кнопка 28×28 фиксированная: глиф крестика не должен растягивать строку. */
+.chat-panel__close {
+    width: 28px;
+    height: 28px;
+    font-size: var(--font-size-close-glyph);
+    line-height: 1;
+}
+
+.chat-panel__queue {
+    flex: none;
+    padding: 9px 13px;
+    background: var(--accent-surface-alt);
+    color: var(--accent-text);
+    font-size: var(--font-size-secondary);
+    line-height: 1.45;
+}
+
+.chat-panel__feed {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 18px 16px 24px;
+}
+
+.chat-panel__feed-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 22px;
+    min-height: 100%;
+}
+
+.chat-panel__history-status,
+.chat-panel__history-error {
+    margin: auto 0;
+    padding: 12px;
+    border: 1px solid var(--border-standard);
+    border-radius: var(--radius-popover);
+    background: var(--surface-panel-deep);
+    font-size: var(--font-size-secondary);
+    line-height: 1.5;
+}
+
+.chat-panel__history-status {
+    color: var(--text-muted);
+}
+
+.chat-panel__history-error {
+    border-color: var(--error-border);
+    background: var(--error-surface);
+    color: var(--error-text);
+}
+
+.chat-panel__empty {
+    margin: auto 0;
+    padding: 20px 14px;
+    border: 1px solid var(--border-standard);
+    border-radius: var(--radius-popover);
+    background: var(--surface-panel-deep);
+}
+
+.chat-panel__empty p {
+    margin: 0;
+    color: var(--text-body);
+    font-size: var(--font-size-ui);
+    line-height: 1.6;
+}
+
+.chat-panel__empty ul {
+    display: grid;
+    gap: 7px;
+    margin: 14px 0 0;
+    padding-left: 19px;
+    color: var(--text-muted);
+    font-size: var(--font-size-secondary);
+    line-height: 1.5;
+}
+
+/* Пример вопроса — кнопка, но читается строкой списка: клик подставляет текст, а не отправляет. */
+.chat-panel__example {
+    text-align: left;
+}
+
+.chat-message-pair {
+    display: grid;
+    gap: 17px;
+}
+
+.chat-message {
+    min-width: 0;
+}
+
+.chat-message__author {
+    margin-bottom: 5px;
+    font-size: var(--font-size-control);
+    font-weight: 600;
+}
+
+.chat-message--you .chat-message__author {
+    color: var(--text-secondary);
+}
+
+.chat-message--agent .chat-message__author {
+    color: var(--accent-text);
+}
+
+.chat-message__body {
+    color: var(--chat-body-text);
+    font-size: var(--font-size-ui);
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+}
+
+.chat-message__body--plain {
+    white-space: pre-wrap;
+}
+
+.chat-message__body .md-p,
+.chat-message__body .md-list,
+.chat-message__body .md-pre {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.chat-message__body > :last-child {
+    margin-bottom: 0;
+}
+
+.chat-message__anchor,
+.chat-message__note {
+    display: block;
+    max-width: 100%;
+    margin-top: 8px;
+    padding: 4px 7px;
+    overflow: hidden;
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-badge);
+    background: var(--accent-surface);
+    color: var(--accent-text);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Заметка и пометка о потерянном якоре стоят в одну строку и переносятся вместе. */
+.chat-message__note-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.chat-message__note:disabled {
+    border-color: var(--border-chip);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: default;
+}
+
+.chat-message__note-lost {
+    margin-top: 8px;
+    padding: 4px 7px;
+    border: 1px solid var(--attention-border);
+    border-radius: var(--radius-badge);
+    background: var(--attention-surface);
+    color: var(--attention-text);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    white-space: nowrap;
+}
+
+.chat-message__anchor:hover,
+.chat-message__note:not(:disabled):hover {
+    background: var(--accent-surface-alt);
+}
+
+.chat-message--failed {
+    padding: 10px;
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-input);
+    background: var(--error-surface);
+}
+
+.chat-message--failed .chat-message__body {
+    color: var(--error-text);
+}
+
+.chat-message__activity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent-text);
+    font-size: var(--font-size-secondary);
+}
+
+.chat-message__typing {
+    display: inline-flex;
+    gap: 3px;
+}
+
+.chat-message__typing i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: chat-typing 1s ease-in-out infinite;
+}
+
+.chat-message__typing i:nth-child(2) {
+    animation-delay: 120ms;
+}
+
+.chat-message__typing i:nth-child(3) {
+    animation-delay: 240ms;
+}
+
+.chat-message__progress {
+    margin-top: 7px;
+    color: var(--text-muted);
+    font-size: var(--font-size-secondary);
+    line-height: 1.5;
+}
+
+.chat-message__action {
+    margin-top: 9px;
+}
+
+.chat-message__action:disabled {
+    cursor: default;
+    opacity: var(--disabled-opacity);
+}
+
+.chat-message__action-error,
+.chat-panel__composer-error {
+    color: var(--error-text);
+    font-size: var(--font-size-control);
+    line-height: 1.45;
+}
+
+.chat-panel__cancelled-lease {
+    margin: 0;
+    padding: 9px 10px;
+    border: 1px solid var(--attention-border-alt);
+    border-radius: var(--radius-button);
+    background: var(--attention-surface-alt);
+    color: var(--attention-text-soft);
+    font-size: var(--font-size-control);
+    line-height: 1.5;
+}
+
+.chat-panel__disconnected {
+    margin-top: auto;
+    padding: 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-popover);
+    background: var(--surface-offline-banner);
+}
+
+.chat-panel__disconnected p {
+    margin: 0 0 10px;
+    color: var(--text-muted);
+    font-size: var(--font-size-secondary);
+    line-height: 1.5;
+}
+
+.chat-panel__composer {
+    display: grid;
+    gap: 8px;
+    flex: none;
+    padding: 11px 13px 13px;
+    border-top: 1px solid var(--border-standard);
+    background: var(--surface-panel);
+}
+
+.chat-panel__contexts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.chat-panel__context {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 3px 7px;
+    overflow: hidden;
+    border: 1px solid var(--border-chip);
+    border-radius: var(--radius-badge);
+    background: var(--surface-chip);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    white-space: nowrap;
+}
+
+.chat-panel__context-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-panel__context--anchor {
+    border-color: var(--accent-border);
+    color: var(--accent-text);
+}
+
+.chat-panel__context button {
+    flex: none;
+    width: 17px;
+    height: 17px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    /* Квадрат 17×17 фиксирован: глиф крестика не должен растягивать строку. */
+    line-height: 1;
+    cursor: pointer;
+}
+
+.chat-panel__textarea {
+    display: block;
+    width: 100%;
+    min-height: 72px;
+    max-height: 180px;
+    resize: vertical;
+    padding: 9px 10px;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-input);
+    outline: none;
+    background: var(--surface-input);
+    color: var(--text-primary-soft);
+    font: inherit;
+    font-size: var(--font-size-ui);
+    line-height: 1.5;
+}
+
+.chat-panel__textarea:disabled {
+    cursor: default;
+    opacity: var(--disabled-opacity);
+}
+
+.chat-panel__composer-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-scope);
+}
+
+.chat-panel__composer-hint {
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-panel__composer-footer button {
+    font-weight: 600;
+}
+
+.chat-panel__composer-footer button:disabled {
+    cursor: default;
+    opacity: var(--disabled-opacity);
+}
+
+@keyframes chat-typing {
+    0%,
+    100% {
+        opacity: 0.35;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+.gallery-chat-panel {
+    display: flex;
+    justify-content: flex-end;
+    height: 720px;
+    overflow: hidden;
+    background: var(--surface-app);
+}
+
+.gallery-chat-panel .chat-panel {
+    position: relative;
+    top: 0;
+    height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .chat-message__typing i {
+        animation: none;
+    }
+}
+
+.chat-panel__selection-quote {
+    max-height: 8em;
+    margin: var(--space-inner-tight) 0;
+    padding-left: var(--space-inner-tight);
+    overflow: auto;
+    border-left: 2px solid var(--accent);
+    font-size: var(--font-size-body);
+    white-space: pre-wrap;
+}

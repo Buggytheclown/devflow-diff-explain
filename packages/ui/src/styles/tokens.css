@@ -1,0 +1,1387 @@
+/*
+ * Дизайн-токены: геометрия и движение — docs/design/README.md, раздел «Design tokens»;
+ * шрифтовая шкала — docs/design/theme.md, раздел «Типографика»; цвета четырёх палитр — там же.
+ * Единственное место, где в UI живут hex, тени, штриховки и шкалы: в компонентных стилях
+ * значения запрещены, только эти переменные. Соответствие таблице хендоффа проверяется
+ * механически — `src/styles/tokens.test.ts`.
+ *
+ * Имена семантические: переменная называется по роли («поверхность приложения»), а не по
+ * оттенку («серый-1») — иначе перекрасить систему нельзя, не переписав все компоненты.
+ */
+
+/*
+ * База шрифтовой шкалы. Все размеры текста заданы в rem, поэтому системный или браузерный
+ * размер шрифта масштабирует интерфейс целиком; `100%` — это база браузера (обычно 16px).
+ * Размер текста L (`data-textsize` на `<html>`) поднимает базу до 18px — одной строкой,
+ * потому что в px размеров текста не осталось.
+ */
+html {
+    font-size: 100%;
+}
+
+html[data-textsize='l'] {
+    font-size: 112.5%;
+}
+
+:root,
+[data-theme] {
+    color-scheme: dark;
+
+    /* --- Поверхности --- */
+    --surface-app: #0d0e10;
+    --surface-panel: #121315;
+    --surface-panel-deep: #16171b;
+    --surface-diff-card: #111214;
+    --surface-card-header: #1a1b1e;
+    --surface-input: #1b1e24;
+    --surface-chip: #18191d;
+    --surface-control: #1d2020;
+    --surface-raised: #212429;
+    --surface-popover: #262b34;
+    --surface-selected: #2d323b;
+    /* docs/design/README.md §11 и §6: специальные поверхности баннера, команды и ownership-чипа. */
+    --surface-offline-banner: #1b1c20;
+    --surface-command: #0f1012;
+    --ownership-mine-surface: #182e20;
+    /* docs/design/README.md §2: футерная строка `uncovered` в дайджесте тестов. */
+    --surface-digest-footer: #1b171b;
+    /* docs/design/README.md §14: затемнение под командной палитрой. */
+    --overlay-dialog: rgba(7, 8, 9, 0.66);
+    /* docs/design/README.md §1: липкий тулбар маршрута — фон приложения с прозрачностью под blur(8px). */
+    --surface-toolbar: rgba(13, 14, 16, 0.92);
+    /* docs/design/SPEC-additions-2026-08-26.md §1c/§1d: состояния комментариев и правки черновика. */
+    --pr-comments-overlay: rgba(8, 9, 10, 0.55);
+    --pr-comments-draft-surface: #181510;
+    --comment-edit-surface: #161926;
+    --pr-comments-published-chip-surface: #23252f;
+    --comment-edit-chip-surface: #262e4a;
+    --pr-comments-delete-surface: #1f100e;
+    /* docs/design/SPEC-additions-2026-08-26.md §1e: блок кода внутри карточки треда «вне диффа». */
+    --surface-code-inset: #090a0c;
+    /* docs/design/SPEC-changes-2026-09-20.md §2: подложка инлайн-кода в тексте — и в описании
+       остановки, и в теле комментария; рамку ему даёт `--border-control`. */
+    --surface-code-inline: #23272d;
+
+    /* --- Границы --- */
+    --border-hairline: #24292f;
+    --border-hairline-strong: #2c3038;
+    --border-hairline-soft: #23272d;
+    --border-standard: #333741;
+    --border-control: #363b44;
+    --border-chip: #3a404a;
+    /* docs/design/README.md §1: разделитель контролов в тулбаре, 1×18px. */
+    --border-divider: #3a3f48;
+    --border-strong: #434954;
+    --border-strong-lifted: #4a515c;
+    --ownership-mine-border: #24422f;
+    --border-raised-bar: #4c5466;
+    --border-raised-dialog: #4e5666;
+    --border-raised-popover: #515a6a;
+    --pr-comments-draft-border: #33301f;
+    --comment-edit-border: #3c4560;
+    --pr-comments-delete-border: #4a2f2d;
+    --pr-comments-editor-border: #535b68;
+
+    /* --- Текст --- */
+    --text-primary: #ffffff;
+    --text-primary-soft: #ffffff;
+    --text-secondary: #ffffff;
+    --text-secondary-dim: #ffffff;
+    --text-body: #ffffff;
+    --text-muted: #ffffff;
+    --text-muted-dim: #ffffff;
+    /* Тихая ссылка-действие («Редактировать · Удалить»): в SPEC-changes-2026-09-20.md §5 у Link muted
+       свой тон `8a8f98`, тише тела. Контрастный проход 09-12 схлопнул его с телом; здесь ступень
+       возвращена, но не до макетных 5.3:1, а на уровне ~9:1 — как велит SPEC-theming §3. */
+    --text-link-muted: #b6bcc6;
+    --text-dim: #e7f1ff;
+    --text-dim-strong: #dae4f3;
+    --text-gutter: #6e7580;
+    --pr-comments-published-chip-text: #eef8ff;
+    --comment-edit-chip-text: #9ea8ff;
+    --pr-comments-body-text: #ffffff;
+    --chat-body-text: #ffffff;
+    --pr-comments-note-icon: #9c8760;
+
+    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/SPEC-elements.md §1.2) --- */
+    --accent: #7f8cff;
+    --accent-hover: #8f9bff;
+    --accent-hover-strong: #b3bcff;
+    /* §5: третья ступень акцентной лестницы — нажатая primary, дорожка включённого свитчера. */
+    --accent-pressed: #6b78e6;
+    --accent-ink: #101223;
+    --accent-text: #aeb6ff;
+    --accent-text-soft: #c9cdf0;
+    --accent-text-bright: #dfe2ff;
+    /* docs/design/README.md §7: пункт плана в очереди — текст на акцентной поверхности карточки генерации. */
+    --accent-text-queued: #7d83ad;
+    --accent-surface: #131424;
+    --accent-surface-alt: #1a1b2d;
+    --accent-border: #262a45;
+    --accent-selection: rgba(127, 140, 255, 0.13);
+    --accent-text-selection: rgba(127, 140, 255, 0.28);
+    /* docs/design/SPEC-changes-2026-09-20.md §3: строка кода, под которой раскрыт тред. */
+    --surface-thread-line: rgba(127, 140, 255, 0.07);
+
+    /* --- Внимание: высокий тир, протухший маршрут, черновики, аудит --- */
+    --attention: #e2954c;
+    --attention-text: #e2b878;
+    --attention-text-dim: #c9a464;
+    --attention-text-soft: #e6d7bd;
+    --attention-surface: #241f14;
+    --attention-surface-alt: #231e14;
+    --attention-border: #4a4230;
+    --attention-border-alt: #3d3524;
+    --attention-border-strong: #6b5b39;
+    /* docs/design/SPEC-theming-2026-09-12.md §1: янтарная primary-кнопка баннеров — своя пара, светлое
+       значение заливки темнее общего `--attention` (оранжевый с чёрным текстом на кремовом читался грязно). */
+    --attention-button: #e2954c;
+    --attention-button-ink: #1b1508;
+    --attention-button-hover: #eaa15c;
+    --attention-button-pressed: #d1873f;
+    /* docs/design/README.md §1 п.4: блок «почему изменилась остановка» — лейбл и тело. */
+    --attention-label: #9c8760;
+    --attention-body: #d8c9ad;
+    /* docs/design/SPEC-additions-2026-08-26.md §1d: закрытое поле с черновиком и подтверждённый автосейв. */
+    --draft-field-surface: #1a1510;
+    --draft-saved: #5e8a6d;
+    /* docs/design/README.md §10: тег `pci` в строке дерева — рамка отдельного оттенка. */
+    --tag-pci-border: #3d3a2c;
+
+    /* --- Онбординг (docs/design/README.md §16): карточка тура и пунктир под «Пропустить» --- */
+    --surface-tour-card: #1f242b;
+    --tour-skip-underline: #5e6673;
+
+    /* --- Дифф и статусы --- */
+    --diff-add-bg: rgba(66, 160, 110, 0.11);
+    --diff-add-text: #6cc38f;
+    --diff-add-text-strong: #86d9a8;
+    --diff-add-gutter: #5f9478;
+    --diff-del-bg: rgba(224, 108, 102, 0.10);
+    --diff-del-text: #dd8a84;
+    --diff-del-text-strong: #e8a29c;
+    --diff-del-gutter: #a0736e;
+    --diff-add-gutter-bg: rgba(0, 0, 0, 0);
+    --diff-del-gutter-bg: rgba(0, 0, 0, 0);
+    --read-fill: #3a8f66;
+    /* docs/design/README.md §1: отметка остановки в положении «viewed» — своя поверхность и рамка. */
+    --viewed-surface: #1d3022;
+    --viewed-border: #25422f;
+    /* docs/design/SPEC-theming-2026-09-12.md §4: наведение на отметку — зелёная подложка, а не серая. */
+    --viewed-hover-surface: #25422f;
+    --viewed-hover-border: #3a8f66;
+    /* docs/design/README.md §13: круг успешного завершения ревью. */
+    --success-surface: #1f3d2c;
+    --success-text: #86d9a8;
+    /* docs/design/SPEC-elements.md §2.10, наведение на «просмотрено»: коробка заливается зелёным на четверть. */
+    --read-fill-hover: rgba(58, 143, 102, 0.25);
+    --read-border: #3f7a5a;
+    --error: #e0736c;
+    --error-text: #d99a95;
+    --error-surface: #1f1719;
+    --error-border: #3d2a2c;
+
+    /* --- Дифф-рендер: строки, подсветка, чекбоксы
+       (docs/design/README.md §1, docs/design/SPEC-elements.md §2.12, §2.14) --- */
+    --code-text: #ffffff;
+    --code-text-del: #d5c0be;
+    --surface-diff-empty: #0b0c0e;
+    /* Отступление от §2 (`#141517`): строка сливалась с карточкой — взято значение шапки карточки. */
+    --surface-diff-gap: #1a1b1e;
+    --diff-add-word: rgba(66, 160, 110, 0.22);
+    --diff-del-word: rgba(224, 108, 102, 0.22);
+    --diff-trailing-space: rgba(224, 108, 102, 0.25);
+    --row-hover: rgba(255, 255, 255, 0.04);
+    --checkbox-border: #5e6673;
+    --read-box-border: #515a65;
+    /* Метка остановки у левого края строки дерева (docs/design/SPEC-theming-2026-09-12.md §6a). */
+    --stop-mark-text: #7b8390;
+    --stop-mark-border: #2c3038;
+    /* docs/design/SPEC-theming-2026-09-12.md §4: прозрачная кнопка «раскрыть строки» — обводка вместо заливки,
+       серая заливка читалась как disabled. */
+    --border-button-outline: #7b8390;
+    --border-button-outline-hover: #dae4f3;
+
+    /* --- Подсветка синтаксиса (docs/design/README.md §1) --- */
+    --syntax-keyword: #9aa6ff;
+    --syntax-string: #d3b183;
+    /* Отступление от §2 (`#dae4f3`): комментарий обязан быть заметно тише кода — docs/decisions.md, 2026-09-12. */
+    --syntax-comment: #8a919c;
+    --syntax-decorator: #d99a5c;
+    --syntax-property: #d3b183;
+    --syntax-number: #d3b183;
+    --syntax-variable: currentColor;
+    --syntax-type: #9aa6ff;
+    --syntax-function: currentColor;
+    --syntax-comment-font-style: italic;
+
+    /* --- Нейтральные заливки тиров --- */
+    --tier-medium: #7b87a0;
+    --tier-low: #434954;
+    --tier-unfilled: #2a2e4a;
+
+    /* --- Штриховка «не объяснено» --- */
+    --hatch: repeating-linear-gradient(115deg, #515863 0 3px, #262b30 3px 6px);
+    --hatch-sidebar: repeating-linear-gradient(115deg, #414851 0 3px, #262b30 3px 6px);
+    --hatch-footer: repeating-linear-gradient(115deg, #23272d 0 3px, #1a1b1e 3px 6px);
+
+    /* --- Состояния контролов (docs/design/SPEC-elements.md §1.1) --- */
+    /* В таблице токенов хендоффа их нет, но стейт-матрикс обязателен для каждого контрола:
+       шаг подсветки, кольцо фокуса и прозрачность disabled живут здесь же. */
+    --hover-selected: #3e444f;
+    /* docs/design/SPEC-changes-2026-09-20.md §5: лестница серых поверхностей — ховер сдвигает фон
+       на ступень, нажатие на вторую. Оттенки совпадают с поверхностями и рамками выше, но роль
+       другая: перекрасить состояния контролов нельзя, не тронув попоувер и рамки. */
+    --surface-hover: #262b34;
+    --surface-pressed: #333741;
+    --surface-pressed-deep: #434954;
+    /* Сплошная вторичная кнопка (§4b): «Сохранить…», Retry, Regenerate. В светлой это белая
+       кнопка с тёмной рамкой и тенью — серая заливка читалась как disabled. */
+    --surface-button: #333741;
+    --border-button: #4a515c;
+    --text-button: #ffffff;
+    --surface-button-hover: #434954;
+    --surface-button-pressed: #4a515c;
+    --shadow-button: none;
+    /* Разрушающее действие (§5, «Удалить»): своя лестница трёх тонов. */
+    --surface-danger-button: #3a1f1e;
+    --surface-danger-button-hover: #4a2725;
+    --surface-danger-button-pressed: #5c3230;
+    --border-danger-button: #5c3230;
+    --text-danger-button: #f2c4c0;
+    /* Рамка выключенной дорожки свитчера (§5): темнее рамок контролов — иначе дорожка
+       в покое сливается с фоном. */
+    --border-switch-track: #343941;
+    /* Активный сегмент таб-контрола (docs/design/README.md §0, docs/design/SPEC-theming-2026-09-12.md §1):
+       в светлой это приподнятая белая «таблетка», поэтому у него есть и текст, и тень. */
+    --surface-segment-active: #434954;
+    --text-on-segment-active: #ffffff;
+    --shadow-segment-active: none;
+    /* Включённый чип (People/Bots/Resolved, фильтр файлов) — индиговый в обеих темах. */
+    --surface-chip-active: #1e2240;
+    --border-chip-active: #3f4880;
+    --text-chip-active: #c3caff;
+    --surface-chip-active-hover: #262c52;
+    --surface-chip-active-pressed: #2e3566;
+    /* §5: кольцо фокуса непрозрачное — на залитой кнопке полупрозрачное кольцо тонуло в её цвете. */
+    --focus-ring-color: #7f8cff;
+    --text-on-selected: #ffffff;
+    --disabled-opacity: 0.45;
+    /* Разделитель брендкрамба (docs/design/README.md §0). */
+    --text-separator: #7b8390;
+
+    /* --- Типографика --- */
+    --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --native-code-font: monospace;
+    --font-smoothing: antialiased;
+
+    /*
+     * Шкала — docs/design/theme.md, раздел «Типографика»: rem от базы html, пол 11px
+     * (0.6875rem при базе 16px). Четыре мелких токена упёрлись в пол и совпали — они остаются
+     * раздельными, потому что называют разные роли и разойдутся, если шкала снова поедет.
+     */
+    /* Прототип, экран Overview: заголовок PR там крупнее, чем на Маршруте и Полном диффе. */
+    --font-size-pr-title-overview: 1.5rem;
+    --font-size-pr-title: 1.375rem;
+    --font-size-screen-title: 1.1875rem;
+    --font-size-stop-title-high: 1.0625rem;
+    --font-size-stop-title: 0.9688rem;
+    --font-size-section-title: 0.9688rem;
+    --font-size-input: 0.875rem;
+    --font-size-body: 0.8438rem;
+    --font-size-ui: 0.8125rem;
+    --font-size-secondary: 0.7813rem;
+    --font-size-control: 0.75rem;
+    --font-size-meta: 0.7188rem;
+    --font-size-gutter: 0.6875rem;
+    --font-size-badge: 0.6875rem;
+    --font-size-scope: 0.6875rem;
+    /* docs/design/README.md §10: тег `pci` в дереве. */
+    --font-size-tag: 0.6875rem;
+    /* Единственный текст ниже пола: метка остановки 17×13 в строке дерева (SPEC-theming §5, §6a). */
+    --font-size-stop-mark: 0.625rem;
+    /* Декоративные глифы ниже пола: инициалы не влезают в аватар 18×18 крупнее 9px. */
+    --font-size-avatar-glyph: 0.5625rem;
+    /* Крестик закрытия в кнопке 28×28 — тоже глиф, а не текст. */
+    --font-size-close-glyph: 1.125rem;
+    --font-size-code: 0.75rem;
+
+    --line-height-body: 1.62;
+    /* docs/design/SPEC-theming-2026-09-12.md §5: плотность строк кода не зависит от размера текста. */
+    --line-height-code: 20px;
+
+    /* --- Дерево файлов --- */
+    --tree-row-line-height: initial;
+    --tree-dir-weight: 500;
+    --tree-dir-color: var(--text-muted);
+    --tree-label-size: var(--font-size-control);
+    --tree-row-height: 26px;
+    --tree-label-font: var(--font-mono);
+    --tree-label-color: var(--text-secondary);
+    --tree-read-color: #848b97;
+    --tree-indent-step: 10px;
+
+    /* --- Карточка диффа --- */
+    --file-name-size: var(--font-size-control);
+    --file-path-size: var(--font-size-gutter);
+    --file-header-height: 0px;
+    --file-gutter-add-bg: initial;
+    --file-gutter-del-bg: initial;
+    --file-header-padding: 9px 13px;
+    --file-label-font: var(--font-mono);
+    --thread-line-indent: initial;
+    --thread-line-split-indent: initial;
+    --diff-card-estimate-chrome-height: 61px;
+
+    /* --- Треды --- */
+    --thread-font: initial;
+    --thread-text-size: initial;
+    --thread-line-height: initial;
+    --thread-meta-font: var(--font-mono);
+    --thread-meta-size: var(--font-size-gutter);
+    --thread-chip-size: var(--font-size-badge);
+    --thread-issue-border: var(--accent-border);
+    --thread-issue-bg: var(--accent-surface-alt);
+    --thread-issue-text: var(--accent-text);
+    --thread-draft-border: var(--attention-border);
+    --thread-draft-bg: var(--attention-surface);
+    --thread-draft-text: var(--attention-text);
+    --thread-line-shadow: inset 2px 0 0 var(--accent);
+    --thread-surface: var(--surface-card-header);
+    --thread-card-indent: 56px;
+    --thread-row-indent: 27px;
+    --thread-row-padding: 10px 12px 11px;
+    --thread-avatar-size: 18px;
+
+    /* --- Радиусы --- */
+    --radius-rule: 2px;
+    --radius-mark: 3px;
+    --radius-key: 4px;
+    --radius-badge: 5px;
+    --radius-button: 6px;
+    --radius-input: 7px;
+    --radius-popover: 8px;
+    --radius-card: 9px;
+    --radius-floating: 11px;
+    --radius-panel: 12px;
+
+    /* --- Отступы --- */
+    --space-page: clamp(30px, 2.4vw, 60px);
+    --space-column: clamp(40px, 3vw, 72px);
+    --space-card: 22px;
+    --space-control: 14px;
+    --space-inner: 10px;
+    --space-inner-tight: 8px;
+    /* Прототип: место под плавающую нижнюю панель в длинных читальных вью. */
+    --space-bar-reserve: 180px;
+
+    /* --- Ширины раскладки --- */
+    --width-agent-panel: clamp(392px, 26vw, 560px);
+    --width-file-tree: clamp(320px, 22vw, 560px);
+    /*
+     * Потолок код-панелей: общего потолка у интерфейса нет, а колонки с кодом ограничены — и
+     * по-разному в зависимости от режима диффа. Здесь значение unified, split переопределяет
+     * его на корне вью (`diff-view/diff-view.css`).
+     */
+    --diff-max: 1280px;
+
+    /* --- Тени --- */
+    /* docs/design/SPEC-additions-2026-08-26.md §1d: кнопка комментария в гаттере. */
+    --shadow-line-comment: 0 1px 4px rgba(0, 0, 0, 0.45);
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-menu: 0 16px 40px rgba(0, 0, 0, 0.6);
+    --shadow-floating: 0 16px 44px rgba(0, 0, 0, 0.6);
+    --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.65);
+    --shadow-pr-comments: 0 18px 50px rgba(0, 0, 0, 0.55);
+    /* docs/design/README.md §16: карточка тура и свечение кольца вокруг подсвеченного элемента. */
+    --shadow-tour-card: 0 20px 52px rgba(0, 0, 0, 0.62);
+    --shadow-tour-ring: 0 0 0 3px rgba(127, 140, 255, 0.13), 0 0 26px rgba(127, 140, 255, 0.16);
+    --pr-comments-list-fade: linear-gradient(180deg, rgba(17, 18, 20, 0) 0%, #111214 92%);
+
+    /* --- Движение --- */
+    /* Всё, что не перечислено, не анимируется: читалка обязана быть статичной. */
+    --motion-hover: 90ms;
+    --motion-hover-ease: ease-out;
+    --motion-spin: 0.8s;
+    --motion-shimmer: 1.6s;
+    --motion-caret: 1s;
+    --motion-jump: 320ms;
+    --motion-jump-ease: cubic-bezier(0.65, 0, 0.35, 1);
+    --motion-flash: 900ms;
+}
+
+/* Светлая палитра Devflow Diff Explain: docs/design/theme.md.
+ * Полный набор токенов изолирует вложенные темы галереи.
+ */
+:root[data-theme='light'],
+[data-theme='light'] {
+    color-scheme: light;
+
+    /* --- Поверхности --- */
+    --surface-app: #f6f7f9;
+    --surface-panel: #ffffff;
+    --surface-panel-deep: #fdfdfd;
+    --surface-diff-card: #ffffff;
+    --surface-card-header: #f2f3f6;
+    --surface-input: #f3f4f8;
+    --surface-chip: #fafbfc;
+    --surface-control: #e8eaef;
+    --surface-raised: #ffffff;
+    --surface-popover: #e2e5ea;
+    --surface-selected: #e2e5ea;
+    --surface-offline-banner: #f3f4f8;
+    --surface-command: #f0f1f5;
+    --ownership-mine-surface: #e4f6ea;
+    --surface-digest-footer: #feefec;
+    --overlay-dialog: rgba(236, 238, 242, 0.7);
+    --surface-toolbar: rgba(246, 247, 249, 0.92);
+    --pr-comments-overlay: rgba(236, 238, 242, 0.6);
+    --pr-comments-draft-surface: #fffaec;
+    --comment-edit-surface: #f0f1ff;
+    --pr-comments-published-chip-surface: #e8eaef;
+    --comment-edit-chip-surface: #dfe2fa;
+    --pr-comments-delete-surface: #feecea;
+    --surface-code-inset: #f3f4f6;
+    --surface-code-inline: #e8eaee;
+
+    /* --- Границы --- */
+    --border-hairline: #e4e6eb;
+    --border-hairline-strong: #e0e2e7;
+    --border-hairline-soft: #e8eaee;
+    --border-standard: #dadee4;
+    --border-control: #d2d5dd;
+    --border-chip: #c9ced6;
+    --border-divider: #cdd3da;
+    --border-strong: #c8cdd5;
+    --border-strong-lifted: #bbc2cb;
+    --ownership-mine-border: #cde9d8;
+    --border-raised-bar: #b7bec8;
+    --border-raised-dialog: #bfc6cf;
+    --border-raised-popover: #b0b7c1;
+    --pr-comments-draft-border: #ecdfc4;
+    --comment-edit-border: #c3c7e6;
+    --pr-comments-delete-border: #f0d2d0;
+    --pr-comments-editor-border: #b1b8c2;
+
+    /* --- Текст --- */
+    --text-primary: #000000;
+    --text-primary-soft: #000000;
+    --text-secondary: #000000;
+    --text-secondary-dim: #00000a;
+    --text-body: #00000a;
+    --text-muted: #000813;
+    --text-muted-dim: #0c1420;
+    --text-link-muted: #3c424c;
+    --text-dim: #19212d;
+    --text-dim-strong: #28303b;
+    --text-gutter: #9198a2;
+    --pr-comments-published-chip-text: #0c1420;
+    --comment-edit-chip-text: #4c5ae0;
+    --pr-comments-body-text: #000000;
+    --chat-body-text: #000000;
+    --pr-comments-note-icon: #7f6c3e;
+
+    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/SPEC-elements.md §1.2) --- */
+    --accent: #5a68e8;
+    --accent-hover: #4c5ae0;
+    --accent-hover-strong: #3a47bd;
+    --accent-pressed: #4353cf;
+    --accent-ink: #ffffff;
+    --accent-text: #4350cc;
+    --accent-text-soft: #3a4390;
+    --accent-text-bright: #262f8a;
+    --accent-text-queued: #6b719f;
+    --accent-surface: #f0f1fc;
+    --accent-surface-alt: #f0f1ff;
+    --accent-border: #dfe2fa;
+    --accent-selection: rgba(90, 104, 232, 0.12);
+    --accent-text-selection: rgba(90, 104, 232, 0.22);
+    --surface-thread-line: rgba(90, 104, 232, 0.08);
+
+    /* --- Внимание: высокий тир, протухший маршрут, черновики, аудит --- */
+    --attention: #d8791c;
+    --attention-text: #9d6410;
+    --attention-text-dim: #7f5612;
+    --attention-text-soft: #3f3014;
+    --attention-surface: #fbf3df;
+    --attention-surface-alt: #fffaec;
+    --attention-border: #d9c9a4;
+    --attention-border-alt: #ecdfc4;
+    --attention-border-strong: #bba777;
+    --attention-button: #b8641c;
+    --attention-button-ink: #ffffff;
+    --attention-button-hover: #c56d1f;
+    --attention-button-pressed: #a85a14;
+    --attention-label: #7f6c3e;
+    --attention-body: #5a4a24;
+    --draft-field-surface: #fffaec;
+    --draft-saved: #268f52;
+    --tag-pci-border: #e9dfc3;
+
+    /* --- Онбординг (docs/design/README.md §16): карточка тура и пунктир под «Пропустить» --- */
+    --surface-tour-card: #ffffff;
+    --tour-skip-underline: #a1a7b3;
+
+    /* --- Дифф и статусы --- */
+    --diff-add-bg: rgba(38, 143, 82, 0.10);
+    --diff-add-text: #268f52;
+    --diff-add-text-strong: #1e7f47;
+    --diff-add-gutter: #3a835d;
+    --diff-del-bg: rgba(207, 70, 64, 0.09);
+    --diff-del-text: #c94842;
+    --diff-del-text-strong: #c33f39;
+    --diff-del-gutter: #a45a54;
+    --diff-add-gutter-bg: rgba(0, 0, 0, 0);
+    --diff-del-gutter-bg: rgba(0, 0, 0, 0);
+    --read-fill: #2f8557;
+    --viewed-surface: #e8f7ec;
+    --viewed-border: #cde9d8;
+    --viewed-hover-surface: #cde9d8;
+    --viewed-hover-border: #2f8557;
+    --success-surface: #bfe4cd;
+    --success-text: #1e7f47;
+    --read-fill-hover: rgba(47, 133, 87, 0.25);
+    --read-border: #46a672;
+    --error: #cf4640;
+    --error-text: #b5423c;
+    --error-surface: #feecea;
+    --error-border: #f0d2d0;
+
+    /* --- Дифф-рендер: строки, подсветка, чекбоксы
+       (docs/design/README.md §1, docs/design/SPEC-elements.md §2.12, §2.14) --- */
+    --code-text: #000000;
+    --code-text-del: #87332e;
+    --surface-diff-empty: #f3f4f6;
+    --surface-diff-gap: #f2f3f6;
+    --diff-add-word: rgba(38, 143, 82, 0.22);
+    --diff-del-word: rgba(207, 70, 64, 0.22);
+    --diff-trailing-space: rgba(207, 70, 64, 0.25);
+    --row-hover: rgba(20, 24, 32, 0.04);
+    --checkbox-border: #a1a7b3;
+    --read-box-border: #afb5c0;
+    --stop-mark-text: #828894;
+    --stop-mark-border: #e0e2e7;
+    --border-button-outline: #828894;
+    --border-button-outline-hover: #28303b;
+
+    /* --- Подсветка синтаксиса (docs/design/README.md §1) --- */
+    --syntax-keyword: #5462e3;
+    --syntax-string: #8a5f1c;
+    --syntax-comment: #646b76;
+    --syntax-decorator: #b46a1f;
+    --syntax-property: #8a5f1c;
+    --syntax-number: #8a5f1c;
+    --syntax-variable: currentColor;
+    --syntax-type: #5462e3;
+    --syntax-function: currentColor;
+    --syntax-comment-font-style: italic;
+
+    /* --- Нейтральные заливки тиров --- */
+    --tier-medium: #7b8390;
+    --tier-low: #c8cdd5;
+    --tier-unfilled: #dde0f8;
+
+    /* --- Штриховка «не объяснено» --- */
+    --hatch: repeating-linear-gradient(115deg, #b1b8c2 0 3px, #e9ecef 3px 6px);
+    --hatch-sidebar: repeating-linear-gradient(115deg, #c5cad2 0 3px, #e9ecef 3px 6px);
+    --hatch-footer: repeating-linear-gradient(115deg, #e8eaee 0 3px, #f2f3f6 3px 6px);
+
+    /* --- Состояния контролов (docs/design/SPEC-elements.md §1.1) --- */
+    --hover-selected: #dadee4;
+    --surface-hover: #e2e5ea;
+    --surface-pressed: #dadee4;
+    --surface-pressed-deep: #c8cdd5;
+    --surface-button: #ffffff;
+    --border-button: #8b94a3;
+    --text-button: #0c1420;
+    --surface-button-hover: #eef0f4;
+    --surface-button-pressed: #e2e5ea;
+    --shadow-button: 0 1px 2px rgba(20, 24, 32, 0.12);
+    --surface-danger-button: #f8d9d7;
+    --surface-danger-button-hover: #f2c9c6;
+    --surface-danger-button-pressed: #e0a39f;
+    --border-danger-button: #e0a39f;
+    --text-danger-button: #7a2622;
+    --border-switch-track: #c8cdd5;
+    --surface-segment-active: #ffffff;
+    --text-on-segment-active: #000000;
+    --shadow-segment-active: 0 1px 2px rgba(20, 24, 32, 0.18), 0 0 0 1px rgba(20, 24, 32, 0.08);
+    --surface-chip-active: #e8eaff;
+    --border-chip-active: #b9c0f4;
+    --text-chip-active: #2b3690;
+    --surface-chip-active-hover: #dfe2fb;
+    --surface-chip-active-pressed: #d3d8f8;
+    --focus-ring-color: #5a68e8;
+    --text-on-selected: #000000;
+    --disabled-opacity: 0.45;
+    --text-separator: #828894;
+
+    /* --- Типографика --- */
+    --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --native-code-font: monospace;
+    --font-smoothing: antialiased;
+    --font-size-pr-title-overview: 1.5rem;
+    --font-size-pr-title: 1.375rem;
+    --font-size-screen-title: 1.1875rem;
+    --font-size-stop-title-high: 1.0625rem;
+    --font-size-stop-title: 0.9688rem;
+    --font-size-section-title: 0.9688rem;
+    --font-size-input: 0.875rem;
+    --font-size-body: 0.8438rem;
+    --font-size-ui: 0.8125rem;
+    --font-size-secondary: 0.7813rem;
+    --font-size-control: 0.75rem;
+    --font-size-meta: 0.7188rem;
+    --font-size-gutter: 0.6875rem;
+    --font-size-badge: 0.6875rem;
+    --font-size-scope: 0.6875rem;
+    --font-size-tag: 0.6875rem;
+    --font-size-stop-mark: 0.625rem;
+    --font-size-avatar-glyph: 0.5625rem;
+    --font-size-close-glyph: 1.125rem;
+    --font-size-code: 0.75rem;
+    --line-height-body: 1.62;
+    --line-height-code: 20px;
+
+    /* --- Дерево файлов --- */
+    --tree-row-line-height: initial;
+    --tree-dir-weight: 500;
+    --tree-dir-color: var(--text-muted);
+    --tree-label-size: var(--font-size-control);
+    --tree-row-height: 26px;
+    --tree-label-font: var(--font-mono);
+    --tree-label-color: var(--text-secondary);
+    --tree-read-color: #70767f;
+    --tree-indent-step: 10px;
+
+    /* --- Карточка диффа --- */
+    --file-name-size: var(--font-size-control);
+    --file-path-size: var(--font-size-gutter);
+    --file-header-height: 0px;
+    --file-gutter-add-bg: initial;
+    --file-gutter-del-bg: initial;
+    --file-header-padding: 9px 13px;
+    --file-label-font: var(--font-mono);
+    --thread-line-indent: initial;
+    --thread-line-split-indent: initial;
+    --diff-card-estimate-chrome-height: 61px;
+
+    /* --- Треды --- */
+    --thread-font: initial;
+    --thread-text-size: initial;
+    --thread-line-height: initial;
+    --thread-meta-font: var(--font-mono);
+    --thread-meta-size: var(--font-size-gutter);
+    --thread-chip-size: var(--font-size-badge);
+    --thread-issue-border: var(--accent-border);
+    --thread-issue-bg: var(--accent-surface-alt);
+    --thread-issue-text: var(--accent-text);
+    --thread-draft-border: var(--attention-border);
+    --thread-draft-bg: var(--attention-surface);
+    --thread-draft-text: var(--attention-text);
+    --thread-line-shadow: inset 2px 0 0 var(--accent);
+    --thread-surface: var(--surface-card-header);
+    --thread-card-indent: 56px;
+    --thread-row-indent: 27px;
+    --thread-row-padding: 10px 12px 11px;
+    --thread-avatar-size: 18px;
+
+    /* --- Радиусы --- */
+    --radius-rule: 2px;
+    --radius-mark: 3px;
+    --radius-key: 4px;
+    --radius-badge: 5px;
+    --radius-button: 6px;
+    --radius-input: 7px;
+    --radius-popover: 8px;
+    --radius-card: 9px;
+    --radius-floating: 11px;
+    --radius-panel: 12px;
+
+    /* --- Отступы --- */
+    --space-page: clamp(30px, 2.4vw, 60px);
+    --space-column: clamp(40px, 3vw, 72px);
+    --space-card: 22px;
+    --space-control: 14px;
+    --space-inner: 10px;
+    --space-inner-tight: 8px;
+    --space-bar-reserve: 180px;
+
+    /* --- Ширины раскладки --- */
+    --width-agent-panel: clamp(392px, 26vw, 560px);
+    --width-file-tree: clamp(320px, 22vw, 560px);
+    --diff-max: 1280px;
+
+    /* --- Тени --- */
+    --shadow-line-comment: 0 1px 4px rgba(20, 24, 32, 0.1);
+    --shadow-popover: 0 8px 24px rgba(20, 24, 32, 0.12);
+    --shadow-menu: 0 16px 40px rgba(20, 24, 32, 0.16);
+    --shadow-floating: 0 16px 44px rgba(20, 24, 32, 0.16);
+    --shadow-dialog: 0 24px 64px rgba(20, 24, 32, 0.18);
+    --shadow-pr-comments: 0 18px 50px rgba(20, 24, 32, 0.14);
+    --shadow-tour-card: 0 20px 52px rgba(20, 24, 32, 0.18);
+    --shadow-tour-ring: 0 0 0 3px rgba(90, 104, 232, 0.12), 0 0 26px rgba(90, 104, 232, 0.16);
+    --pr-comments-list-fade: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 92%);
+
+    /* --- Движение --- */
+    --motion-hover: 90ms;
+    --motion-hover-ease: ease-out;
+    --motion-spin: 0.8s;
+    --motion-shimmer: 1.6s;
+    --motion-caret: 1s;
+    --motion-jump: 320ms;
+    --motion-jump-ease: cubic-bezier(0.65, 0, 0.35, 1);
+    --motion-flash: 900ms;
+}
+
+/* Тёмная палитра Arcanum: источники и адаптации в docs/design/arcanum.md.
+ * Полный набор токенов изолирует вложенные темы галереи.
+ */
+:root[data-theme='arcanum-dark'],
+[data-theme='arcanum-dark'] {
+    color-scheme: dark;
+
+    /* --- Поверхности --- */
+    --surface-app: #2d2c33;
+    --surface-panel: #2d2c33;
+    --surface-panel-deep: #35343b;
+    --surface-diff-card: #2d2c33;
+    --surface-card-header: #424248;
+    --surface-input: #2d2c33;
+    --surface-chip: #35343b;
+    --surface-control: #424248;
+    --surface-raised: #35343b;
+    --surface-popover: #424248;
+    --surface-selected: #57565c;
+    --surface-offline-banner: #35343b;
+    --surface-command: #2d2c33;
+    --ownership-mine-surface: rgba(91, 181, 87, 0.15);
+    --surface-digest-footer: #402f35;
+    --overlay-dialog: rgba(7, 8, 9, 0.66);
+    --surface-toolbar: rgba(45, 44, 51, 0.96);
+    --pr-comments-overlay: rgba(8, 9, 10, 0.55);
+    --pr-comments-draft-surface: rgba(255, 203, 0, 0.1);
+    --comment-edit-surface: var(--accent-surface);
+    --pr-comments-published-chip-surface: #23252f;
+    --comment-edit-chip-surface: var(--accent-surface-alt);
+    --pr-comments-delete-surface: var(--error-surface);
+    --surface-code-inset: #35343b;
+    --surface-code-inline: #424248;
+
+    /* --- Границы --- */
+    --border-hairline: #45444b;
+    --border-hairline-strong: #505056;
+    --border-hairline-soft: #45444b;
+    --border-standard: #57565c;
+    --border-control: #57565c;
+    --border-chip: #57565c;
+    --border-divider: #57565c;
+    --border-strong: #68676d;
+    --border-strong-lifted: #77767c;
+    --ownership-mine-border: rgba(91, 181, 87, 0.3);
+    --border-raised-bar: #57565c;
+    --border-raised-dialog: #57565c;
+    --border-raised-popover: #68676d;
+    --pr-comments-draft-border: rgba(255, 203, 0, 0.2);
+    --comment-edit-border: var(--accent-border);
+    --pr-comments-delete-border: var(--error-border);
+    --pr-comments-editor-border: #535b68;
+
+    /* --- Текст --- */
+    --text-primary: #e0e0e1;
+    --text-primary-soft: #e0e0e1;
+    --text-secondary: #c0bfc2;
+    --text-secondary-dim: #c0bfc2;
+    --text-body: #e0e0e1;
+    --text-muted: #b1b0b4;
+    --text-muted-dim: #b1b0b4;
+    --text-link-muted: #b1b0b4;
+    --text-dim: #b1b0b4;
+    --text-dim-strong: #c0bfc2;
+    --text-gutter: #e0e0e1;
+    --pr-comments-published-chip-text: #eef8ff;
+    --comment-edit-chip-text: var(--accent-text);
+    --pr-comments-body-text: #e0e0e1;
+    --chat-body-text: #e0e0e1;
+    --pr-comments-note-icon: #b3a17e;
+
+    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/SPEC-elements.md §1.2) --- */
+    --accent: #5282ff;
+    --accent-hover: #7098ff;
+    --accent-hover-strong: #8eadff;
+    --accent-pressed: #4778ef;
+    --accent-ink: #0b1020;
+    --accent-text: #82a5ff;
+    --accent-text-soft: #a3bbff;
+    --accent-text-bright: #cfddff;
+    --accent-text-queued: #a3abc2;
+    --accent-surface: #303850;
+    --accent-surface-alt: #303850;
+    --accent-border: #465d90;
+    --accent-selection: rgba(82, 130, 255, 0.15);
+    --accent-text-selection: rgba(82, 130, 255, 0.3);
+    --surface-thread-line: rgba(82, 130, 255, 0.07);
+
+    /* --- Внимание: высокий тир, протухший маршрут, черновики, аудит --- */
+    --attention: #ffcb00;
+    --attention-text: #ffdb4c;
+    --attention-text-dim: #ffd01a;
+    --attention-text-soft: #e0e0e1;
+    --attention-surface: rgba(255, 203, 0, 0.15);
+    --attention-surface-alt: rgba(255, 203, 0, 0.1);
+    --attention-border: rgba(255, 203, 0, 0.3);
+    --attention-border-alt: rgba(255, 203, 0, 0.2);
+    --attention-border-strong: rgba(255, 203, 0, 0.5);
+    --attention-button: #ffcb00;
+    --attention-button-ink: #2d2c33;
+    --attention-button-hover: #ffd01a;
+    --attention-button-pressed: #e9ba04;
+    --attention-label: #ffdb4c;
+    --attention-body: #e0e0e1;
+    --draft-field-surface: rgba(255, 203, 0, 0.1);
+    --draft-saved: #8bbe9d;
+    --tag-pci-border: rgba(255, 203, 0, 0.3);
+
+    /* --- Онбординг (docs/design/README.md §16): карточка тура и пунктир под «Пропустить» --- */
+    --surface-tour-card: #35343b;
+    --tour-skip-underline: #5e6673;
+
+    /* --- Дифф и статусы --- */
+    --diff-add-bg: rgba(151, 234, 151, 0.1);
+    --diff-add-text: #50c987;
+    --diff-add-text-strong: #68d99b;
+    --diff-add-gutter: #e0e0e1;
+    --diff-del-bg: rgba(251, 175, 175, 0.1);
+    --diff-del-text: #ff6969;
+    --diff-del-text-strong: #ff9494;
+    --diff-del-gutter: #e0e0e1;
+    --diff-add-gutter-bg: #425247;
+    --diff-del-gutter-bg: #56464c;
+    --read-fill: #3a8f66;
+    --viewed-surface: rgba(91, 181, 87, 0.15);
+    --viewed-border: rgba(91, 181, 87, 0.3);
+    --viewed-hover-surface: rgba(91, 181, 87, 0.2);
+    --viewed-hover-border: #5bb557;
+    --success-surface: rgba(91, 181, 87, 0.2);
+    --success-text: #8ccb89;
+    --read-fill-hover: rgba(58, 143, 102, 0.25);
+    --read-border: #3f7a5a;
+    --error: #ef7f7d;
+    --error-text: #f3a4a2;
+    --error-surface: #493036;
+    --error-border: #653539;
+
+    /* --- Дифф-рендер: строки, подсветка, чекбоксы
+       (docs/design/README.md §1, docs/design/SPEC-elements.md §2.12, §2.14) --- */
+    --code-text: #e0e0e1;
+    --code-text-del: #e0e0e1;
+    --surface-diff-empty: #2d2c33;
+    --surface-diff-gap: #35343b;
+    --diff-add-word: rgba(151, 234, 151, 0.1);
+    --diff-del-word: rgba(251, 175, 175, 0.1);
+    --diff-trailing-space: rgba(224, 108, 102, 0.25);
+    --row-hover: rgba(255, 255, 255, 0.04);
+    --checkbox-border: #5e6673;
+    --read-box-border: #515a65;
+    --stop-mark-text: #a3a2a7;
+    --stop-mark-border: #2c3038;
+    --border-button-outline: #7b8390;
+    --border-button-outline-hover: #dae4f3;
+
+    /* --- Подсветка синтаксиса (docs/design/README.md §1) --- */
+    --syntax-keyword: #c586c0;
+    --syntax-string: #ce9178;
+    --syntax-comment: #8a9b83;
+    --syntax-decorator: #4ec9b0;
+    --syntax-property: #569cd6;
+    --syntax-number: #b5cea8;
+    --syntax-variable: #4ec9b0;
+    --syntax-type: #4ec9b0;
+    --syntax-function: #dcdcaa;
+    --syntax-comment-font-style: normal;
+
+    /* --- Нейтральные заливки тиров --- */
+    --tier-medium: #7b87a0;
+    --tier-low: #434954;
+    --tier-unfilled: #2a2e4a;
+
+    /* --- Штриховка «не объяснено» --- */
+    --hatch: repeating-linear-gradient(115deg, #515863 0 3px, #262b30 3px 6px);
+    --hatch-sidebar: repeating-linear-gradient(115deg, #414851 0 3px, #262b30 3px 6px);
+    --hatch-footer: repeating-linear-gradient(115deg, #23272d 0 3px, #1a1b1e 3px 6px);
+
+    /* --- Состояния контролов (docs/design/SPEC-elements.md §1.1) --- */
+    --hover-selected: #68676d;
+    --surface-hover: #424248;
+    --surface-pressed: #57565c;
+    --surface-pressed-deep: #68676d;
+    --surface-button: #424248;
+    --border-button: #68676d;
+    --text-button: #ffffff;
+    --surface-button-hover: #505056;
+    --surface-button-pressed: #57565c;
+    --shadow-button: none;
+    --surface-danger-button: #3a1f1e;
+    --surface-danger-button-hover: #4a2725;
+    --surface-danger-button-pressed: #5c3230;
+    --border-danger-button: #5c3230;
+    --text-danger-button: #f2c4c0;
+    --border-switch-track: #57565c;
+    --surface-segment-active: #57565c;
+    --text-on-segment-active: #ffffff;
+    --shadow-segment-active: none;
+    --surface-chip-active: #303e62;
+    --border-chip-active: #465d90;
+    --text-chip-active: #cad8ff;
+    --surface-chip-active-hover: #394c75;
+    --surface-chip-active-pressed: #425a88;
+    --focus-ring-color: #5282ff;
+    --text-on-selected: #ffffff;
+    --disabled-opacity: 0.45;
+    --text-separator: #b1b0b4;
+
+    /* --- Типографика --- */
+    --font-sans: 'YS Text', 'Helvetica Neue', Arial, Helvetica, sans-serif;
+    --font-mono: Menlo, Monaco, Consolas, 'Liberation Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', 'Courier New', Courier, monospace;
+    --native-code-font: var(--font-mono);
+    --font-smoothing: auto;
+    --font-size-pr-title-overview: 1.5rem;
+    --font-size-pr-title: 1.375rem;
+    --font-size-screen-title: 1.1875rem;
+    --font-size-stop-title-high: 1.0625rem;
+    --font-size-stop-title: 0.9688rem;
+    --font-size-section-title: 0.9688rem;
+    --font-size-input: 0.875rem;
+    --font-size-body: 0.875rem;
+    --font-size-ui: 0.875rem;
+    --font-size-secondary: 0.8125rem;
+    --font-size-control: 0.8125rem;
+    --font-size-meta: 0.8125rem;
+    --font-size-gutter: 0.75rem;
+    --font-size-badge: 0.6875rem;
+    --font-size-scope: 0.6875rem;
+    --font-size-tag: 0.6875rem;
+    --font-size-stop-mark: 0.625rem;
+    --font-size-avatar-glyph: 0.5625rem;
+    --font-size-close-glyph: 1.125rem;
+    --font-size-code: 0.75rem;
+    --line-height-body: 1.5;
+    --line-height-code: 17px;
+
+    /* --- Дерево файлов --- */
+    --tree-row-line-height: 22px;
+    --tree-dir-weight: 400;
+    --tree-dir-color: var(--text-primary);
+    --tree-label-size: var(--font-size-ui);
+    --tree-row-height: 22px;
+    --tree-label-font: var(--font-sans);
+    --tree-label-color: var(--text-primary);
+    --tree-read-color: #9e9da3;
+    --tree-indent-step: 18px;
+
+    /* --- Карточка диффа --- */
+    --file-name-size: var(--font-size-ui);
+    --file-path-size: var(--font-size-ui);
+    --file-header-height: 32px;
+    --file-gutter-add-bg: var(--diff-add-gutter-bg);
+    --file-gutter-del-bg: var(--diff-del-gutter-bg);
+    --file-header-padding: 0 12px;
+    --file-label-font: var(--font-sans);
+    --thread-line-indent: 0px;
+    --thread-line-split-indent: 0px;
+    --diff-card-estimate-chrome-height: 46px;
+
+    /* --- Треды --- */
+    --thread-font: var(--font-sans);
+    --thread-text-size: var(--font-size-ui);
+    --thread-line-height: var(--line-height-body);
+    --thread-meta-font: var(--font-sans);
+    --thread-meta-size: var(--font-size-secondary);
+    --thread-chip-size: var(--font-size-secondary);
+    --thread-issue-border: var(--error-border);
+    --thread-issue-bg: var(--error-surface);
+    --thread-issue-text: var(--error-text);
+    --thread-draft-border: var(--accent-border);
+    --thread-draft-bg: var(--accent-surface);
+    --thread-draft-text: var(--accent-text);
+    --thread-line-shadow: none;
+    --thread-surface: var(--surface-diff-card);
+    --thread-card-indent: 62px;
+    --thread-row-indent: 33px;
+    --thread-row-padding: 8px 12px;
+    --thread-avatar-size: 24px;
+
+    /* --- Радиусы --- */
+    --radius-rule: 2px;
+    --radius-mark: 3px;
+    --radius-key: 4px;
+    --radius-badge: 3px;
+    --radius-button: 5px;
+    --radius-input: 5px;
+    --radius-popover: 8px;
+    --radius-card: 5px;
+    --radius-floating: 8px;
+    --radius-panel: 8px;
+
+    /* --- Отступы --- */
+    --space-page: 20px;
+    --space-column: 32px;
+    --space-card: 12px;
+    --space-control: 12px;
+    --space-inner: 10px;
+    --space-inner-tight: 8px;
+    --space-bar-reserve: 180px;
+
+    /* --- Ширины раскладки --- */
+    --width-agent-panel: clamp(392px, 26vw, 560px);
+    --width-file-tree: clamp(280px, 22vw, 420px);
+    --diff-max: 1280px;
+
+    /* --- Тени --- */
+    --shadow-line-comment: 0 1px 4px rgba(0, 0, 0, 0.45);
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-menu: 0 16px 40px rgba(0, 0, 0, 0.6);
+    --shadow-floating: 0 16px 44px rgba(0, 0, 0, 0.6);
+    --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.65);
+    --shadow-pr-comments: 0 18px 50px rgba(0, 0, 0, 0.55);
+    --shadow-tour-card: 0 20px 52px rgba(0, 0, 0, 0.62);
+    --shadow-tour-ring: 0 0 0 3px rgba(127, 140, 255, 0.13), 0 0 26px rgba(127, 140, 255, 0.16);
+    --pr-comments-list-fade: linear-gradient(180deg, rgba(45, 44, 51, 0) 0%, #2d2c33 92%);
+
+    /* --- Движение --- */
+    --motion-hover: 90ms;
+    --motion-hover-ease: ease-out;
+    --motion-spin: 0.8s;
+    --motion-shimmer: 1.6s;
+    --motion-caret: 1s;
+    --motion-jump: 320ms;
+    --motion-jump-ease: cubic-bezier(0.65, 0, 0.35, 1);
+    --motion-flash: 900ms;
+}
+
+/* Светлая палитра Arcanum: источники и адаптации в docs/design/arcanum.md.
+ * Полный набор токенов изолирует вложенные темы галереи.
+ */
+:root[data-theme='arcanum-light'],
+[data-theme='arcanum-light'] {
+    color-scheme: light;
+
+    /* --- Поверхности --- */
+    --surface-app: #ffffff;
+    --surface-panel: #ffffff;
+    --surface-panel-deep: #fafafa;
+    --surface-diff-card: #ffffff;
+    --surface-card-header: #f2f2f2;
+    --surface-input: #ffffff;
+    --surface-chip: #fafafa;
+    --surface-control: #f2f2f2;
+    --surface-raised: #ffffff;
+    --surface-popover: #ffffff;
+    --surface-selected: #f2f2f2;
+    --surface-offline-banner: #fafafa;
+    --surface-command: #ffffff;
+    --ownership-mine-surface: rgba(59, 201, 53, 0.15);
+    --surface-digest-footer: #ffe6e6;
+    --overlay-dialog: rgba(0, 0, 0, 0.4);
+    --surface-toolbar: rgba(255, 255, 255, 0.96);
+    --pr-comments-overlay: rgba(0, 0, 0, 0.4);
+    --pr-comments-draft-surface: rgba(255, 219, 77, 0.1);
+    --comment-edit-surface: var(--accent-surface);
+    --pr-comments-published-chip-surface: #f2f2f2;
+    --comment-edit-chip-surface: var(--accent-surface-alt);
+    --pr-comments-delete-surface: var(--error-surface);
+    --surface-code-inset: #fafafa;
+    --surface-code-inline: #f2f2f2;
+
+    /* --- Границы --- */
+    --border-hairline: #e5e5e5;
+    --border-hairline-strong: #d9d9d9;
+    --border-hairline-soft: #e5e5e5;
+    --border-standard: #d9d9d9;
+    --border-control: #cccccc;
+    --border-chip: #cccccc;
+    --border-divider: #d9d9d9;
+    --border-strong: #cccccc;
+    --border-strong-lifted: #b3b3b3;
+    --ownership-mine-border: rgba(59, 201, 53, 0.3);
+    --border-raised-bar: #cccccc;
+    --border-raised-dialog: #cccccc;
+    --border-raised-popover: #b3b3b3;
+    --pr-comments-draft-border: rgba(255, 219, 77, 0.3);
+    --comment-edit-border: var(--accent-border);
+    --pr-comments-delete-border: var(--error-border);
+    --pr-comments-editor-border: #b3b3b3;
+
+    /* --- Текст --- */
+    --text-primary: #262626;
+    --text-primary-soft: #262626;
+    --text-secondary: #595959;
+    --text-secondary-dim: #595959;
+    --text-body: #262626;
+    --text-muted: #666666;
+    --text-muted-dim: #666666;
+    --text-link-muted: #666666;
+    --text-dim: #666666;
+    --text-dim-strong: #595959;
+    --text-gutter: #595959;
+    --pr-comments-published-chip-text: #262626;
+    --comment-edit-chip-text: var(--accent-text);
+    --pr-comments-body-text: #262626;
+    --chat-body-text: #262626;
+    --pr-comments-note-icon: #6c603b;
+
+    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/SPEC-elements.md §1.2) --- */
+    --accent: #4768c2;
+    --accent-hover: #3f5799;
+    --accent-hover-strong: #384670;
+    --accent-pressed: #3c4f85;
+    --accent-ink: #ffffff;
+    --accent-text: #3f5799;
+    --accent-text-soft: #3f5799;
+    --accent-text-bright: #384670;
+    --accent-text-queued: #595959;
+    --accent-surface: #eef3ff;
+    --accent-surface-alt: #e5ecff;
+    --accent-border: #cbdaff;
+    --accent-selection: rgba(82, 130, 255, 0.15);
+    --accent-text-selection: rgba(82, 130, 255, 0.3);
+    --surface-thread-line: rgba(82, 130, 255, 0.1);
+
+    /* --- Внимание: высокий тир, протухший маршрут, черновики, аудит --- */
+    --attention: #ffdb4d;
+    --attention-text: #6c603b;
+    --attention-text-dim: #6c603b;
+    --attention-text-soft: #262626;
+    --attention-surface: rgba(255, 219, 77, 0.2);
+    --attention-surface-alt: rgba(255, 219, 77, 0.1);
+    --attention-border: rgba(255, 219, 77, 0.5);
+    --attention-border-alt: rgba(255, 219, 77, 0.3);
+    --attention-border-strong: #c0a645;
+    --attention-button: #ffdb4d;
+    --attention-button-ink: #262626;
+    --attention-button-hover: #ffdf5f;
+    --attention-button-pressed: #eac94a;
+    --attention-label: #6c603b;
+    --attention-body: #262626;
+    --draft-field-surface: rgba(255, 219, 77, 0.1);
+    --draft-saved: #347b34;
+    --tag-pci-border: rgba(255, 219, 77, 0.5);
+
+    /* --- Онбординг (docs/design/README.md §16): карточка тура и пунктир под «Пропустить» --- */
+    --surface-tour-card: #ffffff;
+    --tour-skip-underline: #999999;
+
+    /* --- Дифф и статусы --- */
+    --diff-add-bg: rgba(151, 234, 151, 0.3);
+    --diff-add-text: #347b34;
+    --diff-add-text-strong: #336b34;
+    --diff-add-gutter: #595959;
+    --diff-del-bg: rgba(251, 175, 175, 0.3);
+    --diff-del-text: #c0100f;
+    --diff-del-text-strong: #961819;
+    --diff-del-gutter: #595959;
+    --diff-add-gutter-bg: #cbf5cb;
+    --diff-del-gutter-bg: #fdd7d7;
+    --read-fill: #347b34;
+    --viewed-surface: rgba(59, 201, 53, 0.15);
+    --viewed-border: rgba(59, 201, 53, 0.3);
+    --viewed-hover-surface: rgba(59, 201, 53, 0.2);
+    --viewed-hover-border: #347b34;
+    --success-surface: rgba(59, 201, 53, 0.2);
+    --success-text: #336b34;
+    --read-fill-hover: rgba(59, 201, 53, 0.25);
+    --read-border: #347b34;
+    --error: #c0100f;
+    --error-text: #961819;
+    --error-surface: #ffe6e6;
+    --error-border: #ffb4b3;
+
+    /* --- Дифф-рендер: строки, подсветка, чекбоксы
+       (docs/design/README.md §1, docs/design/SPEC-elements.md §2.12, §2.14) --- */
+    --code-text: #000000;
+    --code-text-del: #000000;
+    --surface-diff-empty: #ffffff;
+    --surface-diff-gap: #f1f8ff;
+    --diff-add-word: rgba(151, 234, 151, 0.6);
+    --diff-del-word: rgba(251, 175, 175, 0.6);
+    --diff-trailing-space: rgba(255, 4, 0, 0.2);
+    --row-hover: rgba(0, 0, 0, 0.05);
+    --checkbox-border: #999999;
+    --read-box-border: #b3b3b3;
+    --stop-mark-text: #595959;
+    --stop-mark-border: #e5e5e5;
+    --border-button-outline: #999999;
+    --border-button-outline-hover: #404040;
+
+    /* --- Подсветка синтаксиса (docs/design/README.md §1) --- */
+    --syntax-keyword: #af00db;
+    --syntax-string: #a31515;
+    --syntax-comment: #008000;
+    --syntax-decorator: #267f99;
+    --syntax-property: #0451a5;
+    --syntax-number: #098658;
+    --syntax-variable: #001080;
+    --syntax-type: #267f99;
+    --syntax-function: #795e26;
+    --syntax-comment-font-style: normal;
+
+    /* --- Нейтральные заливки тиров --- */
+    --tier-medium: #737373;
+    --tier-low: #cccccc;
+    --tier-unfilled: #e5e5e5;
+
+    /* --- Штриховка «не объяснено» --- */
+    --hatch: repeating-linear-gradient(115deg, #b3b3b3 0 3px, #f2f2f2 3px 6px);
+    --hatch-sidebar: repeating-linear-gradient(115deg, #cccccc 0 3px, #f2f2f2 3px 6px);
+    --hatch-footer: repeating-linear-gradient(115deg, #e5e5e5 0 3px, #fafafa 3px 6px);
+
+    /* --- Состояния контролов (docs/design/SPEC-elements.md §1.1) --- */
+    --hover-selected: #e5e5e5;
+    --surface-hover: #f2f2f2;
+    --surface-pressed: #e5e5e5;
+    --surface-pressed-deep: #d9d9d9;
+    --surface-button: #ffffff;
+    --border-button: #b3b3b3;
+    --text-button: #262626;
+    --surface-button-hover: #f2f2f2;
+    --surface-button-pressed: #e5e5e5;
+    --shadow-button: 0 1px 2px rgba(0, 0, 0, 0.1);
+    --surface-danger-button: #ffe6e6;
+    --surface-danger-button-hover: #ffd9d9;
+    --surface-danger-button-pressed: #ffcdcc;
+    --border-danger-button: #ffb4b3;
+    --text-danger-button: #6c2024;
+    --border-switch-track: #cccccc;
+    --surface-segment-active: #ffffff;
+    --text-on-segment-active: #262626;
+    --shadow-segment-active: 0 1px 2px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    --surface-chip-active: #e5ecff;
+    --border-chip-active: #cbdaff;
+    --text-chip-active: #3f5799;
+    --surface-chip-active-hover: #dce6ff;
+    --surface-chip-active-pressed: #cbdaff;
+    --focus-ring-color: #5282ff;
+    --text-on-selected: #262626;
+    --disabled-opacity: 0.45;
+    --text-separator: #666666;
+
+    /* --- Типографика --- */
+    --font-sans: 'YS Text', 'Helvetica Neue', Arial, Helvetica, sans-serif;
+    --font-mono: Menlo, Monaco, Consolas, 'Liberation Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', 'Courier New', Courier, monospace;
+    --native-code-font: var(--font-mono);
+    --font-smoothing: auto;
+    --font-size-pr-title-overview: 1.5rem;
+    --font-size-pr-title: 1.375rem;
+    --font-size-screen-title: 1.1875rem;
+    --font-size-stop-title-high: 1.0625rem;
+    --font-size-stop-title: 0.9688rem;
+    --font-size-section-title: 0.9688rem;
+    --font-size-input: 0.875rem;
+    --font-size-body: 0.875rem;
+    --font-size-ui: 0.875rem;
+    --font-size-secondary: 0.8125rem;
+    --font-size-control: 0.8125rem;
+    --font-size-meta: 0.8125rem;
+    --font-size-gutter: 0.75rem;
+    --font-size-badge: 0.6875rem;
+    --font-size-scope: 0.6875rem;
+    --font-size-tag: 0.6875rem;
+    --font-size-stop-mark: 0.625rem;
+    --font-size-avatar-glyph: 0.5625rem;
+    --font-size-close-glyph: 1.125rem;
+    --font-size-code: 0.75rem;
+    --line-height-body: 1.5;
+    --line-height-code: 17px;
+
+    /* --- Дерево файлов --- */
+    --tree-row-line-height: 22px;
+    --tree-dir-weight: 400;
+    --tree-dir-color: var(--text-primary);
+    --tree-label-size: var(--font-size-ui);
+    --tree-row-height: 22px;
+    --tree-label-font: var(--font-sans);
+    --tree-label-color: var(--text-primary);
+    --tree-read-color: #767676;
+    --tree-indent-step: 18px;
+
+    /* --- Карточка диффа --- */
+    --file-name-size: var(--font-size-ui);
+    --file-path-size: var(--font-size-ui);
+    --file-header-height: 32px;
+    --file-gutter-add-bg: var(--diff-add-gutter-bg);
+    --file-gutter-del-bg: var(--diff-del-gutter-bg);
+    --file-header-padding: 0 12px;
+    --file-label-font: var(--font-sans);
+    --thread-line-indent: 0px;
+    --thread-line-split-indent: 0px;
+    --diff-card-estimate-chrome-height: 46px;
+
+    /* --- Треды --- */
+    --thread-font: var(--font-sans);
+    --thread-text-size: var(--font-size-ui);
+    --thread-line-height: var(--line-height-body);
+    --thread-meta-font: var(--font-sans);
+    --thread-meta-size: var(--font-size-secondary);
+    --thread-chip-size: var(--font-size-secondary);
+    --thread-issue-border: var(--error-border);
+    --thread-issue-bg: var(--error-surface);
+    --thread-issue-text: var(--error-text);
+    --thread-draft-border: var(--accent-border);
+    --thread-draft-bg: var(--accent-surface);
+    --thread-draft-text: var(--accent-text);
+    --thread-line-shadow: none;
+    --thread-surface: var(--surface-diff-card);
+    --thread-card-indent: 62px;
+    --thread-row-indent: 33px;
+    --thread-row-padding: 8px 12px;
+    --thread-avatar-size: 24px;
+
+    /* --- Радиусы --- */
+    --radius-rule: 2px;
+    --radius-mark: 3px;
+    --radius-key: 4px;
+    --radius-badge: 3px;
+    --radius-button: 5px;
+    --radius-input: 5px;
+    --radius-popover: 8px;
+    --radius-card: 5px;
+    --radius-floating: 8px;
+    --radius-panel: 8px;
+
+    /* --- Отступы --- */
+    --space-page: 20px;
+    --space-column: 32px;
+    --space-card: 12px;
+    --space-control: 12px;
+    --space-inner: 10px;
+    --space-inner-tight: 8px;
+    --space-bar-reserve: 180px;
+
+    /* --- Ширины раскладки --- */
+    --width-agent-panel: clamp(392px, 26vw, 560px);
+    --width-file-tree: clamp(280px, 22vw, 420px);
+    --diff-max: 1280px;
+
+    /* --- Тени --- */
+    --shadow-line-comment: 0 1px 4px rgba(0, 0, 0, 0.1);
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.15);
+    --shadow-menu: 0 16px 40px rgba(0, 0, 0, 0.15);
+    --shadow-floating: 0 16px 44px rgba(0, 0, 0, 0.15);
+    --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.2);
+    --shadow-pr-comments: 0 18px 50px rgba(0, 0, 0, 0.15);
+    --shadow-tour-card: 0 20px 52px rgba(0, 0, 0, 0.2);
+    --shadow-tour-ring: 0 0 0 3px rgba(82, 130, 255, 0.15), 0 0 26px rgba(82, 130, 255, 0.2);
+    --pr-comments-list-fade: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 92%);
+
+    /* --- Движение --- */
+    --motion-hover: 90ms;
+    --motion-hover-ease: ease-out;
+    --motion-spin: 0.8s;
+    --motion-shimmer: 1.6s;
+    --motion-caret: 1s;
+    --motion-jump: 320ms;
+    --motion-jump-ease: cubic-bezier(0.65, 0, 0.35, 1);
+    --motion-flash: 900ms;
+}

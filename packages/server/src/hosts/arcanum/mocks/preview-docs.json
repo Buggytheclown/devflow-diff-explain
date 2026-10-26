@@ -1,0 +1,87 @@
+{
+    "a_yaml": {
+        "arcanum": {
+            "review": [
+                {
+                    "required": { "value": true, "is_active": true },
+                    "rules": [
+                        {
+                            "assignee_count": { "value": 1, "is_active": true },
+                            "ships_required": { "value": 1, "is_active": true },
+                            "rule_assignees": {
+                                "is_active": true,
+                                "value": {
+                                    "alias": "docs-owner",
+                                    "rules": ["example:example_docs_owner"],
+                                    "members_by_rule": {
+                                        "example:example_docs_owner": ["carol"]
+                                    },
+                                    "subpaths_filter": ["**, !huge.md"],
+                                    "authors_filter": [],
+                                    "branches_filter": [],
+                                    "members_by_author": {},
+                                    "reviewers": [{ "login": "carol" }]
+                                }
+                            }
+                        }
+                    ],
+                    "skip_review_for": { "value": { "rules": [] }, "is_active": false },
+                    "config_path": {
+                        "path": "/examples/ui/docs/a.yaml",
+                        "commit_id": "6589b540d27df17e0ce3a9dc0b569a1c2f0999ac"
+                    },
+                    "is_active": true
+                },
+                {
+                    "required": { "value": true, "is_active": true },
+                    "rules": [
+                        {
+                            "assignee_count": { "value": 0, "is_active": true },
+                            "ships_required": { "value": 1, "is_active": true },
+                            "rule_assignees": {
+                                "is_active": true,
+                                "value": {
+                                    "alias": "frontend-infra",
+                                    "rules": ["example:example_frontend_monorepo_infra"],
+                                    "members_by_rule": {
+                                        "example:example_frontend_monorepo_infra": ["alice"]
+                                    },
+                                    "subpaths_filter": ["docs/added.md"],
+                                    "authors_filter": [],
+                                    "branches_filter": [],
+                                    "members_by_author": {},
+                                    "reviewers": [{ "login": "alice" }]
+                                }
+                            }
+                        },
+                        {
+                            "assignee_count": { "value": 0, "is_active": true },
+                            "ships_required": { "value": 1, "is_active": true },
+                            "rule_assignees": {
+                                "is_active": false,
+                                "value": {
+                                    "alias": "frontend-everything",
+                                    "rules": ["example:example_frontend_monorepo_infra"],
+                                    "members_by_rule": {
+                                        "example:example_frontend_monorepo_infra": ["alice"]
+                                    },
+                                    "subpaths_filter": ["**"],
+                                    "authors_filter": [],
+                                    "branches_filter": [],
+                                    "members_by_author": {},
+                                    "reviewers": [{ "login": "alice" }]
+                                }
+                            }
+                        }
+                    ],
+                    "skip_review_for": { "value": { "rules": [] }, "is_active": false },
+                    "config_path": {
+                        "path": "/examples/ui/a.yaml",
+                        "commit_id": "6589b540d27df17e0ce3a9dc0b569a1c2f0999ac"
+                    },
+                    "is_active": true
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,132 @@
+[
+  {
+    "id": "PRRT_thread1",
+    "isResolved": false,
+    "isOutdated": false,
+    "resolvedBy": null,
+    "path": "src/service.ts",
+    "line": 3,
+    "startLine": null,
+    "diffSide": "RIGHT",
+    "startDiffSide": null,
+    "originalLine": 3,
+    "originalStartLine": null,
+    "subjectType": "LINE",
+    "comments": [
+      {
+        "id": "PRRC_1",
+        "databaseId": 1001,
+        "body": "Почему 9090?",
+        "createdAt": "2026-09-20T09:00:00Z",
+        "lastEditedAt": null,
+        "author": {
+          "login": "bob",
+          "__typename": "User",
+          "name": "Bob"
+        },
+        "reviewId": "PRR_published"
+      },
+      {
+        "id": "PRRC_2",
+        "databaseId": 1002,
+        "body": "Прежний порт занят.",
+        "createdAt": "2026-09-20T09:05:00Z",
+        "lastEditedAt": null,
+        "author": {
+          "login": "carol",
+          "__typename": "User",
+          "name": "Carol Danvers"
+        },
+        "reviewId": "PRR_published"
+      }
+    ]
+  },
+  {
+    "id": "PRRT_thread2",
+    "isResolved": true,
+    "isOutdated": true,
+    "resolvedBy": {
+      "login": "bob"
+    },
+    "path": "src/legacy.ts",
+    "line": null,
+    "startLine": null,
+    "diffSide": "LEFT",
+    "startDiffSide": null,
+    "originalLine": 1,
+    "originalStartLine": null,
+    "subjectType": "LINE",
+    "comments": [
+      {
+        "id": "PRRC_3",
+        "databaseId": 1003,
+        "body": "Удаление согласовано.",
+        "createdAt": "2026-09-20T09:10:00Z",
+        "lastEditedAt": "2026-09-20T09:11:00Z",
+        "author": {
+          "login": "review-bot[bot]",
+          "__typename": "Bot"
+        },
+        "reviewId": "PRR_published"
+      }
+    ]
+  },
+  {
+    "id": "PRRT_thread3",
+    "isResolved": false,
+    "isOutdated": false,
+    "resolvedBy": null,
+    "path": "src/service.ts",
+    "line": 4,
+    "startLine": 2,
+    "diffSide": "RIGHT",
+    "startDiffSide": "RIGHT",
+    "originalLine": 4,
+    "originalStartLine": 2,
+    "subjectType": "LINE",
+    "comments": [
+      {
+        "id": "PRRC_4",
+        "databaseId": 1004,
+        "body": "Этот блок стоит вынести.",
+        "createdAt": "2026-09-20T09:20:00Z",
+        "lastEditedAt": null,
+        "author": {
+          "login": "bob",
+          "__typename": "User",
+          "name": "Bob"
+        },
+        "reviewId": "PRR_published"
+      }
+    ]
+  },
+  {
+    "id": "PRRT_thread4",
+    "isResolved": false,
+    "isOutdated": false,
+    "resolvedBy": null,
+    "path": "docs/readme.md",
+    "line": null,
+    "startLine": null,
+    "diffSide": "RIGHT",
+    "startDiffSide": null,
+    "originalLine": null,
+    "originalStartLine": null,
+    "subjectType": "FILE",
+    "comments": [
+      {
+        "id": "PRRC_5",
+        "databaseId": 1005,
+        "body": "Комментарий к файлу целиком.",
+        "createdAt": "2026-09-20T09:30:00Z",
+        "lastEditedAt": null,
+        "author": {
+          "login": "alice",
+          "__typename": "User",
+          "name": "Alice"
+        },
+        "reviewId": "PRR_published"
+      }
+    ]
+  }
+]

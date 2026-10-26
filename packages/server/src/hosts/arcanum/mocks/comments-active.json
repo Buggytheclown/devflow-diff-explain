@@ -1,0 +1,93 @@
+[
+    {
+        "id": 501,
+        "user": { "name": "alice" },
+        "content": "Пустая колонка тоже колонка — точно фильтруем?",
+        "created_at": "2026-08-20T11:00:00.000000Z",
+        "published_at": "2026-08-20T11:00:00.000000Z",
+        "issue_status": "open",
+        "anchor": {
+            "review_request": {
+                "id": 4242,
+                "diff": {
+                    "diff_set_xid": "9001",
+                    "file": {
+                        "entry_id": "eid:file-index",
+                        "path": "examples/ui/packages/grid/src/index.ts",
+                        "position": { "side": "new", "line": 3, "size": 1 }
+                    }
+                }
+            }
+        }
+    },
+    {
+        "id": 502,
+        "user": { "name": "robot-example-reviewer" },
+        "review_system": { "slug": "example-review", "display_name": "Example AI Review", "is_ai": true },
+        "content": "Ширина 0 бывает у скрытых колонок.",
+        "created_at": "2026-08-20T11:05:00.000000Z",
+        "published_at": "2026-08-20T11:05:00.000000Z",
+        "reply_to_id": 501
+    },
+    {
+        "id": 503,
+        "user": { "name": "carol" },
+        "content": "Тогда так и оставим.",
+        "created_at": "2026-08-20T11:06:00.000000Z",
+        "published_at": "2026-08-20T11:06:00.000000Z",
+        "reply_to_id": 501
+    },
+    {
+        "id": 601,
+        "user": { "name": "bob" },
+        "content": "Тут был баг, поправили.",
+        "created_at": "2026-08-20T12:00:00.000000Z",
+        "published_at": "2026-08-20T12:00:00.000000Z",
+        "edited_at": "2026-08-20T12:30:00.000000Z",
+        "issue_status": "resolved",
+        "status_updated_by": { "name": "carol" },
+        "anchor": {
+            "review_request": {
+                "id": 4242,
+                "diff": {
+                    "diff_set_xid": "9001",
+                    "file": {
+                        "entry_id": "eid:file-moved",
+                        "path": "examples/ui/docs/moved.md",
+                        "position": { "side": "new", "line": 4, "size": 2 }
+                    }
+                }
+            }
+        }
+    },
+    {
+        "id": 602,
+        "user": { "name": "bob" },
+        "content": "Не будем чинить в этом PR.",
+        "created_at": "2026-08-20T12:10:00.000000Z",
+        "published_at": "2026-08-20T12:10:00.000000Z",
+        "issue_status": "dropped",
+        "status_updated_by": { "name": "bob" },
+        "anchor": {
+            "review_request": {
+                "id": 4242,
+                "diff": {
+                    "diff_set_xid": "9001",
+                    "file": {
+                        "entry_id": "eid:file-index",
+                        "path": "examples/ui/packages/grid/src/index.ts",
+                        "position": { "side": "old", "line": 2, "size": 1 }
+                    }
+                }
+            }
+        }
+    },
+    {
+        "id": 802,
+        "user": { "name": "bob" },
+        "content": "Ответ на удалённый — осиротел.",
+        "created_at": "2026-08-20T13:10:00.000000Z",
+        "published_at": "2026-08-20T13:10:00.000000Z",
+        "reply_to_id": 801
+    }
+]

@@ -1,0 +1,28 @@
+/* Баннер капа генерации — docs/design/SPEC-elements.md §4.1, та же янтарная группа токенов,
+   что у остальных баннеров. */
+
+.generation-cap-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 18px var(--space-page) 0;
+    padding: 11px var(--space-control);
+    border: 1px solid var(--attention-border-alt);
+    border-radius: var(--radius-card);
+    background: var(--attention-surface-alt);
+    font-size: var(--font-size-ui);
+    color: var(--attention-text-soft);
+}
+
+.generation-cap-banner__dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--attention);
+}
+
+.generation-cap-banner__text {
+    flex: 1;
+    min-width: 0;
+}

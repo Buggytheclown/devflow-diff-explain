@@ -1,0 +1,44 @@
+{
+    "03b412b02312d0c8bcb833ac4a8350594d4bc1c8": {
+        "text": "export function columns(grid: Grid): number {\n    return grid.length;\n}\n"
+    },
+    "c9ec99eb2e1a286c1319bb8ec5cd2de6f740fc62": {
+        "text": "export function columns(grid: Grid): number {\n    // Пустые колонки в счёт не идут.\n    return grid.filter((column) => column.width > 0).length;\n}\n"
+    },
+    "ccc1112223334445556667778889990001112223": {
+        "text": "export const legacy = true;\nexport const legacyColumns = 3;\n"
+    },
+    "1111111222222233333334444444555555566666": {
+        "text": "# Grid\n\nКолонки считаются по длине массива.\n"
+    },
+    "7777777888888899999990000000111111122222": {
+        "text": "# Grid\n\nКолонки считаются по ненулевой ширине.\n"
+    },
+    "2222222333333344444445555555666666677777": {
+        "text": "# Колонки\n\n"
+    },
+    "9999999000000011111112222222333333344444": {
+        "text": "# Ширина\n\nШирина колонки — число.\n"
+    },
+    "ddd1112223334445556667778889990001112223": {
+        "base64": "iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAYAAABU1PscAAAAOklEQVR42u3PUQkAMAhAQaMvgPms474NIAx2D16Ai5A0yjr98gAAAAAAAAAAAAAAAAAAAAAAOwDpsy6QMcxX9xvYOgAAAABJRU5ErkJggg=="
+    },
+    "eee1112223334445556667778889990001112223": {
+        "base64": "iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAYAAABU1PscAAAAM0lEQVR42u3PQQkAAAgAMQOazNIaQj/CBhfgIgCAx7qyLzNgwIABAwYMGDBgwMCfAYCVASMKiS40cqcGAAAAAElFTkSuQmCC"
+    },
+    "aaa0001112223334445556667778889990001112": {
+        "base64": "iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAYAAABU1PscAAAANElEQVR42u3PAQkAMAgAQQOacGW1hAyFO/gAHwGwUr6qyQwYMGDAgAEDBgwYMHBnAAD4oAGZs50uQz8MsgAAAABJRU5ErkJggg=="
+    },
+    "bbb0001112223334445556667778889990001112": {
+        "base64": "iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAYAAABU1PscAAAAM0lEQVR42u3PQQkAAAgAMQOazNIaQj/CBhfgIgCAx7qyLzNgwIABAwYMGDBgwMCfAYCVASMKiS40cqcGAAAAAElFTkSuQmCC"
+    },
+    "fff0001112223334445556667778889990001112": {
+        "base64": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjNGM5YWZmIiAvPjwvc3ZnPgo="
+    },
+    "1110001112223334445556667778889990001112": {
+        "base64": "iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAYAAABU1PscAAAAOklEQVR42u3PUQkAMAhAQaMvgPms474NIAx2D16Ai5A0yjr98gAAAAAAAAAAAAAAAAAAAAAAOwDpsy6QMcxX9xvYOgAAAABJRU5ErkJggg=="
+    },
+    "ccc0001112223334445556667778889990001112": {
+        "base64": "iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAYAAABU1PscAAAAOklEQVR42u3PUQkAMAhAQaMvgPms474NIAx2D16Ai5A0yjr98gAAAAAAAAAAAAAAAAAAAAAAOwDpsy6QMcxX9xvYOgAAAABJRU5ErkJggg=="
+    }
+}

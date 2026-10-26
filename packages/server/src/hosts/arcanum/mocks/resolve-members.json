@@ -1,0 +1,6 @@
+{
+    "members_by_role": {
+        "example:example_modules_developer": [{ "login": "bob" }, { "login": "alice" }],
+        "example:example_docs_owner": [{ "login": "carol" }]
+    }
+}

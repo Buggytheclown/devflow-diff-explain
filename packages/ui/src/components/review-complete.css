@@ -1,0 +1,110 @@
+/* Сессионный экран Review complete — docs/design/README.md §13. */
+
+.review-complete {
+    display: grid;
+    place-items: center;
+    padding: 40px var(--space-page);
+}
+
+.review-complete__card {
+    width: min(620px, 100%);
+    overflow: hidden;
+    border: 1px solid var(--border-standard);
+    border-radius: var(--radius-card);
+    background: var(--surface-panel-deep);
+}
+
+.review-complete__header {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    padding: 15px 17px;
+    border-bottom: 1px solid var(--border-standard);
+}
+
+.review-complete__check {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--success-surface);
+    color: var(--diff-add-text-strong);
+}
+
+.review-complete__header h1 {
+    margin: 0;
+    color: var(--text-primary-soft);
+    font-size: var(--font-size-screen-title);
+    font-weight: 600;
+}
+
+.review-complete__provenance {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    color: var(--text-dim);
+}
+
+.review-complete__delivery {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-inner);
+    padding: 13px 17px;
+    border-bottom: 1px solid var(--border-hairline-strong);
+    color: var(--text-secondary);
+    font-size: var(--font-size-ui);
+}
+
+.review-complete__delivery span:last-child {
+    color: var(--diff-add-text);
+}
+
+.review-complete__counters {
+    margin: 0;
+    padding: 5px 17px;
+}
+
+.review-complete__counter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-inner);
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border-hairline-soft);
+}
+
+.review-complete__counter:last-child {
+    border-bottom: 0;
+}
+
+.review-complete__counter dt {
+    color: var(--text-muted);
+    font-size: var(--font-size-secondary);
+}
+
+.review-complete__counter dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-control);
+    color: var(--text-secondary);
+    text-align: right;
+}
+
+.review-complete__open-threads {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-inner);
+    padding: 11px 17px;
+    border-top: 1px solid var(--attention-border-alt);
+    background: var(--attention-surface-alt);
+    color: var(--attention-text);
+    font-size: var(--font-size-secondary);
+}
+
+.review-complete__actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 13px 17px 15px;
+    border-top: 1px solid var(--border-standard);
+}

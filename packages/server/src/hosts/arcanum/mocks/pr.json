@@ -1,0 +1,16 @@
+{
+    "id": 4242,
+    "url": "https://a.yandex-team.ru/review/4242",
+    "summary": "EXAMPLE-1: grid — считаем колонки честно",
+    "author": { "name": "carol" },
+    "state": "open",
+    "common_status": "review_in_progress",
+    "updated_at": "2026-08-20T20:37:28.641698Z",
+    "caps": { "disable_sticky_ships": false },
+    "vcs": {
+        "from_branch": "users/alice/EXAMPLE-1",
+        "to_branch": "trunk",
+        "arc_repo_name": "arcadia"
+    },
+    "active_diff_set": { "id": 9001 }
+}

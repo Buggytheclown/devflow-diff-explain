@@ -1,0 +1,16 @@
+[
+  {
+    "id": "PRR_published",
+    "state": "COMMENTED",
+    "body": "Смотрел бегло, вопросы внутри.",
+    "createdAt": "2026-09-20T09:00:00Z",
+    "lastEditedAt": null,
+    "submittedAt": "2026-09-20T09:35:00Z",
+    "commitOid": "4f1c9a1b2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f70",
+    "author": {
+      "login": "bob",
+      "__typename": "User",
+      "name": "Bob"
+    }
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "name": "@sherpa/e2e",
+  "version": "0.0.0",
+  "description": "Playwright-спеки Шерпы поверх собранных артефактов",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --no-error-on-unmatched-pattern"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@sherpa/cli": "workspace:*",
+    "@sherpa/fixtures": "workspace:*"
+  }
+}

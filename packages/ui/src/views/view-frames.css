@@ -1,0 +1,388 @@
+/* Негенеративные состояния Overview и Route (docs/design/README.md §6, docs/design/SPEC-elements.md §4.4). */
+
+.view-frame,
+.route-empty,
+.overview {
+    padding: 26px var(--space-page) 30px;
+}
+
+/*
+ * Обзор — единственный контент с потолком: две колонки текста, а не код. Статусные кадры
+ * Маршрута и Полного диффа его не берут: там одна карточка, и она центрируется по окну.
+ */
+.overview {
+    max-width: 1700px;
+    padding-bottom: var(--space-bar-reserve);
+}
+
+.view-frame__title {
+    margin: 0;
+    font-size: var(--font-size-screen-title);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.route-empty {
+    display: grid;
+    place-items: start center;
+}
+
+.invitation-card {
+    width: min(620px, 100%);
+    margin-top: 58px;
+    padding: 24px;
+    border: 1px solid var(--border-standard);
+    border-radius: var(--radius-panel);
+    background: var(--surface-panel);
+}
+
+.invitation-card__eyebrow {
+    margin-bottom: var(--space-inner-tight);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.invitation-card__title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-screen-title);
+    font-weight: 600;
+}
+
+.invitation-card__text {
+    margin: var(--space-inner) 0 var(--space-control);
+    color: var(--text-body);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+}
+
+.invitation-card__primary {
+    margin-top: 18px;
+    padding: 0 var(--space-control);
+    font-weight: 600;
+}
+
+/* Шапка PR идёт над сеткой на всю ширину вью — прототип, экран Overview. */
+.overview__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 356px;
+    gap: var(--space-card);
+    align-items: start;
+    margin-top: 24px;
+}
+
+.overview__main,
+.overview__rail {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-card);
+}
+
+.overview-card {
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--border-standard);
+    border-radius: var(--radius-card);
+    background: var(--surface-panel);
+}
+
+.overview-card__title {
+    margin: 0 0 var(--space-control);
+    color: var(--text-primary-soft);
+    font-size: var(--font-size-ui);
+    font-weight: 600;
+}
+
+.overview-card__lead {
+    margin: 0 0 5px;
+    color: var(--text-secondary);
+    font-size: var(--font-size-ui);
+    font-weight: 500;
+}
+
+.overview-card__text,
+.overview-card__empty {
+    margin: 0 0 var(--space-control);
+    color: var(--text-muted);
+    font-size: var(--font-size-secondary);
+    line-height: var(--line-height-body);
+}
+
+.overview-card__empty:last-child {
+    margin-bottom: 0;
+}
+
+/* --- Карточка «Кратко»: провенанс и скелетон фазы чтения (docs/design/README.md §6, docs/design/SPEC-elements.md §3) --- */
+
+.summary-card__provenance {
+    margin: var(--space-inner) 0 0;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+}
+
+/* Высота блока фиксирована строками одной высоты: приземление текста не двигает раскладку. */
+.summary-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner);
+}
+
+.summary-skeleton__line {
+    height: 10px;
+    border-radius: var(--radius-mark);
+    background: var(--tier-low);
+    animation: summary-skeleton-pulse var(--motion-shimmer) ease-in-out infinite;
+}
+
+.summary-skeleton__line.is-wide {
+    width: 100%;
+}
+
+.summary-skeleton__line.is-mid {
+    width: 72%;
+}
+
+.summary-skeleton__line.is-short {
+    width: 44%;
+}
+
+@keyframes summary-skeleton-pulse {
+    0%,
+    100% {
+        opacity: 0.4;
+    }
+
+    50% {
+        opacity: 0.85;
+    }
+}
+
+.ownership-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.ownership-card > .overview-card__title {
+    margin: 0;
+    padding: 12px 16px 0;
+}
+
+.ownership-card__toolbar {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-hairline-strong);
+}
+
+.ownership-card__toolbar-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-inner);
+}
+
+.ownership-card__toolbar .overview-card__title {
+    flex: none;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.ownership-card__header {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ownership-card__toolbar-spacer {
+    min-width: 0;
+    flex: 1;
+}
+
+.ownership-card__note {
+    margin-top: 4px;
+    color: var(--text-dim);
+    font-size: var(--font-size-secondary);
+}
+
+.ownership-segments {
+    display: flex;
+    flex: none;
+    padding: 3px;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-popover);
+    background: var(--surface-control);
+}
+
+.ownership-segments button:disabled {
+    opacity: var(--disabled-opacity);
+    cursor: default;
+}
+
+.ownership-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.ownership-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner);
+    align-items: stretch;
+    padding: 12px 16px;
+    border: 0;
+    border-bottom: 1px solid var(--border-hairline);
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ownership-row:last-child {
+    border-bottom: 0;
+}
+
+.ownership-row:hover {
+    background: var(--surface-raised);
+}
+
+.ownership-row__main {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-inner);
+}
+
+.ownership-row__path {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-control);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ownership-chip {
+    flex: none;
+    padding: 1px 5px;
+    border: 1px solid var(--border-chip);
+    border-radius: var(--radius-key);
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    white-space: nowrap;
+}
+
+.ownership-chip--mine {
+    border-color: var(--ownership-mine-border);
+    background: var(--ownership-mine-surface);
+    color: var(--diff-add-text-strong);
+}
+
+.ownership-chip--other {
+    border-color: var(--border-strong-lifted);
+    color: var(--text-muted);
+}
+
+.ownership-chip--mixed {
+    border-color: var(--attention-border);
+    background: var(--attention-surface);
+    color: var(--attention-text);
+}
+
+.ownership-chip--generated {
+    border-color: var(--border-hairline-strong);
+    color: var(--text-dim);
+}
+
+.ownership-row__spacer {
+    min-width: var(--space-inner);
+    flex: 1;
+}
+
+.ownership-row__stats,
+.ownership-row__add,
+.ownership-row__del {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    white-space: nowrap;
+}
+
+.ownership-row__stats {
+    color: var(--text-dim);
+}
+
+.ownership-row__add {
+    color: var(--diff-add-text);
+}
+
+.ownership-row__del {
+    color: var(--diff-del-text);
+}
+
+.ownership-row__note {
+    overflow: hidden;
+    color: var(--text-muted-dim);
+    font-size: var(--font-size-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.discussion-counts {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-inner-tight);
+    margin-bottom: var(--space-control);
+}
+
+.discussion-count {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-inner);
+    border: 1px solid var(--border-hairline-strong);
+    border-radius: var(--radius-button);
+    background: var(--surface-panel-deep);
+}
+
+.discussion-count strong {
+    color: var(--text-primary-soft);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-section-title);
+}
+
+.discussion-count span {
+    color: var(--text-dim);
+    font-size: var(--font-size-meta);
+}
+
+.overview-card .thread-outside {
+    margin: 0;
+    border-top: 1px solid var(--border-hairline-strong);
+}
+
+@media (max-width: 1099px) {
+    .overview__grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .overview__rail {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .overview__rail > :only-child {
+        grid-column: 1 / -1;
+    }
+}

@@ -1,0 +1,97 @@
+/* Базовый слой: сброс, фон приложения, типографика по умолчанию и общие правила состояний. */
+
+@import './tokens.css';
+@import './fonts.css';
+@import './controls.css';
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    background: var(--surface-app);
+}
+
+body {
+    /* docs/design/README.md, «Fidelity»: макет рассчитан на десктоп ≥1440px, мобильной раскладки в v1 нет.
+       Порог опущен до 1280px под типичный ноутбучный вьюпорт: ниже 1440 раскладка сжимается,
+       горизонтальный скролл начинается только под 1280. */
+    min-width: 1280px;
+    color: var(--text-primary-soft);
+    font-family: var(--font-sans);
+    /* База наследования — основной UI-текст (docs/design/theme.md, «Типографика»): 13px при M,
+       14.6px при L. Абзацы остановок крупнее и берут свой `--font-size-body`. */
+    font-size: var(--font-size-ui);
+    line-height: 1.5;
+    -webkit-font-smoothing: var(--font-smoothing);
+}
+
+::selection {
+    background: var(--accent-text-selection);
+}
+
+a {
+    color: var(--accent-hover);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--accent-hover-strong);
+}
+
+/* Третья ступень лестницы акцента (§5): у `<a>` без класса `ctl--link` её тоже должно быть видно. */
+a:active {
+    color: var(--accent);
+}
+
+button {
+    font: inherit;
+    color: inherit;
+}
+
+/*
+ * Кольцо фокуса только с клавиатуры (docs/design/SPEC-elements.md §1.1): по клику мыши его быть не должно.
+ * Кольцо 2px с зазором 2px от края элемента (docs/design/SPEC-changes-2026-09-20.md §5; внутри
+ * сегмента зазор отрицательный — см. `controls.css`). Зазор даёт `outline-offset`: в отличие от
+ * box-shadow, outline не закрашивает зазор своим цветом (под кольцом видно реальный фон)
+ * и не конфликтует с собственными тенями элемента.
+ */
+:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 2px;
+}
+
+/* Текст только для скринридера: из потока выключен, но остаётся доступным дереву. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* docs/design/SPEC-elements.md §1.1: disabled — приглушение, курсор по умолчанию и `title` с причиной. */
+[disabled],
+[aria-disabled='true'] {
+    opacity: var(--disabled-opacity);
+    cursor: default;
+}
+
+/* Сглаживание применяется на каждой границе темы, включая карточки галереи. */
+:root,
+[data-theme] {
+    -webkit-font-smoothing: var(--font-smoothing);
+}
+
+code,
+pre,
+kbd,
+samp {
+    font-family: var(--native-code-font);
+}

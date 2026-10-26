@@ -1,0 +1,116 @@
+/* Оболочка главной страницы: экраны-сообщения и баннеры связи. */
+
+/*
+ * Страница — колонка в высоту окна: верхняя панель, баннер связи и вью. Вью получает ровно
+ * остаток высоты и прокручивает своё содержимое сама (полный дифф — виртуализированный список).
+ * Иначе к внутренней прокрутке добавлялся бы внешний скролл всей страницы.
+ */
+#root {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+#root > main {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.app-workspace {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+}
+
+.app-workspace__content {
+    /* Система координат каркаса тура: он стоит поверх вью, не сдвигая её. */
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.app-workspace__content > main {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.chat-panel-scrim {
+    display: none;
+}
+
+@media (max-width: 1279px) {
+    .chat-panel {
+        position: fixed;
+        top: 46px;
+        right: 0;
+        z-index: 55;
+    }
+
+    .chat-panel-scrim {
+        position: fixed;
+        inset: 46px 0 0;
+        z-index: 54;
+        display: block;
+        padding: 0;
+        border: 0;
+        background: var(--overlay-dialog);
+        cursor: pointer;
+    }
+}
+
+.message-screen {
+    max-width: 720px;
+    padding: 60px var(--space-page);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner-tight);
+}
+
+.message-screen__title {
+    margin: 0;
+    font-size: var(--font-size-screen-title);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.message-screen p {
+    margin: 0;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    color: var(--text-body);
+}
+
+.message-screen__hint {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--text-dim) !important;
+}
+
+/* Нотис соединения остаётся отдельным от продуктового слота баннеров. */
+.connection-banner {
+    margin: var(--space-control) var(--space-page) 0;
+    padding: var(--space-inner) 13px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-popover);
+    background: var(--surface-panel-deep);
+}
+
+.connection-banner__title {
+    font-size: var(--font-size-ui);
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.connection-banner p {
+    margin: 5px 0 0;
+    font-size: var(--font-size-secondary);
+    color: var(--text-muted);
+}
+

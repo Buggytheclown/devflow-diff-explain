@@ -1,0 +1,25 @@
+{
+  "name": "@sherpa/protocol",
+  "version": "0.0.0",
+  "description": "Схемы и типы всего, что пересекает границу процессов Шерпы",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./markdown": "./src/markdown/markdown.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --no-error-on-unmatched-pattern",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "markdown-it": "^14.3.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.2.0"
+  }
+}

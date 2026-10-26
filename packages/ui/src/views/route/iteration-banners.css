@@ -1,0 +1,51 @@
+/* Баннеры итераций — docs/design/README.md §9, янтарная группа токенов (общая раскладка с аудит-баннером). */
+
+.iteration-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-control);
+    padding: 11px var(--space-control);
+    border: 1px solid var(--attention-border-alt);
+    border-radius: var(--radius-card);
+    background: var(--attention-surface-alt);
+}
+
+.iteration-banner__body {
+    min-width: 0;
+    flex: 1;
+}
+
+.iteration-banner__line {
+    font-size: var(--font-size-ui);
+    color: var(--attention-text-soft);
+}
+
+.iteration-banner__note {
+    margin-top: 2px;
+    font-size: var(--font-size-secondary);
+    color: var(--attention-text-dim);
+}
+
+.iteration-banner__commit {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--attention-text);
+}
+
+.iteration-banner__action,
+.iteration-banner__secondary {
+    height: 28px;
+    padding: 0 11px;
+}
+
+/* Вторичное действие янтарного баннера: вариант Ghost, но лестница своего тона. */
+.iteration-banner__secondary {
+    --ctl-surface-hover: var(--attention-surface);
+    --ctl-surface-pressed: var(--attention-border-alt);
+    --ctl-border: var(--attention-border);
+    --ctl-ink: var(--attention-text-dim);
+}
+
+.iteration-banner__dismiss {
+    color: var(--attention-text-dim);
+}

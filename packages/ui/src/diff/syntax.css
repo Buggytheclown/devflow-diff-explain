@@ -1,0 +1,41 @@
+/*
+ * Подсветка синтаксиса — docs/design/README.md §1. Классы общие для всех,
+ * кто гоняет текст через `diff/syntax.ts`: строки диффа и заборы кода в комментариях.
+ */
+
+.syntax-keyword {
+    color: var(--syntax-keyword);
+}
+
+.syntax-property {
+    color: var(--syntax-property);
+}
+
+.syntax-number {
+    color: var(--syntax-number);
+}
+
+.syntax-variable {
+    color: var(--syntax-variable);
+}
+
+.syntax-type {
+    color: var(--syntax-type);
+}
+
+.syntax-function {
+    color: var(--syntax-function);
+}
+
+.syntax-string {
+    color: var(--syntax-string);
+}
+
+.syntax-comment {
+    font-style: var(--syntax-comment-font-style);
+    color: var(--syntax-comment);
+}
+
+.syntax-decorator {
+    color: var(--syntax-decorator);
+}

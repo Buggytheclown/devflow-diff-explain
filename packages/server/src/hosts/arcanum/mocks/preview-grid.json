@@ -1,0 +1,85 @@
+{
+    "a_yaml": {
+        "arcanum": {
+            "review": [
+                {
+                    "required": { "value": true, "is_active": true },
+                    "disabling_policy": { "value": "need_reason", "is_active": true },
+                    "rules": [
+                        {
+                            "assignee_count": { "value": 0, "is_active": true },
+                            "ships_required": { "value": 1, "is_active": true },
+                            "rule_assignees": {
+                                "is_active": true,
+                                "value": {
+                                    "alias": "modules-team",
+                                    "rules": ["example:example_modules_developer"],
+                                    "members_by_rule": {
+                                        "example:example_modules_developer": ["bob", "alice"]
+                                    },
+                                    "subpaths_filter": ["**, !ci.a.yaml, !src/legacy.ts"],
+                                    "authors_filter": [],
+                                    "branches_filter": [],
+                                    "members_by_author": {},
+                                    "reviewers": [{ "login": "bob" }, { "login": "alice" }]
+                                }
+                            }
+                        },
+                        {
+                            "assignee_count": { "value": 0, "is_active": true },
+                            "ships_required": { "value": 1, "is_active": true },
+                            "rule_assignees": {
+                                "is_active": true,
+                                "value": {
+                                    "alias": "legacy-keepers",
+                                    "rules": ["example:example_legacy_keeper"],
+                                    "members_by_rule": {
+                                        "example:example_legacy_keeper": ["carol", "alice"]
+                                    },
+                                    "subpaths_filter": ["src/legacy.ts"],
+                                    "authors_filter": ["not-pr-author"],
+                                    "branches_filter": [],
+                                    "members_by_author": {},
+                                    "reviewers": [{ "login": "carol" }, { "login": "alice" }]
+                                }
+                            }
+                        }
+                    ],
+                    "skip_review_for": { "value": { "rules": [] }, "is_active": false },
+                    "config_path": {
+                        "path": "/examples/ui/packages/grid/a.yaml",
+                        "commit_id": "6589b540d27df17e0ce3a9dc0b569a1c2f0999ac"
+                    },
+                    "is_active": true
+                },
+                {
+                    "required": { "value": true, "is_active": false },
+                    "rules": [
+                        {
+                            "rule_assignees": {
+                                "is_active": false,
+                                "value": {
+                                    "alias": "infra-team",
+                                    "rules": ["example:example_frontend_monorepo_infra"],
+                                    "members_by_rule": {
+                                        "example:example_frontend_monorepo_infra": ["dave"]
+                                    },
+                                    "subpaths_filter": ["**, !packages/**"],
+                                    "authors_filter": [],
+                                    "branches_filter": [],
+                                    "members_by_author": {},
+                                    "reviewers": [{ "login": "dave" }]
+                                }
+                            }
+                        }
+                    ],
+                    "config_path": {
+                        "path": "/examples/ui/a.yaml",
+                        "commit_id": "6589b540d27df17e0ce3a9dc0b569a1c2f0999ac"
+                    },
+                    "is_active": false
+                }
+            ]
+        }
+    }
+}

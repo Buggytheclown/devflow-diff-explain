@@ -1,0 +1,417 @@
+/*
+ * Генеративные состояния маршрута: карточка генерации Overview (docs/design/README.md §6–7), красная карточка
+ * провала и её баннер (docs/design/README.md §12, docs/design/SPEC-elements.md §2.21). Поверхности — из дизайна: акцентная у карточки
+ * генерации, красная у провала; оба набора уже объявлены токенами.
+ */
+
+.gen-card {
+    padding: var(--space-control);
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-card);
+    background: var(--accent-surface);
+}
+
+.gen-card__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+}
+
+.gen-card__title {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    color: var(--accent-text-bright);
+    font-size: var(--font-size-ui);
+    font-weight: 600;
+}
+
+.gen-card__counter {
+    flex: none;
+    color: var(--accent-text);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    white-space: nowrap;
+}
+
+.gen-card__spinner {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--tier-unfilled);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: gen-spin var(--motion-spin) linear infinite;
+}
+
+@keyframes gen-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* --- Фаза A: три строки прогресса --- */
+
+.gen-steps {
+    margin: var(--space-control) 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gen-steps__item {
+    position: relative;
+    padding-left: 16px;
+    margin-bottom: 5px;
+    color: var(--text-dim);
+    font-size: var(--font-size-secondary);
+    line-height: 1.5;
+}
+
+.gen-steps__item::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 3px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--tier-unfilled);
+}
+
+.gen-steps__item.is-active {
+    color: var(--accent-text-soft);
+}
+
+.gen-steps__item.is-active::before {
+    background: var(--accent);
+}
+
+/* --- Фаза B: сегмент-бар и план-лист --- */
+
+.gen-bar {
+    display: flex;
+    gap: 2px;
+    height: 7px;
+    margin-top: var(--space-control);
+}
+
+.gen-bar__segment {
+    flex: 1;
+    border-radius: var(--radius-rule);
+    background: var(--tier-unfilled);
+}
+
+.gen-bar__segment--ready {
+    background: var(--accent);
+}
+
+/* Как в прототипе: градиент неподвижен, мерцает прозрачность — на стыке повторов нет скачка.
+   Ритм общий со статусом «заполняется» в план-листе. */
+.gen-bar__segment--filling {
+    background: linear-gradient(90deg, var(--accent), var(--tier-unfilled));
+    animation: gen-pulse var(--motion-shimmer) ease-in-out infinite;
+}
+
+.gen-plan {
+    margin: var(--space-control) 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gen-plan__item {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-inner-tight);
+    padding: 3px 0;
+    font-size: var(--font-size-secondary);
+    line-height: 1.45;
+}
+
+.gen-plan__number {
+    flex: none;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    letter-spacing: 0.04em;
+}
+
+/* Базовое состояние пункта — «в очереди»: docs/design/README.md §7 даёт ему свой цвет текста. Он же достаётся
+   провальному слоту (своего цвета у заголовка в дизайне нет). Незажжённый сегмент полосы
+   (--tier-unfilled) сюда не годится: другой цвет и другая роль — там фон. */
+.gen-plan__title,
+.gen-plan__state {
+    color: var(--accent-text-queued);
+}
+
+.gen-plan__title {
+    flex: 1;
+    min-width: 0;
+}
+
+.gen-plan__state {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    white-space: nowrap;
+}
+
+.gen-plan__item--ready .gen-plan__title,
+.gen-plan__item--ready .gen-plan__state {
+    color: var(--accent-text-bright);
+}
+
+.gen-plan__item--filling .gen-plan__title,
+.gen-plan__item--filling .gen-plan__state {
+    color: var(--accent-text);
+}
+
+.gen-plan__item--filling .gen-plan__state {
+    animation: gen-pulse var(--motion-shimmer) ease-in-out infinite;
+}
+
+.gen-plan__item--failed .gen-plan__state {
+    color: var(--error-text);
+}
+
+@keyframes gen-pulse {
+    0%,
+    100% {
+        opacity: 0.45;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+/* --- Общее: нота, CTA, хинт --- */
+
+.gen-card__note {
+    margin: var(--space-control) 0 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-secondary);
+    line-height: var(--line-height-body);
+}
+
+.gen-card__cta {
+    width: 100%;
+    margin-top: var(--space-control);
+    font-weight: 600;
+}
+
+.gen-card__hint,
+.gen-card__error {
+    margin: 6px 0 0;
+    color: var(--text-dim);
+    font-size: var(--font-size-meta);
+    line-height: 1.5;
+}
+
+.gen-card__error {
+    color: var(--error-text);
+}
+
+.gen-card__still {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    margin: var(--space-control) 0 0;
+    color: var(--attention-text);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+}
+
+.gen-card__cancel {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+}
+
+.gen-card__cancel:disabled {
+    opacity: var(--disabled-opacity);
+    cursor: default;
+}
+
+/* --- Generation failed (docs/design/README.md §12) --- */
+
+.gen-failed {
+    padding: 16px;
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-card);
+    background: var(--error-surface);
+}
+
+.gen-failed--compact {
+    padding: var(--space-control);
+}
+
+/* Карточка провала на вкладке маршрута: та же ширина, что у приглашения (docs/design/README.md §12). */
+.gen-failed-wrap {
+    width: min(760px, 100%);
+    margin-top: 58px;
+}
+
+.gen-failed__title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-section-title);
+    font-weight: 600;
+}
+
+.gen-failed__reason {
+    margin: var(--space-inner) 0 0;
+    color: var(--text-body);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+}
+
+.gen-failed__actions {
+    display: flex;
+    gap: var(--space-inner-tight);
+    margin-top: var(--space-control);
+}
+
+.gen-retry {
+    height: 28px;
+    font-weight: 600;
+}
+
+.gen-retry:disabled {
+    opacity: var(--disabled-opacity);
+    cursor: default;
+}
+
+/* Глиф занимает место всегда: в загрузке он крутится, ширина кнопки не меняется. */
+.gen-retry__glyph {
+    flex: none;
+    width: 11px;
+    height: 11px;
+    border: 2px solid currentcolor;
+    border-radius: 50%;
+    opacity: 0.55;
+}
+
+.gen-retry__glyph.is-spinning {
+    border-top-color: transparent;
+    opacity: 1;
+    animation: gen-spin var(--motion-spin) linear infinite;
+}
+
+.gen-failed__secondary {
+    height: 28px;
+    padding: 0 12px;
+}
+
+.gen-failed__raw {
+    margin: var(--space-control) 0 0;
+    padding: var(--space-inner);
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-button);
+    background: var(--surface-command);
+    color: var(--text-muted-dim);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.gen-failed__footer {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: var(--space-control) 0 0;
+    color: var(--text-dim);
+    font-size: var(--font-size-secondary);
+}
+
+.gen-failed__link {
+    font-size: var(--font-size-secondary);
+}
+
+.gen-failed__error {
+    margin: var(--space-inner) 0 0;
+    color: var(--error-text);
+    font-size: var(--font-size-meta);
+}
+
+/* --- Баннер частично заполненного маршрута (docs/design/README.md §8) --- */
+
+.gen-filling {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner);
+    padding: 9px var(--space-control);
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-card);
+    background: var(--accent-surface-alt);
+}
+
+.gen-filling__dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: gen-pulse var(--motion-shimmer) ease-in-out infinite;
+}
+
+.gen-filling__text {
+    flex: 1;
+    min-width: 0;
+    color: var(--accent-text);
+    font-size: var(--font-size-secondary);
+}
+
+.gen-filling__link {
+    font-size: var(--font-size-secondary);
+}
+
+.gen-filling__link:disabled {
+    opacity: var(--disabled-opacity);
+    cursor: default;
+}
+
+/* --- Баннер провала --- */
+
+.gen-banner {
+    display: grid;
+    grid-template-columns: auto minmax(260px, 1fr) auto;
+    align-items: center;
+    gap: var(--space-control);
+    padding: 11px var(--space-control);
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-card);
+    background: var(--error-surface);
+}
+
+/* Баннер без действия: третьей колонки под кнопку нет. */
+.gen-banner--plain {
+    grid-template-columns: auto minmax(260px, 1fr);
+}
+
+.gen-banner__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--error);
+}
+
+.gen-banner__body {
+    min-width: 0;
+}
+
+.gen-banner__title {
+    color: var(--text-secondary);
+    font-size: var(--font-size-ui);
+    font-weight: 500;
+}
+
+.gen-banner__text {
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: var(--font-size-secondary);
+}

@@ -1,0 +1,21 @@
+{
+    "review": {
+        "rules": [
+            {
+                "roles": ["example:example_modules_developer"],
+                "configs": [
+                    { "path": "/examples/ui/packages/grid/a.yaml" },
+                    { "path": "/examples/ui/packages/data-provider/a.yaml" }
+                ]
+            },
+            {
+                "roles": ["example:example_docs_owner"],
+                "configs": [{ "path": "/examples/ui/docs/a.yaml" }]
+            },
+            {
+                "roles": ["example:example_frontend_monorepo_infra"],
+                "configs": [{ "path": "/examples/ui/a.yaml" }]
+            }
+        ]
+    }
+}

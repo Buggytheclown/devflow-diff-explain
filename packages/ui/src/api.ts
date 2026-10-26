@@ -1,0 +1,528 @@
+import type {
+    ChatExchange,
+    ChatExplanation,
+    CommentDraft,
+    DraftBufferEntry,
+    FileContent,
+    Locale,
+    PrDiff,
+    PriorityClass,
+    PublishResult,
+    Thread,
+    UiCancelResponse,
+    UiChatAskAnchor,
+    UiChatAskRequest,
+    UiChatCancelResponse,
+    UiChatResponse,
+    UiChatRetryResponse,
+    UiEnqueueResponse,
+    UiFeedbackRequest,
+    UiFeedbackResponse,
+    UiPrState,
+    UiPrStatePatch,
+    UiReviewLensesResponse,
+    UiReviewProgressResponse,
+    UiRouteFillStopRequest,
+    UiRouteFillStopResponse,
+    UiRouteGenerateRequest,
+    UiRouteGenerateResponse,
+    UiReviewRouteResponse,
+    UiSaveDraftResponse,
+    UiSeenRange,
+    UiSetFileViewedResponse,
+    UiSetStopFileViewedResponse,
+    UiSetStopViewedResponse,
+    UiSettings,
+    UiSettingsPatch,
+    UiSnapshotSummary,
+    UiStopSeenRange,
+    UiTask,
+    UiUpdate,
+    UiUpdateDraftResponse,
+    UiViewedMirrorRequest,
+    Verdict,
+} from '@sherpa/protocol';
+import {
+    rpcErrorSchema,
+    UI_ENDPOINTS,
+    uiCancelResponseSchema,
+    uiChatAskResponseSchema,
+    uiChatCancelResponseSchema,
+    uiChatResponseSchema,
+    uiChatRetryResponseSchema,
+    uiDraftBufferResponseSchema,
+    uiEnqueueResponseSchema,
+    uiFeedbackResponseSchema,
+    uiPrStateResponseSchema,
+    uiPublishResponseSchema,
+    uiReviewDiffResponseSchema,
+    uiReviewFileContentResponseSchema,
+    uiReviewLensesResponseSchema,
+    uiReviewProgressResponseSchema,
+    uiReviewRouteResponseSchema,
+    uiReviewSnapshotsResponseSchema,
+    uiReviewThreadsResponseSchema,
+    uiReviewWriteAckSchema,
+    uiRouteFillStopResponseSchema,
+    uiRouteGenerateResponseSchema,
+    uiSaveDraftResponseSchema,
+    uiSetFileViewedResponseSchema,
+    uiSetStopFileViewedResponseSchema,
+    uiSetStopViewedResponseSchema,
+    uiSettingsResponseSchema,
+    uiUpdateCheckResponseSchema,
+    uiUpdateDraftResponseSchema,
+} from '@sherpa/protocol';
+import type { z } from 'zod';
+
+import { activeT } from './i18n/index.js';
+import { withTreeOrder } from './tree/file-order.js';
+
+/**
+ * Действия UI (docs/protocol.md §2): обычный REST под bearer-токеном. Ответы валидируются схемами
+ * протокола — UI не потребляет ничего, что не прошло валидатор.
+ */
+
+/** Ошибка, которую можно показать ревьюеру как есть: тексты контракта уже человеческие. */
+export class ApiError extends Error {
+    constructor(message: string, readonly status: number | null = null) {
+        super(message);
+    }
+}
+
+export async function enqueueEchoTask(token: string, text: string, priority?: PriorityClass): Promise<UiTask> {
+    const body: UiEnqueueResponse = await post(
+        UI_ENDPOINTS.enqueue,
+        token,
+        priority === undefined ? { type: 'echo', text } : { type: 'echo', text, priority },
+        uiEnqueueResponseSchema,
+    );
+    return body.task;
+}
+
+export async function cancelTask(token: string, taskId: number): Promise<UiCancelResponse['outcome']> {
+    const body: UiCancelResponse = await post(UI_ENDPOINTS.cancel, token, { taskId }, uiCancelResponseSchema);
+    return body.outcome;
+}
+
+/**
+ * Выбор диффа для ручки: без него — активная итерация, `diffId` — сохранённая итерация
+ * (пикер снапшотов), `base`/`head` — срез между итерациями.
+ */
+export type ReviewDiffSelection = { readonly diffId: string | null } | { readonly base: string; readonly head: string };
+
+/** Дифф приходит в UI здесь — и сразу в порядке дерева: порядок хоста дальше не виден никому. */
+export async function fetchReviewDiff(token: string, selection?: ReviewDiffSelection | null): Promise<PrDiff> {
+    const query =
+        selection == null
+            ? {}
+            : 'diffId' in selection
+              ? { diffId: selection.diffId }
+              : { base: selection.base, head: selection.head };
+    return withTreeOrder((await get(withQuery(UI_ENDPOINTS.reviewDiff, query), token, uiReviewDiffResponseSchema)).diff);
+}
+
+/** Линзы фильтра файлов: ownership отдельно от дополнительных (docs/design/README.md §Filters). */
+export async function fetchReviewLenses(token: string): Promise<UiReviewLensesResponse> {
+    return get(UI_ENDPOINTS.reviewLenses, token, uiReviewLensesResponseSchema);
+}
+
+/** Полный снапшот тредов; перечитывается по выросшей `threadsRevision`. */
+export async function fetchReviewThreads(token: string): Promise<Thread[]> {
+    return (await get(UI_ENDPOINTS.reviewThreads, token, uiReviewThreadsResponseSchema)).threads;
+}
+
+/**
+ * Черновик уходит в хост через буфер сервера: `buffered` — хост отказал, текст лежит
+ * на сервере и будет довезён. `clientKey` — одна логическая запись: повтор с тем же ключом
+ * апсёртит её и дубля не создаёт.
+ */
+export async function saveReviewDraft(
+    token: string,
+    draft: CommentDraft,
+    clientKey: string,
+): Promise<UiSaveDraftResponse> {
+    return post(UI_ENDPOINTS.reviewSaveDraft, token, { draft, clientKey }, uiSaveDraftResponseSchema);
+}
+
+export async function updateReviewDraft(
+    token: string,
+    commentId: string,
+    body: string,
+    issue: boolean | undefined,
+    clientKey: string,
+): Promise<UiUpdateDraftResponse> {
+    return post(
+        UI_ENDPOINTS.reviewUpdateDraft,
+        token,
+        { commentId, body, issue, clientKey },
+        uiUpdateDraftResponseSchema,
+    );
+}
+
+/** Буфер черновиков этого PR; читается вместе с тредами по тому же SSE-событию `review`. */
+export async function fetchDraftBuffer(token: string): Promise<DraftBufferEntry[]> {
+    return (await get(UI_ENDPOINTS.reviewDraftBuffer, token, uiDraftBufferResponseSchema)).entries;
+}
+
+/** Немедленный повтор записи; ответ — буфер после попытки. */
+export async function retryDraftBufferEntry(token: string, id: string): Promise<DraftBufferEntry[]> {
+    return (await post(UI_ENDPOINTS.reviewDraftBufferRetry, token, { id }, uiDraftBufferResponseSchema)).entries;
+}
+
+/** Отказ от буферной записи: текст больше не нужен. */
+export async function discardDraftBufferEntry(token: string, id: string): Promise<DraftBufferEntry[]> {
+    return (await post(UI_ENDPOINTS.reviewDraftBufferDiscard, token, { id }, uiDraftBufferResponseSchema)).entries;
+}
+
+export async function deleteReviewDraft(token: string, commentId: string): Promise<void> {
+    await post(UI_ENDPOINTS.reviewDeleteDraft, token, { commentId }, uiReviewWriteAckSchema);
+}
+
+export async function setReviewThreadResolved(token: string, threadId: string, resolved: boolean): Promise<void> {
+    await post(UI_ENDPOINTS.reviewThreadResolved, token, { threadId, resolved }, uiReviewWriteAckSchema);
+}
+
+/** Resolve одного issue-комментария; зовётся только при `capabilities.commentResolve`. */
+export async function setReviewCommentResolved(
+    token: string,
+    commentId: string,
+    resolved: boolean,
+): Promise<void> {
+    await post(UI_ENDPOINTS.reviewCommentResolved, token, { commentId, resolved }, uiReviewWriteAckSchema);
+}
+
+/**
+ * Правка своего опубликованного комментария; зовётся только при `capabilities.editPublished`.
+ * Буфер черновиков тут не при чём: отказ — ошибка ручки, её показывает UI.
+ */
+export async function updateReviewComment(
+    token: string,
+    commentId: string,
+    body: string,
+    issue?: boolean,
+): Promise<void> {
+    await post(UI_ENDPOINTS.reviewUpdateComment, token, { commentId, body, issue }, uiReviewWriteAckSchema);
+}
+
+/** Удаление своего опубликованного комментария; зовётся только при `capabilities.editPublished`. */
+export async function deleteReviewComment(token: string, commentId: string): Promise<void> {
+    await post(UI_ENDPOINTS.reviewDeleteComment, token, { commentId }, uiReviewWriteAckSchema);
+}
+
+/** Публикует накопленные черновики и применяет вердикт только при полном успехе пакета. */
+export async function publishReview(token: string, verdict: Verdict): Promise<PublishResult> {
+    return (await post(UI_ENDPOINTS.reviewPublish, token, { verdict }, uiPublishResponseSchema)).result;
+}
+
+/**
+ * Содержимое файла для «Expand context». Зовётся только при `capabilities.fileContent`;
+ * `null` — у этого файла содержимого нет (binary, слишком большой).
+ */
+export async function fetchFileContent(token: string, fileId: string, diffId?: string): Promise<FileContent | null> {
+    const path = `${UI_ENDPOINTS.reviewFileContent}?fileId=${encodeURIComponent(fileId)}${diffId === undefined ? '' : `&diffId=${encodeURIComponent(diffId)}`}`;
+    return (await get(path, token, uiReviewFileContentResponseSchema)).content;
+}
+
+/**
+ * Байты стороны картинки (`FileDiff.image`). Зовётся только при `capabilities.blobs`;
+ * `null` — хост такого блоба не знает или сторона больше лимита контракта.
+ */
+export async function fetchBlob(token: string, blobId: string): Promise<Blob | null> {
+    const path = `${UI_ENDPOINTS.reviewBlob}?blobId=${encodeURIComponent(blobId)}`;
+    let response: Response;
+    try {
+        response = await fetch(path, { headers: { authorization: `Bearer ${token}` } });
+    } catch {
+        throw new ApiError(activeT()('error.serverDown'));
+    }
+
+    if (response.status === 404) {
+        return null;
+    }
+    if (!response.ok) {
+        throw new ApiError(errorMessage(await response.json().catch(() => null)), response.status);
+    }
+    return response.blob();
+}
+
+/**
+ * Прогресс чтения PR: явные отметки и seen-диапазоны. Ручка локальная — работает и когда
+ * ревью-хоста у PR нет.
+ */
+export async function fetchReviewProgress(
+    token: string,
+    diffId?: string | null,
+): Promise<UiReviewProgressResponse> {
+    return get(withQuery(UI_ENDPOINTS.reviewProgress, { diffId }), token, uiReviewProgressResponseSchema);
+}
+
+/** Явная отметка «просмотрено»; в ответе — ревизия прогресса после записи. */
+export async function setFileViewed(
+    token: string,
+    fileId: string,
+    viewed: boolean,
+): Promise<UiSetFileViewedResponse> {
+    return post(UI_ENDPOINTS.reviewFileViewed, token, { fileId, viewed }, uiSetFileViewedResponseSchema);
+}
+
+/**
+ * Отметка «просмотрено» на остановке: вместе с ней уезжают id видимого снапшота
+ * и seen-диапазоны. При `viewed: false` сервер удаляет сохранённые диапазоны этой остановки.
+ */
+export async function setStopViewed(
+    token: string,
+    snapshotId: string,
+    stopId: string,
+    viewed: boolean,
+    ranges: readonly UiStopSeenRange[],
+): Promise<UiSetStopViewedResponse> {
+    return post(
+        UI_ENDPOINTS.reviewStopViewed,
+        token,
+        { snapshotId, stopId, viewed, ranges },
+        uiSetStopViewedResponseSchema,
+    );
+}
+
+/** Отметка «просмотрено» файла внутри остановки; семантика — у `uiSetStopFileViewedRequestSchema`. */
+export async function setStopFileViewed(
+    token: string,
+    snapshotId: string,
+    stopId: string,
+    fileId: string,
+    viewed: boolean,
+    ranges: readonly UiSeenRange[],
+): Promise<UiSetStopFileViewedResponse> {
+    return post(
+        UI_ENDPOINTS.reviewStopFileViewed,
+        token,
+        { snapshotId, stopId, fileId, viewed, ranges },
+        uiSetStopFileViewedResponseSchema,
+    );
+}
+
+/** Зеркалирует переходы read от покрытия; локальный прогресс эта ручка не меняет. */
+export async function mirrorViewedFiles(token: string, entries: UiViewedMirrorRequest['entries']): Promise<void> {
+    await post(UI_ENDPOINTS.reviewViewedMirror, token, { entries }, uiReviewWriteAckSchema);
+}
+
+/**
+ * Состояние маршрута: фаза, снапшот и ревизия. Ручка локальная — живёт и без ревью-хоста,
+ * перечитывается по выросшей `routeRevision` из SSE.
+ */
+export async function fetchReviewRoute(
+    token: string,
+    snapshotId?: string | null,
+): Promise<UiReviewRouteResponse> {
+    return get(withQuery(UI_ENDPOINTS.reviewRoute, { snapshot: snapshotId }), token, uiReviewRouteResponseSchema);
+}
+
+/**
+ * Снапшоты PR для пикера. Сервер, который ручку ещё не умеет, отвечает 404 —
+ * вызывающий деградирует до одного текущего снапшота, ошибку в интерфейс не выносит.
+ */
+export async function fetchReviewSnapshots(token: string): Promise<readonly UiSnapshotSummary[]> {
+    return (await get(UI_ENDPOINTS.reviewSnapshots, token, uiReviewSnapshotsResponseSchema)).snapshots;
+}
+
+/**
+ * Запуск или перезапуск генерации маршрута: «Повторить» на карточке провала (docs/design/README.md §12)
+ * и команда палитры. Что генерить, сервер знает сам; в теле едет только язык —
+ * эффективная локаль вкладки, чтобы маршрут родился на том же языке, что интерфейс.
+ */
+export async function generateReviewRoute(
+    token: string,
+    locale: Locale,
+): Promise<UiRouteGenerateResponse['outcome']> {
+    const request: UiRouteGenerateRequest = { locale };
+    const body: UiRouteGenerateResponse = await post(
+        UI_ENDPOINTS.reviewRouteGenerate,
+        token,
+        request,
+        uiRouteGenerateResponseSchema,
+    );
+    return body.outcome;
+}
+
+/** Дозаполняет один failed-слот текущего снапшота без полной перестройки маршрута. */
+export async function fillRouteStop(
+    token: string,
+    request: UiRouteFillStopRequest,
+): Promise<UiRouteFillStopResponse['outcome']> {
+    const body: UiRouteFillStopResponse = await post(
+        UI_ENDPOINTS.reviewRouteFillStop,
+        token,
+        request,
+        uiRouteFillStopResponseSchema,
+    );
+    return body.outcome;
+}
+
+/** Полный снапшот чата и заметок; перечитывается по выросшей `chatRevision`. */
+export async function fetchReviewChat(token: string): Promise<UiChatResponse> {
+    return get(UI_ENDPOINTS.reviewChat, token, uiChatResponseSchema);
+}
+
+/**
+ * Ставит вопрос по выделению или ко всему PR; созданный обмен показывается оптимистично.
+ * `locale` — язык ответа: та же эффективная локаль вкладки, что у генерации маршрута.
+ */
+export async function askReviewChat(
+    token: string,
+    text: string,
+    anchor: UiChatAskAnchor | undefined,
+    locale: Locale,
+    explanation?: ChatExplanation,
+): Promise<ChatExchange> {
+    const request: UiChatAskRequest = { text, locale, ...(anchor === undefined ? {} : { anchor }), ...(explanation === undefined ? {} : { explanation }) };
+    return (await post(UI_ENDPOINTS.reviewChatAsk, token, request, uiChatAskResponseSchema)).exchange;
+}
+
+export async function cancelReviewChat(
+    token: string,
+    exchangeId: number,
+): Promise<UiChatCancelResponse['outcome']> {
+    return (
+        await post(UI_ENDPOINTS.reviewChatCancel, token, { exchangeId }, uiChatCancelResponseSchema)
+    ).outcome;
+}
+
+export async function retryReviewChat(
+    token: string,
+    exchangeId: number,
+): Promise<UiChatRetryResponse['outcome']> {
+    return (
+        await post(UI_ENDPOINTS.reviewChatRetry, token, { exchangeId }, uiChatRetryResponseSchema)
+    ).outcome;
+}
+
+export async function deleteReviewChatNote(token: string, noteId: number): Promise<void> {
+    await post(UI_ENDPOINTS.reviewChatNoteDelete, token, { noteId }, uiReviewWriteAckSchema);
+}
+
+/** Отправляет фидбек; при ошибке формы сохраняют текст и повторяют этот же запрос. */
+export async function sendFeedback(token: string, request: UiFeedbackRequest): Promise<UiFeedbackResponse> {
+    return post(UI_ENDPOINTS.feedback, token, request, uiFeedbackResponseSchema);
+}
+
+/**
+ * Форсированная проверка новой версии: TTL кэша игнорируется. `null` — обновления нет;
+ * проверка, которая не дошла до Арканума, отвечает ошибкой, а не «обновлений нет».
+ */
+export async function updateCheck(token: string): Promise<UiUpdate | null> {
+    return (await post(UI_ENDPOINTS.updateCheck, token, {}, uiUpdateCheckResponseSchema)).update;
+}
+
+/** Параметры ручки: пустые (`undefined`/`null`) в адрес не попадают. */
+function withQuery(path: string, params: Readonly<Record<string, string | null | undefined>>): string {
+    const query = new URLSearchParams();
+    for (const [name, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null && value !== '') {
+            query.set(name, value);
+        }
+    }
+    const search = query.toString();
+    return search === '' ? path : `${path}?${search}`;
+}
+
+/**
+ * Глобальные настройки UI: они живут в `~/.sherpa/settings.json`, а не в `localStorage` —
+ * сервер каждого PR слушает свой порт, и браузерное хранилище к следующему PR не относится.
+ */
+export async function fetchUiSettings(token: string): Promise<UiSettings> {
+    return (await get(UI_ENDPOINTS.settings, token, uiSettingsResponseSchema)).settings;
+}
+
+/** Меняет названные поля; в ответе — весь набор после слияния на сервере. */
+export async function patchUiSettings(token: string, settings: UiSettingsPatch): Promise<UiSettings> {
+    return (await patch(UI_ENDPOINTS.settings, token, settings, uiSettingsResponseSchema)).settings;
+}
+
+/**
+ * Состояние UI этого PR: свёрнутые каталоги и карточки, недавние команды палитры. Живёт в базе
+ * PR на сервере — по той же причине, что и глобальные настройки, только раздельно по PR.
+ */
+export async function fetchUiPrState(token: string): Promise<UiPrState> {
+    return (await get(UI_ENDPOINTS.prState, token, uiPrStateResponseSchema)).prState;
+}
+
+/**
+ * Заменяет названные поля целиком; в ответе — всё состояние. `keepalive` — для записи из
+ * `pagehide`: обычный запрос браузер обрывает вместе с уходящей страницей.
+ */
+export async function patchUiPrState(
+    token: string,
+    prState: UiPrStatePatch,
+    options: { readonly keepalive?: boolean } = {},
+): Promise<UiPrState> {
+    return (await patch(UI_ENDPOINTS.prState, token, prState, uiPrStateResponseSchema, options)).prState;
+}
+
+async function get<T>(path: string, token: string, schema: z.ZodType<T>): Promise<T> {
+    let response: Response;
+    try {
+        response = await fetch(path, { headers: { authorization: `Bearer ${token}` } });
+    } catch {
+        throw new ApiError(activeT()('error.serverDown'));
+    }
+    return validate(response, schema);
+}
+
+async function post<T>(path: string, token: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+    let response: Response;
+    try {
+        response = await fetch(path, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify(body),
+        });
+    } catch {
+        throw new ApiError(activeT()('error.serverDown'));
+    }
+    return validate(response, schema);
+}
+
+async function patch<T>(
+    path: string,
+    token: string,
+    body: unknown,
+    schema: z.ZodType<T>,
+    options: { readonly keepalive?: boolean } = {},
+): Promise<T> {
+    let response: Response;
+    try {
+        response = await fetch(path, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify(body),
+            ...(options.keepalive === true ? { keepalive: true } : {}),
+        });
+    } catch {
+        throw new ApiError(activeT()('error.serverDown'));
+    }
+    return validate(response, schema);
+}
+
+async function validate<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+        throw new ApiError(errorMessage(payload), response.status);
+    }
+
+    const parsed = schema.safeParse(payload);
+    if (!parsed.success) {
+        throw new ApiError(activeT()('error.contract'));
+    }
+    return parsed.data;
+}
+
+function errorMessage(payload: unknown): string {
+    const parsed = rpcErrorSchema.safeParse(payload);
+    if (!parsed.success) {
+        return activeT()('error.unknown');
+    }
+
+    const { message, details } = parsed.data.error;
+    return details === undefined || details.length === 0 ? message : `${message} ${details.join('; ')}`;
+}

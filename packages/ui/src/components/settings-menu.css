@@ -1,0 +1,153 @@
+/*
+ * Меню настроек в шапке — docs/design/SPEC-theming-2026-09-12.md §7. Геометрия оттуда,
+ * цвета — только токены: спековая переменная переводится в токен через таблицу §2 (решение
+ * 2026-09-12 «токены остаются семантическими»), новых цветов меню не вводит. Радиус 10px
+ * и тень 0 18px 44px взяты ближайшими существующими токенами (`--radius-card`, `--shadow-menu`).
+ */
+
+.settings-menu {
+    position: relative;
+    flex: none;
+}
+
+/* --- Триггер: иконка-слайдеры вместо аватара (§7) --- */
+
+/* Иконочная кнопка верхней панели крупнее общей 25×25: она стоит в ряду контролов 28px. */
+.settings-menu__trigger {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-input);
+}
+
+/* Открытое меню видно и по триггеру: он остаётся залитым, пока панель на экране. */
+.settings-menu__trigger[aria-expanded='true'] {
+    --ctl-surface: var(--surface-hover);
+}
+
+/* --- Панель --- */
+
+/*
+ * Прозрачной подложки из §7 у панели нет. Меню живёт внутри `.top-bar`, а та — отдельный
+ * контекст наложения (`position: sticky; z-index: 40`): подложка `position: fixed` из него
+ * не выбирается и для остальной страницы лежит на уровне 40 — выше дерева файлов и тулбаров.
+ * Она перекрывала бы их кнопки, и первое нажатие по чужому триггеру уходило бы в неё. Клик
+ * мимо и без неё закрывает меню — слушателем на document, как у меню Ship и селекта фильтра.
+ */
+.settings-menu__panel {
+    position: absolute;
+    top: 32px;
+    right: 0;
+    z-index: 61;
+    width: 252px;
+    padding: 6px;
+    background: var(--surface-tour-card);
+    border: 1px solid var(--border-raised-dialog);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-menu);
+}
+
+.settings-menu__kicker {
+    padding: 6px var(--space-inner-tight) 4px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    letter-spacing: 0.07em;
+    color: var(--text-dim-strong);
+}
+
+/* --- Строка настройки --- */
+
+/*
+ * Высота 34px из спеки — минимум, а не фиксация: в размере L русские подписи с сегментами
+ * в 252px не помещаются. Тогда сегменты уезжают на вторую строку с прижатием вправо
+ * (решение 2026-09-12 о плотных рядах), а не режутся и не наезжают на соседнюю строку.
+ */
+.settings-menu__row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-inner-tight) var(--space-inner);
+    min-height: 34px;
+    /* 3px сверху и снизу: с ними сегмент высотой 28px даёт ровно 34px из спеки. */
+    padding: 3px var(--space-inner-tight);
+}
+
+.settings-menu__label {
+    font-size: var(--font-size-ui);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.settings-menu__segments {
+    margin-left: auto;
+    border-radius: var(--radius-input);
+}
+
+/* Ряд меню — 34px (§7): сегмент в нём на два пикселя выше малого и с подписью крупнее. */
+.settings-menu__segment {
+    height: 22px;
+    padding: 0 9px;
+    border-radius: var(--radius-badge);
+    font-size: var(--font-size-control);
+}
+
+/* Оформление выбирается независимо от светлой/тёмной темы. */
+.settings-menu__switch {
+    margin-left: auto;
+}
+
+/* --- Действия под разделителем --- */
+
+.settings-menu__divider {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--border-hairline-strong);
+}
+
+.settings-menu__action {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px var(--space-inner);
+    width: 100%;
+    min-height: 30px;
+    padding: 3px var(--space-inner-tight);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-button);
+    color: var(--text-secondary);
+    font-size: var(--font-size-ui);
+    text-align: left;
+    cursor: pointer;
+}
+
+.settings-menu__action:hover {
+    background: var(--surface-hover);
+}
+
+.settings-menu__action-label {
+    white-space: nowrap;
+}
+
+.settings-menu__meta {
+    flex: none;
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    color: var(--text-dim-strong);
+    white-space: nowrap;
+}
+
+.settings-menu__key {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    height: 17px;
+    margin-left: auto;
+    padding: 0 4px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-key);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    line-height: 1;
+    color: var(--text-dim-strong);
+}

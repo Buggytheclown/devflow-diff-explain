@@ -1,0 +1,213 @@
+/*
+ * Стили markdown-рендерера. Кегль и цвет наследуются от места вставки: тело комментария,
+ * заголовок остановки и абзац маршрута набраны по-разному, а разметка внутри них одна.
+ */
+
+@import '../diff/syntax.css';
+
+.md-p,
+.md-heading,
+.md-list,
+.md-pre,
+.md-quote,
+.md-table-wrap {
+    margin: 0 0 var(--space-inner-tight);
+}
+
+.md-p:last-child,
+.md-heading:last-child,
+.md-list:last-child,
+.md-pre:last-child,
+.md-quote:last-child,
+.md-table-wrap:last-child {
+    margin-bottom: 0;
+}
+
+/*
+ * Заголовок markdown — h1–h6 с тремя ступенями кегля: docs/design/SPEC-additions-2026-08-26.md §1e («жирная строка
+ * того же кегля») остаётся буквально верным для h4–h6, верхние уровни отделены на ступень.
+ */
+.md-heading {
+    margin-top: var(--space-inner);
+    font-weight: 600;
+    line-height: var(--line-height-body);
+    color: var(--text-primary-soft);
+}
+
+.md-heading:first-child {
+    margin-top: 0;
+}
+
+.md-h1,
+.md-h2 {
+    font-size: var(--font-size-input);
+}
+
+.md-h3 {
+    font-size: var(--font-size-body);
+}
+
+.md-h4,
+.md-h5,
+.md-h6 {
+    font-size: var(--font-size-ui);
+}
+
+/* Отступ 17px и шаг пунктов 2px — метрики списка из макета (SPEC-changes-2026-09-20.md §2). */
+.md-list {
+    padding-left: 17px;
+}
+
+.md-item {
+    margin: 0 0 2px;
+    overflow-wrap: anywhere;
+}
+
+/* Вложенный список прижат к своему пункту, а не к соседнему абзацу. */
+.md-item .md-list {
+    margin: 2px 0 0;
+}
+
+.md-p {
+    overflow-wrap: anywhere;
+}
+
+/* Пункт чек-листа рисует свой маркер — родной буллет списка ему не нужен. */
+.md-item--task {
+    list-style: none;
+}
+
+/*
+ * Квадрат выходит на место буллета отрицательным отступом у самого маркера, а не у пункта:
+ * сдвиг пункта на каждом уровне съедал бы отступ вложенного чек-листа.
+ */
+.md-check {
+    display: inline-block;
+    box-sizing: border-box;
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    margin-left: -17px;
+    border: 1px solid var(--border-strong-lifted);
+    border-radius: var(--radius-rule);
+    vertical-align: -1px;
+}
+
+.md-check--on {
+    border-color: var(--read-border);
+    background: var(--read-fill);
+}
+
+/* Цитата — полоса слева и приглушённый текст; вложенная получает свою такую же. */
+.md-quote {
+    padding-left: 10px;
+    border-left: 2px solid var(--border-strong);
+    overflow-wrap: anywhere;
+    color: var(--text-secondary);
+}
+
+/*
+ * Единственное место карточки с горизонтальным скроллом: таблицу, в отличие от строки текста,
+ * перенести нельзя — узкая колонка резала бы её по живому.
+ */
+.md-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.md-table {
+    border-collapse: collapse;
+}
+
+/*
+ * Здесь `break-word`, а не `anywhere`: `anywhere` учитывается при расчёте min-content, и авто-раскладка
+ * ужала бы таблицу до посимвольного минимума — скролл обёртки не включался бы никогда, а слова в шапке
+ * резались бы посередине. С `break-word` колонку раздувает только неразрывный токен — тогда и скролл.
+ */
+.md-table th,
+.md-table td {
+    padding: 3px 8px;
+    border: 1px solid var(--border-standard);
+    overflow-wrap: break-word;
+    text-align: left;
+}
+
+.md-table th {
+    font-weight: 600;
+    color: var(--text-primary-soft);
+}
+
+/*
+ * Инлайн-код — плашка из макета (docs/design/SPEC-changes-2026-09-20.md §2, таблица «блок → спец»):
+ * моно 0.75rem на своей подложке с рамкой. Один вид и в описании остановки, и в теле комментария.
+ */
+.md-code {
+    padding: 1px 4px;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-key);
+    background: var(--surface-code-inline);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-code);
+    color: var(--code-text);
+}
+
+/*
+ * Жирный — только вес (SPEC-changes-2026-09-20.md §2: после контрастного прохода 09-12 его тон
+ * равен тону тела). Цвет наследуется, иначе жирный выпадал бы из контекстного цвета контейнера:
+ * лавандового в заметке агента, красного в неудавшемся сообщении чата, приглушённого
+ * у просмотренной остановки.
+ */
+.md-strong {
+    font-weight: 700;
+}
+
+.md-pre {
+    padding: var(--space-inner-tight) var(--space-inner);
+    border: 1px solid var(--border-hairline-strong);
+    border-radius: var(--radius-badge);
+    background: var(--surface-command);
+    /* Горизонтального скролла в карточке нет: длинная строка переносится. */
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-code);
+    line-height: var(--line-height-code);
+    color: var(--code-text);
+}
+
+.md-pre code {
+    font: inherit;
+    color: inherit;
+}
+
+del {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+}
+
+/*
+ * Контейнер блоков словаря описания (SPEC-changes-2026-09-20.md §2): описание остановки и summary PR.
+ * Кегль и цвет задаёт место вставки; правила стоят после общих, чтобы перебить их отступы.
+ */
+.md-blocks {
+    text-wrap: pretty;
+}
+
+.md-blocks .md-p {
+    margin: 0;
+}
+
+/* Отступ получает каждый абзац кроме первого — в том числе абзац-вывод после списка. */
+.md-blocks .md-p:not(:first-child) {
+    margin-top: 7px;
+}
+
+/* Отступ до списка меньше межабзацного: список продолжает свой абзац (§2). */
+.md-blocks .md-list {
+    margin: 6px 0 0;
+}
+
+/* Длинный URL не растягивает колонку — рвётся в любом месте. */
+.md-link {
+    overflow-wrap: anywhere;
+}

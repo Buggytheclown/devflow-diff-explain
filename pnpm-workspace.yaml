@@ -1,0 +1,14 @@
+packages:
+  - 'packages/*'
+
+# esbuild ставит платформенный бинарник в postinstall — сборка CLI без него не работает.
+# У шрифтов IBM Plex postinstall — сбор телеметрии ibm-telemetry: сеть при установке, нам не нужна;
+# сами woff2 лежат в пакете готовыми.
+allowBuilds:
+  '@ibm/plex-mono': false
+  '@ibm/plex-sans': false
+  esbuild: true
+
+# Виртуальный стор pnpm — вне чекаута, как в examples/ui: FUSE-маунт arc отдаёт realpath файла
+# с повторяющимся содержимым как хеш, и tsc на нём падает. Симлинки из node_modules ведут на обычную ФС.
+virtualStoreDir: 'node_modules/.pnpm'

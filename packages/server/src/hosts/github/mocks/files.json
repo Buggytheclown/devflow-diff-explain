@@ -1,0 +1,61 @@
+[
+  {
+    "filename": "src/service.ts",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 1,
+    "patch": "@@ -1,5 +1,5 @@\n export function serve() {\n-    const port = 8080;\n+    const port = 9090;\n     listen(port);\n     log(\"up\");\n }"
+  },
+  {
+    "filename": "docs/readme.md",
+    "status": "added",
+    "additions": 2,
+    "deletions": 0,
+    "patch": "@@ -0,0 +1,2 @@\n+# Sherpa\n+"
+  },
+  {
+    "filename": "src/legacy.ts",
+    "status": "removed",
+    "additions": 0,
+    "deletions": 1,
+    "patch": "@@ -1 +0,0 @@\n-export const legacy = true;"
+  },
+  {
+    "filename": "assets/logo.png",
+    "status": "modified",
+    "additions": 0,
+    "deletions": 0
+  },
+  {
+    "filename": "assets/icon.svg",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 1,
+    "patch": "@@ -1 +1 @@\n-<svg width=\"1\"></svg>\n+<svg width=\"2\"></svg>"
+  },
+  {
+    "filename": "assets/huge.png",
+    "status": "added",
+    "additions": 0,
+    "deletions": 0
+  },
+  {
+    "filename": "src/generated.bin",
+    "status": "modified",
+    "additions": 0,
+    "deletions": 0
+  },
+  {
+    "filename": "src/bundle.js",
+    "status": "modified",
+    "additions": 4000,
+    "deletions": 10
+  },
+  {
+    "filename": "src/renamed.ts",
+    "status": "renamed",
+    "additions": 0,
+    "deletions": 0,
+    "previous_filename": "src/old-name.ts"
+  }
+]

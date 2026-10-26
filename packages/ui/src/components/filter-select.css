@@ -1,0 +1,64 @@
+/* Селект фильтра файлов — docs/design/README.md §Filters («button + 250px dropdown»), прототип §toolbar. */
+
+.filter-select {
+    position: relative;
+    flex: none;
+}
+
+/* Активный фильтр виден по залитому чипу (docs/design/SPEC-changes-2026-09-20.md §5). */
+.filter-select__button {
+    gap: 7px;
+}
+
+.filter-select__count {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    color: var(--text-dim-strong);
+}
+
+.filter-select__caret {
+    color: var(--text-dim-strong);
+}
+
+.filter-select__menu {
+    position: absolute;
+    top: 32px;
+    right: 0;
+    z-index: 60;
+    width: 250px;
+    overflow: hidden;
+    border: 1px solid var(--border-raised-bar);
+    border-radius: var(--radius-card);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-menu);
+}
+
+.filter-select__option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    padding: 7px 11px;
+    font-size: var(--font-size-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.filter-select__option.is-cursor {
+    background: var(--surface-selected);
+}
+
+.filter-select__tick {
+    display: flex;
+    align-items: center;
+    width: 13px;
+    flex: none;
+    color: var(--accent-hover);
+}
+
+.filter-select__label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

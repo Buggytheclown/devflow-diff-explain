@@ -1,0 +1,31 @@
+{
+  "name": "@sherpa/cli",
+  "version": "0.0.0",
+  "description": "Тонкий CLI devflow-diff-explain: поднимает сервер PR и крутит петлю воркера",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": {
+    "devflow-diff-explain": "./dist/devflow-diff-explain.mjs"
+  },
+  "exports": {
+    "./fake-worker": "./src/fake-worker.ts"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --no-error-on-unmatched-pattern",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sherpa/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@sherpa/server": "workspace:*",
+    "esbuild": "^0.28.2",
+    "zod": "^4.4.3"
+  }
+}

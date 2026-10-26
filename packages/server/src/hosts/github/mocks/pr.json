@@ -1,0 +1,21 @@
+{
+  "id": "PR_kwDOSherpa42",
+  "number": 42,
+  "title": "grid: считаем колонки честно",
+  "url": "https://github.com/acme/sherpa/pull/42",
+  "state": "OPEN",
+  "isDraft": false,
+  "merged": false,
+  "updatedAt": "2026-09-20T10:15:00Z",
+  "headRefName": "feature/columns",
+  "baseRefName": "main",
+  "headRepositoryOwner": {
+    "login": "acme"
+  },
+  "author": {
+    "login": "carol",
+    "__typename": "User",
+    "name": "Carol Danvers"
+  },
+  "checksState": "SUCCESS"
+}

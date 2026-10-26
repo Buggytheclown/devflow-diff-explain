@@ -1,0 +1,22 @@
+[
+    {
+        "status": "mounted",
+        "pid": 22010,
+        "mount": "/home/alice/arc/wt/EXAMPLE-1",
+        "store": "/home/alice/.arc/stores/EXAMPLE-1",
+        "object-store": "/home/alice/.arc/object-store"
+    },
+    {
+        "status": "unmounted",
+        "mount": "/home/alice/arc/arcadia-old",
+        "store": "/home/alice/.arc/stores/_home_alice_arc_arcadia-old",
+        "object-store": "/home/alice/.arc/object-store"
+    },
+    {
+        "status": "mounted",
+        "pid": 2271,
+        "mount": "/home/alice/arc/arcadia",
+        "store": "/home/alice/.arc/stores/_home_alice_arc_arcadia",
+        "object-store": "/home/alice/.arc/object-store"
+    }
+]

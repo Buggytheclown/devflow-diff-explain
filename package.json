@@ -1,0 +1,29 @@
+{
+  "name": "devflow-diff-explain",
+  "version": "0.15.1",
+  "description": "Личная Devflow Diff Explain: краткий рассказ о ПР, дифф и вопросы агенту",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "docs:endpoints": "node scripts/protocol-endpoints.mjs --write",
+    "release": "node scripts/release.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.2.0",
+    "eslint": "^10.0.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.11"
+  }
+}

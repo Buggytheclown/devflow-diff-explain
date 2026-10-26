@@ -1,0 +1,86 @@
+import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixture } from '@sherpa/fixtures';
+import type { RouteSnapshot, StorySource } from '@sherpa/protocol';
+
+import { createStoryData } from '../../story/data.js';
+import { EvidenceSource } from '../../story/evidence.tsx';
+import { parseFileDiff } from '../../diff/parse.js';
+import { toParseRequest } from '../../diff/model.js';
+import { FlowDiagram, ExplanationExample } from '../../story/flow-diagram.tsx';
+import { GuidedDocument } from '../../story/guided-document.tsx';
+import { ReadFile } from '../../story/read-file.tsx';
+import { SelectionBar, StoryDocument } from '../../story/app.tsx';
+import type { GalleryState } from './states.tsx';
+
+const source = routeFixtures('medium')?.states.ready?.snapshot;
+if (source == null) throw new Error('Нужна фикстура рассказа');
+const snapshot: RouteSnapshot = { ...source, presentation: 'story',
+    stops: source.stops.filter((stop) => stop.tier !== 'other'),
+    tourOrder: source.tourOrder.filter((id) => id !== 'other'),
+};
+const diff = fixtureIteration('medium').diff;
+const firstAnchor = snapshot.stops.flatMap((stop) => stop.anchors)[0];
+if (firstAnchor === undefined) throw new Error('Нужен источник рассказа');
+const sourceRef = { ...firstAnchor, kind: 'lines' as const, end: Math.min(firstAnchor.end, firstAnchor.start + 8) };
+const evidence = (quote: string) => ({ claims: [{ quote, sources: [sourceRef], limitation: null }] });
+const firstStop = snapshot.stops[0];
+if (firstStop === undefined) throw new Error('Нужен раздел рассказа');
+const summary = 'Для редактирования доставки задано окно по умолчанию 30 минут.';
+const paragraph = 'Длительность задаёт `EDIT_WINDOW_MS`. Для категории `fresh-food` видимый код задаёт более короткое окно — 10 минут.';
+const modern: RouteSnapshot = { ...snapshot, summary, storyContractVersion: 2, summaryEvidence: evidence(summary),
+    stops: [{ ...firstStop, title: 'Правило окна', paragraph, anchors: [], storyEvidence: evidence(paragraph) }], tourOrder: [firstStop.id] };
+
+const data = { ...createStoryData('gallery'), diff: () => Promise.resolve(diff), parse: (_id: string, file: typeof diff.files[number]) => Promise.resolve(parseFileDiff(toParseRequest(file))) };
+const noop = (): void => undefined;
+
+const renderSource = (source: StorySource, section: string, index: number) => <EvidenceSource key={`${section}:${String(index)}`} source={source} diffId={diff.diffId} data={data} token="gallery" focusId={`${section}:${String(index)}`} onOpen={noop} onAsk={noop} onLayout={noop} />;
+
+export const STORY_STATES: readonly GalleryState[] = [
+    { id: 'story-legacy', group: 'Рассказ', title: 'Прежний рассказ без связей тезисов с кодом',
+        render: () => <main className="story-main"><p className="story-notice">Этот рассказ создан без связей тезисов с источниками. Можно обновить его вручную.</p><StoryDocument snapshot={snapshot} onAsk={noop} renderSource={renderSource} /></main> },
+    { id: 'story-v2-collapsed', group: 'Рассказ', title: 'Новый рассказ · основания свёрнуты',
+        render: () => <main className="story-main"><StoryDocument snapshot={modern} onAsk={noop} renderSource={renderSource} /></main> },
+    { id: 'story-v2-expanded', group: 'Рассказ', title: 'Тезис и строки сохранённой стороны',
+        render: () => <main className="story-main"><StoryDocument snapshot={modern} expanded={new Set(['intro'])} onAsk={noop} renderSource={renderSource} /></main> },
+    { id: 'story-source-limit', group: 'Рассказ', title: 'Известное ограничение без фиктивного источника',
+        render: () => <main className="story-main"><StoryDocument snapshot={{ ...modern, stops: [], summaryEvidence: { claims: [{ quote: modern.summary, sources: [], limitation: 'Единицы поля не определены в доступном фрагменте.' }] } }} onAsk={noop} /></main> },
+    { id: 'story-source-error', group: 'Рассказ', title: 'Ошибка одного источника и локальный повтор',
+        render: () => <main className="story-main"><div className="story-code"><header><code>src/service.ts · После · 12–18</code></header><p role="alert">Не удалось загрузить источник. <button className="ctl">Повторить загрузку</button></p></div></main> },
+    { id: 'story-return', group: 'Рассказ', title: 'Возврат к разделу из полного диффа',
+        render: () => <main className="story-main"><button className="ctl story-return">К рассказу · Порядок записи</button><p className="story-provenance">сохранённая версия · codex</p></main> },
+    { id: 'story-selection', group: 'Рассказ', title: 'Действия по выделенному диапазону',
+        render: () => <SelectionBar selected={{ start: 14, end: 18 }} onAsk={noop} onClear={noop} /> },
+    { id: 'story-reading', group: 'Рассказ', title: 'Подготовка объяснения',
+        render: () => <main className="story-main"><p className="story-notice" role="status">Готовлю короткое объяснение…</p></main> },
+    { id: 'story-intro', group: 'Рассказ', title: 'Введение готово, основной текст строится',
+        render: () => <main className="story-main"><p className="story-notice">Дописываю рассказ. Введение уже можно читать.</p><StoryDocument snapshot={{ ...modern, stops: [] }} onAsk={noop} /></main> },
+    { id: 'story-ready', group: 'Рассказ', title: 'Готовый рассказ',
+        render: () => <main className="story-main"><StoryDocument snapshot={modern} onAsk={noop} renderSource={renderSource} /></main> },
+    { id: 'story-failed', group: 'Рассказ', title: 'Основной текст не достроен',
+        render: () => <main className="story-main"><p className="story-notice" role="alert">Рассказ не завершён. Повторите построение.</p><StoryDocument snapshot={{ ...modern, stops: [] }} onAsk={noop} /></main> },
+    { id: 'story-stale', group: 'Рассказ', title: 'Рассказ предыдущей версии',
+        render: () => <main className="story-main"><p className="story-notice">В ПР появились новые изменения. Этот рассказ относится к предыдущей версии.</p><StoryDocument snapshot={modern} onAsk={noop} renderSource={renderSource} /></main> },
+];
+
+const guided = guidedStoryFixture();
+function GuidedGallery({ page, pending = false, readableView = false }: { page: string; pending?: boolean; readableView?: boolean }) {
+    const base = readableView ? readable.snapshot : guided.snapshot;
+    const view = pending ? { ...base, stops: base.stops.map((stop) => ({ ...stop, status: 'filling' as const, paragraph: null, guidedFiles: stop.guidedFiles?.map((file) => ({ ...file, explanation: null, annotations: [] })) })) } : base;
+    return <main className="story-main story-main--diff"><GuidedDocument snapshot={view} page={page} onVisit={noop} onAsk={noop} renderFile={(id) => {
+        const file = guided.diff.files.find((entry) => entry.fileId === id);
+        const notes = view.stops.flatMap((stop) => stop.guidedFiles ?? []).find((entry) => entry.fileId === id)?.annotations;
+        return file === undefined ? null : <ReadFile file={file} diffId={guided.diff.diffId} data={data} token="gallery" current={false} annotations={notes} onAsk={noop} onLayout={noop} />;
+    }} /></main>;
+}
+const readable = readableStoryFixture();
+export const GUIDED_STORY_STATES: readonly GalleryState[] = [
+    { id: 'readable-description-route', group: 'По диффу', title: 'Описание · общий поток и маршрут справа', render: () => <GuidedGallery page="intro" readableView /> },
+    { id: 'readable-file-cards', group: 'По диффу', title: 'Блок · назначения файлов до перехода в дифф', render: () => <GuidedGallery page="guided-1" readableView /> },
+    { id: 'readable-flow', group: 'По диффу', title: 'Общий поток · изменения и неполный контекст', render: () => <main className="story-main"><FlowDiagram flow={readable.snapshot.flow} /></main> },
+    { id: 'readable-example', group: 'По диффу', title: 'Краткое пояснение и пример', render: () => <main className="story-main"><p>Правило определяет, можно ли изменить заказ.</p><ExplanationExample example={readable.example} /></main> },
+    { id: 'readable-flow-pending', group: 'По диффу', title: 'Схема готовится независимо от текста', render: () => <FlowDiagram flow={{ status: 'pending', taskId: null, round: 0, requests: [], contexts: [], missing: [] }} /> },
+    { id: 'readable-flow-unavailable', group: 'По диффу', title: 'Схема недоступна', render: () => <FlowDiagram flow={{ status: 'unavailable', reason: 'Не удалось подтвердить общий поток. Рассказ и дифф доступны.' }} /> },
+    { id: 'guided-description', group: 'По диффу', title: 'Описание ПРа и маршрут', render: () => <GuidedGallery page="intro" /> },
+    { id: 'guided-block', group: 'По диффу', title: 'Смысловой блок · порядок файлов', render: () => <GuidedGallery page="guided-2" /> },
+    { id: 'guided-file', group: 'По диффу', title: 'Файл · полный дифф и пояснение важных строк', render: () => <GuidedGallery page={`file:${guided.first.fileId}`} /> },
+    { id: 'guided-pending', group: 'По диффу', title: 'Дифф доступен до готовности пояснений', render: () => <GuidedGallery page={`file:${guided.first.fileId}`} pending /> },
+];

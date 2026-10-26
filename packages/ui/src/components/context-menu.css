@@ -1,0 +1,57 @@
+/* Контекстное меню файла (docs/design/SPEC-elements.md §2.11): raised-поверхность и menu-тень
+   из `docs/design/README.md`. */
+
+.context-menu {
+    position: fixed;
+    z-index: 60;
+    /* Ширину ставит сам компонент (`MENU_WIDTH`): по ней же считается привязка к кнопке. */
+    padding: 4px;
+    border: 1px solid var(--border-raised-popover);
+    border-radius: var(--radius-popover);
+    background: var(--surface-popover);
+    box-shadow: var(--shadow-menu);
+}
+
+.context-menu__item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-button);
+    background: none;
+    font-family: var(--font-sans);
+    font-size: var(--font-size-ui);
+    line-height: 1;
+    color: var(--text-secondary);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.context-menu__item:hover,
+.context-menu__item:focus-visible,
+.context-menu__item:focus {
+    outline: none;
+    background: var(--surface-selected);
+}
+
+/* Выключенный пункт остаётся в меню и достижим стрелками: иначе причину «почему нельзя» негде прочитать. */
+.context-menu__item[aria-disabled='true'] {
+    opacity: var(--disabled-opacity);
+    cursor: default;
+}
+
+.context-menu__separator {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--border-standard);
+}
+
+.context-menu__error {
+    margin: 4px 0 2px;
+    padding: 0 8px;
+    font-size: var(--font-size-meta);
+    color: var(--text-dim-strong);
+}

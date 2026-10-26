@@ -1,0 +1,247 @@
+/*
+ * Карточка-картинка: ряд управления и стороны под ним. Плашки режимов — тот же
+ * сегмент, что тумблер пресета маршрута (`route-preset`), отступы — как у тела карточки файла.
+ * Своих цветов нет: шахматка под прозрачностью собрана из двух приглушённых поверхностей диффа.
+ */
+
+.image-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner);
+    padding: var(--space-inner) 13px 14px;
+}
+
+.image-card__controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+}
+
+.image-card__mode:disabled {
+    opacity: var(--disabled-opacity);
+    cursor: default;
+}
+
+/* Тумблер «Вписать / 1:1» стоит отдельно от ряда режимов — рамку и фон трека носит сам. */
+.image-card__mode--single {
+    --ctl-surface: var(--surface-control);
+    --ctl-border: var(--border-control);
+}
+
+.image-card__spacer {
+    flex: 1;
+}
+
+.image-card__pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-inner);
+}
+
+.image-card__side {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.image-card__side-title {
+    margin: 0;
+    font-size: var(--font-size-meta);
+    color: var(--text-muted-dim);
+}
+
+/* Шахматка: прозрачность картинки должна быть видна, а не сливаться с карточкой. */
+.image-card__frame,
+.image-card__stage {
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-button);
+    background-color: var(--surface-diff-empty);
+    background-image: repeating-conic-gradient(var(--surface-diff-gap) 0% 25%, transparent 0% 50%);
+    background-size: 16px 16px;
+}
+
+.image-card__frame {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 64px;
+    padding: var(--space-inner-tight);
+    overflow: hidden;
+}
+
+/* 1:1: картинка идёт в натуральную величину, лишнее уезжает в горизонтальную прокрутку. */
+.image-card__frame--actual {
+    justify-content: flex-start;
+    overflow: auto;
+}
+
+.image-card__image {
+    max-width: 100%;
+    height: auto;
+    image-rendering: auto;
+}
+
+.image-card__frame--actual .image-card__image {
+    max-width: none;
+    width: auto;
+}
+
+.image-card__frame--actual.image-card__frame--pixelated .image-card__image {
+    image-rendering: pixelated;
+}
+
+.image-card__meta,
+.image-card__status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--text-dim);
+}
+
+.image-card__status {
+    padding: var(--space-inner);
+    text-wrap: pretty;
+}
+
+.image-card__download {
+    color: var(--accent-text);
+    text-decoration: none;
+}
+
+/* Сторона, которой нет у add/delete: колонка остаётся на месте, чтобы пара не съезжала,
+   и тянется на всю высоту соседней — картинка бывает заметно выше минимума. */
+.file-card__image-empty {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    margin: 0;
+    border: 1px dashed var(--border-control);
+    border-radius: var(--radius-button);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--text-dim-strong);
+}
+
+.image-card__overlay {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner);
+}
+
+.image-card__overlay--actual {
+    overflow-x: auto;
+}
+
+.image-card__stage {
+    position: relative;
+    max-width: 100%;
+    overflow: hidden;
+    /* Перетаскивание разделителя — указателем, а не прокруткой страницы. */
+    touch-action: none;
+}
+
+/* Размеры сторон ещё не замерены: бокс держит высоту сам, иначе схлопнулся бы в ноль. */
+.image-card__stage--unsized {
+    min-height: 64px;
+}
+
+.image-card__overlay--actual .image-card__stage {
+    max-width: none;
+    flex: none;
+}
+
+/* Слой клипа/непрозрачности лежит на всём боксе: проценты `clip-path` обязаны совпадать
+   с положением разделителя, а не считаться от размера своей картинки. */
+.image-card__clip {
+    position: absolute;
+    inset: 0;
+}
+
+/*
+ * Доля ширины бокса у каждой стороны своя (задаётся компонентом в процентах): бокс собран
+ * по большей стороне, и меньшую нельзя растягивать — иначе стороны разного разрешения
+ * сравнивались бы так, будто они одинаковые.
+ */
+.image-card__layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    image-rendering: auto;
+}
+
+.image-card__overlay--actual.image-card__overlay--pixelated .image-card__layer {
+    image-rendering: pixelated;
+}
+
+.image-card__divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--accent);
+    cursor: ew-resize;
+}
+
+.image-card__divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 14px;
+    height: 14px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+/* Кольцо уходит внутрь: снаружи его срезал бы `overflow: hidden` контейнера. */
+.image-card__divider:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: -1px;
+}
+
+.image-card__slider {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    font-size: var(--font-size-meta);
+    color: var(--text-muted-dim);
+}
+
+.image-card__slider input {
+    flex: 0 1 220px;
+    accent-color: var(--accent);
+}
+
+.image-card__slider-value {
+    font-family: var(--font-mono);
+    color: var(--text-dim);
+}
+
+/*
+ * Режим Diff: исходные стороны нужны только как вход растеризации — `drawImage`
+ * работает и со скрытым элементом, а на экране остаётся один холст разницы.
+ */
+.image-card__source {
+    display: none;
+}
+
+.image-card__diff {
+    width: 100%;
+    height: auto;
+}
+
+.image-card__overlay--actual .image-card__diff {
+    width: auto;
+}
+
+.image-card__overlay--actual.image-card__overlay--pixelated .image-card__diff {
+    image-rendering: pixelated;
+}

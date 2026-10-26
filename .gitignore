@@ -1,0 +1,32 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+.DS_Store
+*.log
+# Рабочие деревья параллельных задач: полные чекауты репозитория внутри него самого.
+.claude/worktrees/
+# Локальная обвязка сессии: воркфлоу и правила конкретного рабочего места
+.claude/workflows/
+CLAUDE.local.md
+
+.playwright/
+
+# Локальные данные и результат браузерных прогонов
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+test-results/
+playwright-report/
+# Реальные контексты и скриншоты ПРов хранятся локально
+qa/
+outputs/
+
+# Предыдущий собранный дистрибутив исходного проекта
+/skill/
+.claude/launch.json

@@ -1,0 +1,529 @@
+/*
+ * Базовые контролы: одно правило состояний на весь интерфейс —
+ * docs/design/SPEC-changes-2026-09-20.md §5 (живая таблица — секция `ctl`
+ * в `docs/design/Devflow Diff Explain Changes 2026-09-20.dc.html`).
+ *
+ * Ховер меняет только поверхность: фон появляется или сдвигается на ступень, нажатие — на
+ * вторую. Текст и рамка стоят на месте; исключения — ссылки (поверхности нет, цвет идёт по
+ * лестнице акцента) и корзина (иконка краснеет вместе с фоном). Сдвигов, теней и переходов
+ * на ховере нет; единственное движение — дорожка и ручка свитчера.
+ *
+ * Вариант описывает свои три тона в `--ctl-surface*`, общие правила ниже их переключают.
+ * Компонентные стили держат только раскладку: своих цветов состояний у них больше нет.
+ * Состояния можно принудить атрибутом `data-state` — этим живёт матрица в галерее.
+ */
+
+.ctl {
+    --ctl-surface: transparent;
+    --ctl-surface-hover: var(--surface-hover);
+    --ctl-surface-pressed: var(--surface-pressed);
+    --ctl-border: transparent;
+    --ctl-ink: inherit;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    gap: 6px;
+    padding: 0;
+    border: 1px solid var(--ctl-border);
+    background: var(--ctl-surface);
+    color: var(--ctl-ink);
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.ctl:is(:hover, [data-state='hover']):not(:disabled, [aria-disabled='true']) {
+    background: var(--ctl-surface-hover);
+}
+
+.ctl:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true']) {
+    background: var(--ctl-surface-pressed);
+}
+
+/* Кольцо только с клавиатуры; зазор 2px — под кольцом виден реальный фон (см. base.css). */
+.ctl:is(:focus-visible, [data-state='focus']) {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 2px;
+}
+
+/* --- Залитые кнопки: лестница трёх тонов своего цвета --- */
+
+.ctl--primary,
+.ctl--attention,
+.ctl--secondary {
+    height: 29px;
+    padding: 0 12px;
+    border-radius: var(--radius-input);
+    font-size: var(--font-size-secondary);
+    font-weight: 500;
+}
+
+.ctl--primary {
+    --ctl-surface: var(--accent);
+    --ctl-surface-hover: var(--accent-hover);
+    --ctl-surface-pressed: var(--accent-pressed);
+    --ctl-ink: var(--accent-ink);
+}
+
+.ctl--attention {
+    --ctl-surface: var(--attention-button);
+    --ctl-surface-hover: var(--attention-button-hover);
+    --ctl-surface-pressed: var(--attention-button-pressed);
+    --ctl-ink: var(--attention-button-ink);
+}
+
+.ctl--secondary {
+    --ctl-surface: var(--surface-button);
+    --ctl-surface-hover: var(--surface-button-hover);
+    --ctl-surface-pressed: var(--surface-button-pressed);
+    --ctl-border: var(--border-button);
+    --ctl-ink: var(--text-button);
+
+    box-shadow: var(--shadow-button);
+}
+
+/* Нажатая кнопка перестаёт быть приподнятой — в светлой теме это единственная её тень. */
+.ctl--secondary:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true']) {
+    box-shadow: none;
+}
+
+/* Разрушающее действие: «Удалить». */
+.ctl--danger {
+    --ctl-surface: var(--surface-danger-button);
+    --ctl-surface-hover: var(--surface-danger-button-hover);
+    --ctl-surface-pressed: var(--surface-danger-button-pressed);
+    --ctl-border: var(--border-danger-button);
+    --ctl-ink: var(--text-danger-button);
+
+    height: 23px;
+    padding: 0 9px;
+    border-radius: var(--radius-badge);
+    font-size: var(--font-size-meta);
+}
+
+/* --- Кнопки с рамкой --- */
+
+.ctl--ghost,
+.ctl--danger-ghost {
+    height: 29px;
+    padding: 0 11px;
+    border-radius: var(--radius-input);
+    font-size: var(--font-size-secondary);
+}
+
+.ctl--ghost {
+    --ctl-border: var(--border-strong);
+    --ctl-ink: var(--text-muted);
+}
+
+.ctl--danger-ghost {
+    --ctl-surface-hover: var(--error-surface);
+    --ctl-surface-pressed: var(--error-border);
+    --ctl-border: var(--error-border);
+    --ctl-ink: var(--error-text);
+}
+
+/* Гост-кнопки верхней панели ниже композерных: 28px против 29 (таблица высот §5). */
+.ctl--topbar {
+    height: 28px;
+    padding: 0 var(--space-inner);
+    gap: 7px;
+}
+
+/* Плотный ряд: действия в шапке карточки и подтверждения — 23px из той же таблицы. */
+.ctl--compact {
+    height: 23px;
+    padding: 0 var(--space-inner-tight);
+    border-radius: var(--radius-badge);
+    font-size: var(--font-size-meta);
+}
+
+/*
+ * Тумблер-действие: Mark viewed у остановки и Resolve у комментария — один паттерн в двух
+ * цветах. Выключенный читается как Ghost, включённый заливается зелёным.
+ */
+.ctl--toggle {
+    --ctl-border: var(--border-strong);
+    --ctl-ink: var(--text-muted);
+
+    height: 23px;
+    padding: 0 var(--space-inner-tight);
+    border-radius: var(--radius-badge);
+    font-size: var(--font-size-control);
+}
+
+.ctl--toggle.is-on {
+    --ctl-surface: var(--viewed-surface);
+    --ctl-surface-hover: var(--success-surface);
+    --ctl-surface-pressed: var(--viewed-hover-surface);
+    --ctl-border: var(--viewed-border);
+    --ctl-ink: var(--diff-add-text-strong);
+}
+
+/* Тумблер в шапке комментария стоит в плотной строке и на пиксель ниже. */
+.ctl--toggle-compact {
+    height: 22px;
+    padding: 0 var(--space-inner-tight) 0 6px;
+    gap: 5px;
+}
+
+/*
+ * Кружок открытого замечания в кнопке Resolve: цвет не меняется никогда — открытое требует
+ * внимания, а не пугает (§5). Полпикселя вниз — оптическая привязка к строчным буквам подписи.
+ */
+.ctl__dot {
+    position: relative;
+    top: 0.5px;
+    color: var(--attention);
+}
+
+/* Тихая моно-кнопка: «⇄ unified», «свернуть все». */
+.ctl--quiet {
+    --ctl-ink: var(--text-dim-strong);
+
+    height: 22px;
+    padding: 0 6px;
+    border-radius: var(--radius-key);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+}
+
+/* --- Ссылки: поверхности нет, цвет идёт по лестнице акцента, подчёркивания нет нигде --- */
+
+.ctl--link,
+.ctl--link-muted,
+.ctl--link-danger {
+    --ctl-surface-hover: transparent;
+    --ctl-surface-pressed: transparent;
+
+    display: inline;
+    /* Рамки нет совсем: прозрачная добавила бы ссылке в строке два лишних пикселя высоты. */
+    border: 0;
+    border-radius: var(--radius-mark);
+    /* Ссылка живёт внутри текста и переносится вместе с ним — в отличие от кнопок. */
+    white-space: normal;
+    text-decoration: none;
+}
+
+.ctl--link {
+    --ctl-ink: var(--accent-hover);
+}
+
+/* Тон тише тела: иначе строка действий под комментарием не отличается от самого комментария. */
+.ctl--link-muted {
+    --ctl-ink: var(--text-link-muted);
+}
+
+.ctl--link:is(:hover, [data-state='hover']):not(:disabled, [aria-disabled='true']) {
+    color: var(--accent-hover-strong);
+}
+
+.ctl--link:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true']) {
+    color: var(--accent);
+}
+
+.ctl--link-muted:is(:hover, [data-state='hover']):not(:disabled, [aria-disabled='true']) {
+    color: var(--accent-hover);
+}
+
+.ctl--link-muted:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true']) {
+    color: var(--accent-hover-strong);
+}
+
+/*
+ * «Удалить» в строке действий: в покое — как Link muted, а под курсором краснеет (§3).
+ * Второе исключение из правила «ховер не трогает текст», рядом с корзиной: разрушающее
+ * действие обязано отличаться от соседних ссылок ещё до клика.
+ */
+.ctl--link-danger {
+    --ctl-ink: var(--text-link-muted);
+}
+
+.ctl--link-danger:is(:hover, :active, [data-state='hover'], [data-state='active']):not(
+        :disabled,
+        [aria-disabled='true']
+    ) {
+    color: var(--error);
+}
+
+/* --- Табы и сегменты: единственный выбор из группы, белый пункт в контейнере --- */
+
+.ctl-tabs {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-popover);
+    background: var(--surface-control);
+    white-space: nowrap;
+}
+
+.ctl--tab {
+    --ctl-ink: var(--text-muted-dim);
+
+    height: 24px;
+    padding: 0 var(--space-inner);
+    border-radius: var(--radius-button);
+    font-size: var(--font-size-secondary);
+}
+
+/* Выбранный пункт на ховер не реагирует: он уже выбран, подсвечивать нечего. */
+.ctl--tab.is-active {
+    --ctl-surface: var(--surface-segment-active);
+    --ctl-surface-hover: var(--surface-segment-active);
+    --ctl-surface-pressed: var(--surface-segment-active);
+    --ctl-ink: var(--text-on-segment-active);
+
+    box-shadow: var(--shadow-segment-active);
+    font-weight: 500;
+}
+
+/* Кольцо внутрь: снаружи его съела бы рамка контейнера. */
+.ctl-tabs .ctl:is(:focus-visible, [data-state='focus']) {
+    outline-offset: -2px;
+}
+
+/* Малый сегмент — режим редактора «Визуально / Markdown» и настройки в меню шапки. */
+.ctl-tabs--small {
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-button);
+    background: var(--surface-diff-card);
+}
+
+.ctl-tabs--small .ctl--tab {
+    height: 20px;
+    padding: 0 7px;
+    border-radius: var(--radius-key);
+    font-size: var(--font-size-gutter);
+}
+
+/* --- Чип фильтра: состояние «включено», которых может быть несколько сразу --- */
+
+.ctl--chip {
+    --ctl-border: var(--border-standard);
+    --ctl-ink: var(--text-dim);
+
+    height: 24px;
+    padding: 0 9px;
+    border-radius: var(--radius-button);
+    font-size: var(--font-size-meta);
+}
+
+.ctl--chip.is-on {
+    --ctl-surface: var(--surface-chip-active);
+    --ctl-surface-hover: var(--surface-chip-active-hover);
+    --ctl-surface-pressed: var(--surface-chip-active-pressed);
+    --ctl-border: var(--border-chip-active);
+    --ctl-ink: var(--text-chip-active);
+
+    font-weight: 500;
+}
+
+/* --- Иконочные кнопки --- */
+
+.ctl--icon,
+.ctl--icon-danger {
+    --ctl-border: var(--border-strong);
+    --ctl-ink: var(--text-muted-dim);
+
+    width: 25px;
+    height: 25px;
+    border-radius: var(--radius-button);
+}
+
+/* Единственное исключение из правила «ховер не трогает текст»: удаление обязано краснеть. */
+.ctl--icon-danger {
+    --ctl-surface-hover: var(--error-surface);
+    --ctl-surface-pressed: var(--error-border);
+}
+
+.ctl--icon-danger:is(:hover, :active, [data-state='hover'], [data-state='active']):not(
+        :disabled,
+        [aria-disabled='true']
+    ) {
+    color: var(--error);
+}
+
+/* Иконка тулбара композера: рамки нет, «включён» — вторая ступень лестницы. */
+.ctl--toolbar-icon {
+    --ctl-ink: var(--text-muted-dim);
+
+    width: 26px;
+    height: 24px;
+    border-radius: var(--radius-badge);
+}
+
+.ctl--toolbar-icon.is-on {
+    --ctl-surface: var(--surface-pressed);
+}
+
+.ctl--chevron {
+    --ctl-ink: var(--text-dim);
+
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-badge);
+}
+
+/* --- Свитчер: подпись — часть контрола, клик по тексту переключает дорожку --- */
+
+.ctl-switch {
+    --sw-track: var(--surface-hover);
+    --sw-track-border: var(--border-switch-track);
+    --sw-knob: var(--text-muted-dim);
+    --sw-knob-shift: 0;
+    --sw-knob-scale: 1;
+
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 9px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--font-size-control);
+    cursor: pointer;
+}
+
+.ctl-switch:is(:hover, [data-state='hover']):not(:disabled, [aria-disabled='true']) {
+    --sw-track: var(--surface-pressed);
+}
+
+.ctl-switch:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true']) {
+    --sw-track: var(--surface-pressed-deep);
+    --sw-knob-scale: 0.85;
+}
+
+.ctl-switch.is-on {
+    --sw-track: var(--accent);
+    --sw-track-border: transparent;
+    --sw-knob: var(--accent-ink);
+    --sw-knob-shift: 12px;
+
+    color: var(--text-secondary);
+}
+
+.ctl-switch.is-on:is(:hover, [data-state='hover']):not(:disabled, [aria-disabled='true']) {
+    --sw-track: var(--accent-hover);
+}
+
+.ctl-switch.is-on:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true']) {
+    --sw-track: var(--accent-pressed);
+    --sw-knob-scale: 0.85;
+}
+
+.ctl-switch:is(:focus-visible, [data-state='focus']) {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 2px;
+}
+
+.ctl-switch__track {
+    position: relative;
+    flex: none;
+    width: 30px;
+    height: 17px;
+    border: 1px solid var(--sw-track-border);
+    border-radius: 9px;
+    background: var(--sw-track);
+    /* Единственное движение в системе контролов (§5): 150ms — значение из макета. */
+    transition: background 150ms var(--motion-hover-ease);
+}
+
+.ctl-switch__knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--sw-knob);
+    transform: translateX(var(--sw-knob-shift)) scale(var(--sw-knob-scale));
+    transition: transform 150ms var(--motion-hover-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ctl-switch__track,
+    .ctl-switch__knob {
+        transition: none;
+    }
+}
+
+/* --- Чекбокс 12px: подпись тоже часть контрола --- */
+
+.ctl-checkbox {
+    --cb-surface: transparent;
+    --cb-border: var(--checkbox-border);
+
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 7px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--font-size-control);
+    cursor: pointer;
+}
+
+.ctl-checkbox:is(:hover, [data-state='hover']):not(:disabled, [aria-disabled='true']) {
+    --cb-surface: var(--surface-hover);
+}
+
+.ctl-checkbox:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true']) {
+    --cb-surface: var(--surface-pressed);
+}
+
+.ctl-checkbox.is-on {
+    --cb-surface: var(--read-fill);
+    --cb-border: var(--read-border);
+}
+
+.ctl-checkbox.is-on:is(:hover, [data-state='hover']):not(:disabled, [aria-disabled='true']) {
+    --cb-surface: var(--read-border);
+}
+
+.ctl-checkbox.is-on:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true']) {
+    --cb-surface: var(--viewed-hover-surface);
+}
+
+.ctl-checkbox:is(:focus-visible, [data-state='focus']) {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 2px;
+}
+
+.ctl-checkbox__box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--cb-border);
+    border-radius: var(--radius-mark);
+    background: var(--cb-surface);
+    /* Галочка живёт в разметке всегда, но видна только в залитой коробке. */
+    color: transparent;
+}
+
+.ctl-checkbox.is-on .ctl-checkbox__box {
+    color: var(--surface-app);
+}
+
+/*
+ * Нажатая коробка — третья ступень зелёного (§5, `25422f`), и на ней галочка цветом страницы
+ * пропадает: в тёмной чёрное по тёмно-зелёному, в светлой почти белое по светло-зелёному.
+ * Поэтому в нажатии галочка переворачивается вместе с коробкой и остаётся видна в обеих темах.
+ */
+.ctl-checkbox.is-on:is(:active, [data-state='active']):not(:disabled, [aria-disabled='true'])
+    .ctl-checkbox__box {
+    color: var(--text-primary);
+}

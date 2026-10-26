@@ -1,0 +1,691 @@
+/* Треды ревью внутри карточек диффа — docs/design/README.md §3 и docs/design/SPEC-elements.md §2.17. */
+
+.thread-list {
+    border-top: 1px solid var(--border-hairline-strong);
+}
+
+/*
+ * Свёрнутый тред у кода — маркер на кромке карточки (docs/design/SPEC-changes-2026-09-20.md §3).
+ * Он парит наполовину снаружи рамки и в покое залит цветом страницы, чтобы её перекрыть;
+ * сетка ряда его не видит — колонки под маркеры в диффе нет.
+ */
+.thread-marker {
+    --ctl-surface: var(--surface-app);
+    --ctl-border: var(--border-control);
+
+    position: absolute;
+    left: -15px;
+    top: 1px;
+    /* Над строками, но под липкой шапкой карточки (`diff-view.css`, 5): уходит под неё вместе со строкой. */
+    z-index: 4;
+    gap: 3px;
+    height: var(--thread-avatar-size);
+    padding-right: 5px;
+    border-radius: 9px;
+}
+
+.thread-marker.is-open {
+    --ctl-surface: var(--accent-surface-alt);
+    --ctl-surface-hover: var(--accent-surface-alt);
+    --ctl-surface-pressed: var(--accent-surface-alt);
+    --ctl-border: var(--accent);
+}
+
+.thread-marker--resolved:not(.is-open) {
+    opacity: 0.7;
+}
+
+/* Аватар 14 с зазором 1px до обводки слева и справа: пилюля h18 с обводкой. */
+.thread-marker__avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    margin: 0 1px;
+    border-radius: 50%;
+    background: var(--surface-pressed-deep);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-avatar-glyph);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.thread-marker__count {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-stop-mark);
+    color: var(--text-muted);
+}
+
+.thread-marker.is-open .thread-marker__count {
+    color: var(--accent-text);
+}
+
+.thread-marker--resolved:not(.is-open) .thread-marker__count {
+    color: var(--diff-add-text-strong);
+}
+
+/*
+ * Раскрытый тред под строкой: во всю ширину ряда, с отступом до колонки кода — отступ живёт
+ * в `diff-view.css` рядом с сеткой гуттера. Фон от resolved не зависит — статус несёт кромка.
+ */
+.thread-line {
+    border-top: 1px solid var(--border-hairline-strong);
+    border-bottom: 1px solid var(--border-hairline-strong);
+    box-shadow: var(--thread-line-shadow);
+}
+
+.thread-line--resolved {
+    box-shadow: inset 2px 0 0 var(--border-standard);
+}
+
+.thread-line .thread-list {
+    border-top: 0;
+}
+
+/* Фон и прозрачность раскрытого блока от resolved и бота не зависят: статус несёт кромка (§3). */
+.thread-line .thread--bot,
+.thread-line .thread--resolved {
+    opacity: 1;
+    background: var(--thread-surface);
+}
+
+.thread {
+    font-family: var(--thread-font);
+    font-size: var(--thread-text-size);
+    line-height: var(--thread-line-height);
+    position: relative;
+    background: var(--thread-surface);
+    color: var(--text-body);
+    outline: none;
+}
+
+.thread + .thread {
+    font-family: var(--thread-font);
+    font-size: var(--thread-text-size);
+    line-height: var(--thread-line-height);
+    border-top: 1px solid var(--border-hairline-strong);
+}
+
+/* Ховер тред не подсвечивает — он не кликабельный элемент. Но он tab-стоп (фокус подсвечивает
+   его строки кода), и клавиатурное кольцо обязано быть видно: `outline: none` выше гасит общее
+   из base.css. Кольцо уводится внутрь — снаружи у блока нет своего поля. */
+.thread:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: -2px;
+}
+
+.thread--bot {
+    background: var(--surface-panel-deep);
+    opacity: 0.72;
+}
+
+.thread--resolved {
+    background: var(--surface-panel);
+    opacity: 0.72;
+}
+
+/*
+ * Карточный вариант — треды уровня PR в модалке (docs/design/SPEC-changes-2026-09-20.md §4):
+ * список из отдельных карточек вместо полосы под строкой кода. Всё остальное — анатомия
+ * сообщений, действия, Resolve — то же, что у кода.
+ */
+.thread-list--card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-top: 0;
+}
+
+/* Фон карточки — тот же, что у полотна списка (§4): от него её отделяет рамка, а не тон. */
+.thread--card {
+    border: 1px solid var(--border-hairline-strong);
+    border-radius: var(--radius-popover);
+    background: var(--surface-diff-card);
+}
+
+/* В карточке приглушения нет: бот и resolved читаются шапкой, а не выцветшим фоном (§4). */
+.thread--card.thread--bot,
+.thread--card.thread--resolved {
+    opacity: 1;
+    background: var(--surface-diff-card);
+}
+
+/* Черновик — своя поверхность и левая кромка 2px, как у закрытого поля композера (§4b). */
+.thread--card.thread--draft {
+    border-color: var(--pr-comments-draft-border);
+    border-left: 2px solid var(--attention-border-strong);
+    border-radius: 0 var(--radius-popover) var(--radius-popover) 0;
+    background: var(--pr-comments-draft-surface);
+}
+
+.thread--card .thread__row {
+    padding: 10px 12px;
+}
+
+/* Шеврон стоит перед аватаром корня и сдвигает его колонку на 29px (20 + gap 9);
+   тело и действия корня встают ровно под его именем. */
+.thread--card .thread__row:first-child {
+    --thread-indent: var(--thread-card-indent);
+}
+
+/* Ответы в карточке отсчитываются от той же колонки, что и текст корня (29px за шевроном). */
+.thread--card .thread__row--reply {
+    margin-left: calc(29px + var(--reply-indent));
+    /* Двойка добирает до 12px воздуха между сообщениями — 10 из них даёт низ предыдущего. */
+    padding-top: 2px;
+}
+
+/* Строка 13px длиннее 760px нечитаема; лишняя ширина уходит шапке и отступам (§4). */
+.thread--card .thread__body {
+    max-width: 760px;
+}
+
+/* Композер ответа разворачивается прямо под своим сообщением, в его колонке текста (§3, §4). */
+.thread__row .thread-composer {
+    max-width: 733px;
+    margin-top: 8px;
+    padding: 0 0 0 var(--thread-indent);
+}
+
+/* Свёрнутый тред: одна строка h22 — шеврон, шапка корня, первая строка, «N ответов», статус. */
+.thread--card.is-collapsed .thread__row {
+    padding: 6px 12px;
+}
+
+.thread--card.is-collapsed .thread__author-line {
+    min-height: 22px;
+}
+
+.thread__chevron {
+    flex: none;
+}
+
+.thread__preview {
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-muted-dim);
+    font: inherit;
+    font-size: var(--font-size-secondary);
+    white-space: nowrap;
+    text-align: left;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.thread__reply-count {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    color: var(--text-muted-dim);
+}
+
+.thread__row {
+    /* Колонка текста сообщения: аватар 18 + gap 9. Карточка треда в модалке сдвигает её
+       у корня — там перед аватаром стоит шеврон. */
+    --thread-indent: var(--thread-row-indent);
+    /* Отступ ответа по глубине; корню переменную никто не ставит. */
+    --reply-indent: 0px;
+
+    padding: var(--thread-row-padding);
+}
+
+/*
+ * Ответы размечают аватар, имя и отступ, а не линии: ни кромки слева, ни разделителей (§3).
+ * Отступ `--reply-indent` ставит вью по `FlatComment.indent` — 27px на уровень до четвёртого.
+ * Единица сверху добирает до 12px воздуха между сообщениями — 11 из них даёт низ предыдущего.
+ */
+.thread__row--reply {
+    margin-left: var(--reply-indent);
+    padding-top: 1px;
+}
+
+.thread__row.is-editing {
+    border: 1px solid var(--comment-edit-border);
+    border-left: 2px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    background: var(--comment-edit-surface);
+}
+
+.thread__row.is-editing .thread-composer {
+    margin-top: 8px;
+    padding: 0;
+}
+
+/* Глубже четвёртого уровня отступ упирается в потолок, и адресата называет подпись в шапке.
+   Тон — как у якоря и времени рядом: подпись тише имени, но не тише самой меты. */
+.thread__reply-hint {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-scope);
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.thread__author-line {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 24px;
+    min-width: 0;
+}
+
+.thread__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--thread-avatar-size);
+    height: var(--thread-avatar-size);
+    border-radius: 50%;
+    background: var(--surface-selected);
+    font-size: var(--font-size-avatar-glyph);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.thread__author {
+    font-size: var(--font-size-secondary);
+    font-weight: 500;
+    color: var(--text-primary-soft);
+}
+
+.thread__meta {
+    font-family: var(--thread-meta-font);
+    font-size: var(--thread-meta-size);
+    color: var(--text-dim);
+}
+
+.thread__chip {
+    padding: 1px 5px;
+    border: 1px solid var(--border-strong-lifted);
+    border-radius: var(--radius-key);
+    font-family: var(--thread-meta-font);
+    font-size: var(--thread-chip-size);
+    color: var(--text-muted);
+}
+
+.thread__chip--issue {
+    border-color: var(--thread-issue-border);
+    background: var(--thread-issue-bg);
+    color: var(--thread-issue-text);
+}
+
+.thread__chip--draft {
+    border-color: var(--thread-draft-border);
+    background: var(--thread-draft-bg);
+    color: var(--thread-draft-text);
+}
+
+.thread__chip--pinned {
+    flex: none;
+    border-style: dashed;
+    white-space: nowrap;
+}
+
+/* Действие живёт в строке автора рядом с чипом, а не в наводочной полосе действий треда. */
+.thread__pin-action {
+    font-size: var(--font-size-meta);
+}
+
+.thread__chip--editing {
+    border-color: var(--comment-edit-border);
+    background: var(--comment-edit-chip-surface);
+    color: var(--comment-edit-chip-text);
+}
+
+.thread__spacer {
+    flex: 1;
+}
+
+.thread__delete-confirm {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: fit-content;
+    max-width: 100%;
+    margin: 6px 0 0 var(--thread-indent, 27px);
+    padding: 7px 9px;
+    border: 1px solid var(--pr-comments-delete-border);
+    border-radius: 6px;
+    background: var(--pr-comments-delete-surface);
+    color: var(--diff-del-text-strong);
+    font-size: var(--font-size-secondary);
+}
+
+.thread__delete-confirm-button:disabled,
+.thread__keep-draft:disabled {
+    cursor: default;
+    opacity: var(--disabled-opacity);
+}
+
+/* Тело комментария рендерится markdown-ом: абзацы и переносы — элементами, не `pre-wrap`.
+   Отступ 27px = аватар 18 + gap 9: текст ответа стоит в колонке текста корня (§3). */
+.thread__body {
+    margin: 6px 0 0 var(--thread-indent, 27px);
+    font-size: var(--font-size-ui);
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+/*
+ * Действия сообщения — ссылки под его текстом, в покое видимы (§3). Геометрия строки одна
+ * и с «Ответить», и без неё (у черновика): в макете строка нарисована только с ней —
+ * 12px, шаг 14px, 6px до текста.
+ */
+.thread__row-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 6px 0 0 var(--thread-indent, 27px);
+    min-height: var(--thread-avatar-size);
+    font-size: var(--font-size-control);
+}
+
+.thread-composer__status button {
+    font-size: var(--font-size-meta);
+}
+
+/* В композере подтверждение стоит на месте строки кнопок, у левого края поля: колонки текста здесь нет. */
+.thread-composer .thread__delete-confirm {
+    margin: var(--space-inner) 0 0;
+}
+
+.thread-composer {
+    padding: 0 12px 10px 39px;
+}
+
+/* Строка свитчера issue: первая строка композера, 8px до рамки (§1). */
+.thread-composer__issue-row {
+    display: flex;
+    align-items: center;
+    min-height: 22px;
+    margin-bottom: 8px;
+}
+
+.thread-composer__editor {
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-popover);
+    background: var(--surface-diff-gap);
+}
+
+.thread-composer__editor:focus-within {
+    border-color: var(--accent);
+}
+
+.thread-composer__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--border-hairline-strong);
+    background: var(--thread-surface);
+}
+
+.thread-composer__tool:disabled {
+    cursor: default;
+    opacity: var(--disabled-opacity);
+}
+
+.thread-composer__toolbar-spacer,
+.thread-composer__actions-spacer {
+    flex: 1;
+}
+
+/* Подпись «Markdown» — машинное слово, поэтому в моно. */
+.thread-composer__layout-markdown {
+    font-family: var(--font-mono);
+}
+
+.thread-composer__markdown,
+.thread-composer__prosemirror {
+    display: block;
+    width: 100%;
+    min-height: 88px;
+    padding: 9px 10px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--text-primary-soft);
+}
+
+.thread-composer__markdown {
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-code);
+    line-height: 1.65;
+}
+
+.thread-composer__visual-wrap {
+    position: relative;
+    min-height: 88px;
+}
+
+.thread-composer__visual {
+    min-height: 88px;
+}
+
+.thread-composer__visual-fallback {
+    position: absolute;
+    inset: 0;
+    padding: 9px 10px;
+    font-size: var(--font-size-ui);
+    line-height: var(--line-height-body);
+    color: var(--text-primary-soft);
+    white-space: pre-wrap;
+}
+
+.thread-composer__prosemirror {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-ui);
+    line-height: var(--line-height-body);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.thread-composer__prosemirror p {
+    margin: 0 0 8px;
+}
+
+.thread-composer__prosemirror p:last-child {
+    margin-bottom: 0;
+}
+
+.thread-composer__prosemirror ul,
+.thread-composer__prosemirror ol {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.thread-composer__prosemirror code {
+    padding: 1px 4px;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-key);
+    background: var(--border-hairline-soft);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-control);
+    color: var(--code-text);
+}
+
+.thread-composer__prosemirror pre {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border-hairline-strong);
+    border-radius: var(--radius-button);
+    background: var(--surface-diff-empty);
+    font: var(--font-size-control) / 1.55 var(--font-mono);
+    color: var(--code-text);
+    white-space: pre-wrap;
+}
+
+.thread-composer__prosemirror pre code {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+}
+
+.thread-composer__placeholder {
+    position: absolute;
+    top: 9px;
+    left: 10px;
+    z-index: 1;
+    font-size: var(--font-size-ui);
+    line-height: var(--line-height-body);
+    color: var(--text-dim-strong);
+    pointer-events: none;
+}
+
+/* В крупном тексте кнопки и подсказка клавиш перестают помещаться в узкий композер
+   (модалка комментариев в размере L): подсказка уходит на вторую строку и прижимается
+   вправо, а не вылезает за край. */
+.thread-composer__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-inner);
+    margin-top: var(--space-inner);
+}
+
+.thread-composer__actions button:disabled {
+    cursor: default;
+    opacity: var(--disabled-opacity);
+}
+
+/* Статус автосейва живёт под полем, а не в строке кнопок (§4b). */
+.thread-composer__status-line:empty {
+    display: none;
+}
+
+.thread-composer__status-line {
+    margin-top: 6px;
+}
+
+.thread-composer__status,
+.thread-composer__notice {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-control);
+    color: var(--text-dim);
+}
+
+.thread-composer__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.thread-composer__status.is-saved > svg {
+    color: var(--draft-saved);
+}
+
+.thread-composer__status.is-error {
+    color: var(--error);
+}
+
+.thread-composer__notice {
+    margin: 0 0 6px;
+    padding: 5px 7px;
+    border-left: 2px solid var(--attention-border-strong);
+    background: var(--attention-surface-alt);
+    color: var(--attention-text-soft);
+}
+
+.diff-line-composer {
+    padding: 12px 13px 13px 62px;
+    border-top: 1px solid var(--border-hairline-soft);
+    border-bottom: 1px solid var(--border-hairline-soft);
+    background: var(--surface-app);
+}
+
+.diff-line-composer .thread-composer {
+    max-width: 620px;
+    padding: 0;
+}
+
+.diff-row__comment {
+    position: absolute;
+    right: 0;
+    top: calc((var(--line-height-code) - 23px) / 2);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 23px;
+    height: 23px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-button);
+    background: var(--accent);
+    box-shadow: var(--shadow-line-comment);
+    color: var(--surface-app);
+    cursor: pointer;
+    /* Прозрачность показанной кнопки живёт в своей переменной: глобальное `[disabled]` из base.css
+       той же специфичности стоит в каскаде позже и иначе перебивало бы `opacity: 0`,
+       раскрывая карандаш в каждой строке прошлой итерации. */
+    --comment-opacity: 1;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.diff-row__comment[disabled] {
+    --comment-opacity: var(--disabled-opacity);
+    opacity: 0;
+}
+
+/* Фокус на маркере треда карандаш не показывает: после клика по маркеру фокус остаётся в ряду,
+   и карандаш «залипал» бы в раскрытой строке. Клавиатурный фокус на самой строке — показывает. */
+.diff-row:not(.diff-row--pair):hover .diff-row__comment,
+.diff-row:not(.diff-row--pair):focus-within:not(:has(.thread-marker:focus)) .diff-row__comment,
+.diff-row--pair:has(> .diff-side[data-side='old']:hover) > .diff-row__gutter[data-side='old'] .diff-row__comment,
+.diff-row--pair:has(> .diff-side[data-side='new']:hover) > .diff-row__gutter[data-side='new'] .diff-row__comment,
+.diff-row--pair:has(> .diff-side[data-side='old']:focus-within) > .diff-row__gutter[data-side='old'] .diff-row__comment,
+.diff-row--pair:has(> .diff-side[data-side='new']:focus-within) > .diff-row__gutter[data-side='new'] .diff-row__comment,
+.diff-row__comment.is-selection-start {
+    opacity: var(--comment-opacity);
+    pointer-events: auto;
+}
+
+.thread-outside {
+    margin: var(--space-card) var(--space-page) 30px;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-card);
+    background: var(--surface-panel);
+    overflow: clip;
+}
+
+/* Родители уже дают боковой page-padding; Overview переопределяет раскладку отдельно. */
+.diff-list > .thread-outside,
+.route__stops > .thread-outside {
+    margin-inline: 0;
+}
+
+.thread-outside__toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 10px 13px;
+    border: 0;
+    background: var(--thread-surface);
+    text-align: left;
+    font-size: var(--font-size-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.thread-fade {
+    animation: thread-fade 200ms ease-out;
+}
+
+@keyframes thread-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

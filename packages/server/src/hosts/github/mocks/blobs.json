@@ -1,0 +1,90 @@
+{
+  "src/service.ts": {
+    "old": {
+      "text": "export function serve() {\n    const port = 8080;\n    listen(port);\n    log(\"up\");\n}\n",
+      "isBinary": false,
+      "byteSize": 84
+    },
+    "new": {
+      "text": "export function serve() {\n    const port = 9090;\n    listen(port);\n    log(\"up\");\n}\n",
+      "isBinary": false,
+      "byteSize": 84
+    }
+  },
+  "docs/readme.md": {
+    "new": {
+      "text": "# Sherpa\n\n",
+      "isBinary": false,
+      "byteSize": 10
+    }
+  },
+  "src/legacy.ts": {
+    "old": {
+      "text": "export const legacy = true;\n",
+      "isBinary": false,
+      "byteSize": 28
+    }
+  },
+  "assets/logo.png": {
+    "old": {
+      "isBinary": true,
+      "byteSize": 6,
+      "base64": "iVBORwAB"
+    },
+    "new": {
+      "isBinary": true,
+      "byteSize": 7,
+      "base64": "iVBORwACAw=="
+    }
+  },
+  "assets/icon.svg": {
+    "old": {
+      "text": "<svg width=\"1\"></svg>\n",
+      "isBinary": false,
+      "byteSize": 22
+    },
+    "new": {
+      "text": "<svg width=\"2\"></svg>\n",
+      "isBinary": false,
+      "byteSize": 22
+    }
+  },
+  "assets/huge.png": {
+    "new": {
+      "isBinary": true,
+      "byteSize": 12000000,
+      "base64": "aHVnZQ=="
+    }
+  },
+  "src/generated.bin": {
+    "old": {
+      "isBinary": true,
+      "byteSize": 3,
+      "base64": "AQAC"
+    },
+    "new": {
+      "isBinary": true,
+      "byteSize": 3,
+      "base64": "AQAD"
+    }
+  },
+  "src/bundle.js": {
+    "old": {
+      "text": "x",
+      "isBinary": false,
+      "byteSize": 3000000
+    },
+    "new": {
+      "text": "y",
+      "isBinary": false,
+      "byteSize": 3000000
+    }
+  },
+  "src/renamed.ts": {
+    "new": {
+      "text": "export const renamed = true;\n",
+      "isBinary": false,
+      "byteSize": 29
+    }
+  }
+}

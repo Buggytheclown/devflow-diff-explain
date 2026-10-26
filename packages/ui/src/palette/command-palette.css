@@ -1,0 +1,166 @@
+/* Командная палитра — docs/design/README.md §14 и docs/design/SPEC-elements.md §2.3. */
+
+.command-palette__overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: var(--overlay-dialog);
+    backdrop-filter: blur(3px);
+}
+
+.command-palette {
+    width: 560px;
+    max-height: calc(100vh - 132px);
+    margin: 96px auto 0;
+    overflow: hidden;
+    background: var(--surface-card-header);
+    border: 1px solid var(--border-raised-dialog);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-dialog);
+}
+
+.command-palette__query-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner);
+    min-height: 50px;
+    padding: 0 var(--space-control);
+    border-bottom: 1px solid var(--border-standard);
+}
+
+.command-palette__search-icon {
+    color: var(--text-dim);
+}
+
+.command-palette__query {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font: 400 var(--font-size-input) / 1.4 var(--font-sans);
+}
+
+/*
+ * Точечное исключение из глобального кольца фокуса (base.css): палитра открывается сразу
+ * с фокусом в этом единственном поле, и рамка внутри всплывшей панели читается как мусор —
+ * индикацию даёт сама панель.
+ */
+.command-palette__query:focus-visible {
+    outline: none;
+}
+
+.command-palette__query::placeholder {
+    color: var(--text-dim);
+}
+
+.command-palette__escape,
+.command-palette__key-hint {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-key);
+    background: transparent;
+    color: var(--text-dim-strong);
+    font: 400 var(--font-size-gutter) / 1.4 var(--font-mono);
+}
+
+.command-palette__escape {
+    padding: 1px 5px;
+}
+
+.command-palette__results {
+    max-height: calc(100vh - 183px);
+    padding: var(--space-inner-tight);
+    overflow: auto;
+}
+
+.command-palette__group + .command-palette__group {
+    margin-top: 6px;
+}
+
+.command-palette__group-label {
+    padding: 7px var(--space-inner) 4px;
+    color: var(--text-dim);
+    font: 500 var(--font-size-badge) / 1.3 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.command-palette__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner);
+    width: 100%;
+    min-height: 40px;
+    padding: 7px var(--space-inner);
+    border: 0;
+    border-radius: var(--radius-button);
+    background: transparent;
+    color: var(--text-secondary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.command-palette__item.is-active {
+    background: var(--surface-popover);
+    color: var(--text-primary);
+}
+
+.command-palette__item-main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.command-palette__item-label {
+    overflow: hidden;
+    font-size: var(--font-size-ui);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.command-palette__consequence,
+.command-palette__snippet,
+.command-palette__empty-recent,
+.command-palette__notice,
+.command-palette__limit {
+    color: var(--text-muted-dim);
+    font-size: var(--font-size-meta);
+}
+
+.command-palette__consequence,
+.command-palette__snippet {
+    overflow: hidden;
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.command-palette__snippet mark {
+    background: var(--accent-selection);
+    color: var(--accent-text-bright);
+}
+
+.command-palette__key-hint {
+    flex: none;
+    padding: 1px 5px;
+}
+
+.command-palette__empty-recent,
+.command-palette__notice,
+.command-palette__limit {
+    padding: 7px var(--space-inner);
+}
+
+.command-palette__notice {
+    color: var(--text-body);
+}
+
+.command-palette__limit {
+    border-top: 1px solid var(--border-hairline-strong);
+    margin-top: var(--space-inner-tight);
+    font-family: var(--font-mono);
+}

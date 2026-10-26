@@ -1,0 +1,13 @@
+{
+    "repository": "arcadia",
+    "author": "alice",
+    "summary": "EXAMPLE-1: grid — считаем колонки честно",
+    "user_login": "alice",
+    "branch": "EXAMPLE-1",
+    "mount_id": "11111111-22222222-33333333-44444444",
+    "repository_type": "vfs",
+    "date": "2026-08-20T20:34:12+02:00",
+    "message": "EXAMPLE-1: grid — считаем колонки честно",
+    "revision": 21155320,
+    "hash": "c7ee7ba7c6da85838a47d1c481c0036ab3c390f1"
+}

@@ -1,0 +1,68 @@
+diff --git a/examples/ui/packages/grid/src/index.ts b/examples/ui/packages/grid/src/index.ts
+--- a/examples/ui/packages/grid/src/index.ts
++++ b/examples/ui/packages/grid/src/index.ts
+@@ -1,3 +1,4 @@
+ export function columns(grid: Grid): number {
+-    return grid.length;
++    // Пустые колонки в счёт не идут.
++    return grid.filter((column) => column.width > 0).length;
+ }
+diff --git a/examples/ui/packages/grid/src/legacy.ts b/examples/ui/packages/grid/src/legacy.ts
+deleted file mode 100644
+--- a/examples/ui/packages/grid/src/legacy.ts
++++ /dev/null
+@@ -1,2 +0,0 @@
+-export const legacy = true;
+-export const legacyColumns = 3;
+diff --git a/examples/ui/docs/old.md b/examples/ui/docs/old.md
+deleted file mode 100644
+--- a/examples/ui/docs/old.md
++++ /dev/null
+@@ -1,3 +0,0 @@
+-# Grid
+-
+-Колонки считаются по длине массива.
+diff --git a/examples/ui/docs/moved.md b/examples/ui/docs/moved.md
+new file mode 100644
+--- /dev/null
++++ b/examples/ui/docs/moved.md
+@@ -0,0 +1,3 @@
++# Grid
++
++Колонки считаются по ненулевой ширине.
+diff --git a/examples/ui/docs/keep.md b/examples/ui/docs/keep.md
+deleted file mode 100644
+--- a/examples/ui/docs/keep.md
++++ /dev/null
+@@ -1,2 +0,0 @@
+-# Колонки
+-
+diff --git a/examples/ui/docs/renamed.md b/examples/ui/docs/renamed.md
+new file mode 100644
+--- /dev/null
++++ b/examples/ui/docs/renamed.md
+@@ -0,0 +1,2 @@
++# Колонки
++
+diff --git a/examples/ui/docs/added.md b/examples/ui/docs/added.md
+new file mode 100644
+--- /dev/null
++++ b/examples/ui/docs/added.md
+@@ -0,0 +1,3 @@
++# Ширина
++
++Ширина колонки — число.
+diff --git a/examples/ui/docs/huge.md b/examples/ui/docs/huge.md
+--- a/examples/ui/docs/huge.md
++++ b/examples/ui/docs/huge.md
+@@ -1,3 +1,3 @@
+ # Большой файл
+ 
+-Старая строка.
++Новая строка.
+diff --git a/examples/ui/assets/icon.svg b/examples/ui/assets/icon.svg
+new file mode 100644
+--- /dev/null
++++ b/examples/ui/assets/icon.svg
+@@ -0,0 +1,1 @@
++<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#4c9aff" /></svg>

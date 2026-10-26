@@ -1,0 +1,449 @@
+/* Оболочка галереи. Это дев-инструмент: хендофф её не описывает, но токены те же. */
+
+.gallery {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    min-height: 100vh;
+}
+
+.gallery__sidebar {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: var(--space-control) 0 30px;
+    background: var(--surface-panel);
+    border-right: 1px solid var(--border-standard);
+}
+
+.gallery__brand {
+    padding: 0 var(--space-control) var(--space-control);
+    font-size: var(--font-size-control);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.gallery__group {
+    padding: 0 var(--space-inner-tight) var(--space-inner);
+}
+
+.gallery__group-title {
+    margin: 0 0 4px;
+    padding: 0 6px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim-strong);
+}
+
+.gallery__item {
+    display: block;
+    width: 100%;
+    padding: 5px 6px;
+    border: none;
+    border-radius: var(--radius-button);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--font-size-secondary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.gallery__item:hover {
+    background: var(--surface-hover);
+}
+
+.gallery__item[aria-current='true'] {
+    background: var(--surface-selected);
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.gallery__stage {
+    min-width: 0;
+}
+
+.gallery__stage-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    padding: var(--space-inner) var(--space-control);
+    border-bottom: 1px solid var(--border-hairline-strong);
+    font-size: var(--font-size-secondary);
+    color: var(--text-dim);
+}
+
+.gallery__stage-spacer {
+    flex: 1;
+}
+
+/* Переключатель локали: галерея показывает состояние на обоих языках. */
+/* Переключатели стенда: тема, язык и размер текста — одинаковые ряды моно-кнопок. */
+.gallery__themes,
+.gallery__locales,
+.gallery__textsize {
+    display: flex;
+    gap: 4px;
+}
+
+.gallery__themes button,
+.gallery__locales button,
+.gallery__textsize button {
+    padding: 2px 8px;
+    border: 1px solid var(--border-standard);
+    border-radius: var(--radius-badge);
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-badge);
+    text-transform: uppercase;
+    color: var(--text-dim);
+    cursor: pointer;
+}
+
+.gallery__themes button[aria-checked='true'],
+.gallery__themes button[aria-pressed='true'],
+.gallery__locales button[aria-pressed='true'],
+.gallery__textsize button[aria-pressed='true'] {
+    background: var(--surface-selected);
+    color: var(--text-primary);
+}
+
+.gallery__stage-id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    color: var(--text-dim-strong);
+}
+
+.gallery__canvas {
+    padding: var(--space-card);
+}
+
+/*
+ * Карточка со своей темой: `data-theme` стоит на этой обёртке, а не на `<html>`, поэтому фон
+ * вокруг контрола берётся из её же палитры — иначе светлая карточка висела бы на тёмном стенде.
+ */
+.gallery-themed {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-ui);
+    line-height: var(--line-height-body);
+    margin: calc(-1 * var(--space-card));
+    padding: var(--space-card);
+    background: var(--surface-app);
+    color: var(--text-primary);
+}
+
+/* Меню настроек: панель раскрывается влево от правого края триггера — даём ей это место. */
+.gallery-settings-menu {
+    display: flex;
+    justify-content: flex-end;
+    width: 320px;
+    /* Панель длиннее холста карточки: без запаса снизу её обрезал бы край стенда. */
+    padding-bottom: 230px;
+}
+
+/* Стенд для состояний с прокруткой: в приложении высоту даёт колонка вью, здесь — эта рамка. */
+.gallery__viewport {
+    display: flex;
+    flex-direction: column;
+    height: 70vh;
+    overflow-y: auto;
+}
+
+/* Потерянные заметки: дифф и панель чата в одном кадре — как в приложении, рядом. */
+.gallery-notes-lost {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+}
+
+.gallery-notes-lost__diff {
+    min-width: 0;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.gallery-notes-lost .gallery-chat-panel {
+    height: auto;
+    flex: 0 0 auto;
+}
+
+.gallery-zero-filters {
+    flex-direction: row;
+    gap: var(--space-card);
+}
+
+.gallery-zero-filters__select {
+    min-width: 290px;
+    align-self: flex-start;
+    padding: var(--space-control);
+    border: 1px solid var(--border-standard);
+    border-radius: var(--radius-card);
+    background: var(--surface-panel);
+}
+
+.gallery-zero-filters__select h2 {
+    margin: 0 0 var(--space-inner);
+    font-size: var(--font-size-section-title);
+    color: var(--text-secondary);
+}
+
+.gallery-agent-popover {
+    align-items: flex-end;
+    padding: 58px 80px;
+}
+
+.gallery-review-actions {
+    position: relative;
+    min-height: 260px;
+}
+
+.gallery-review-actions .review-action-bar {
+    position: absolute;
+}
+
+.gallery-review-complete .review-complete {
+    min-height: 100%;
+}
+
+/*
+ * Чат в кадре стоит там же, где в приложении, — колонкой у правого края под верхней
+ * панелью. Слоя над панелью действий у него намеренно нет: если панель снова налезет на чат,
+ * это должно быть видно на скриншоте.
+ */
+.gallery-dock-chat {
+    position: fixed;
+    top: 46px;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    width: var(--width-agent-panel);
+}
+
+.gallery-dock-chat .chat-panel {
+    position: static;
+    height: auto;
+    flex: 1;
+}
+
+/* Оверлейный режим (<1280): чат поверх скрима — те же слои, что в `app.css`. */
+.gallery-dock-chat--overlay {
+    z-index: 55;
+}
+
+/*
+ * Скрим оверлейного режима. Геометрия и слой — как в `app.css`, но клики он в галерее
+ * пропускает: иначе из состояния не переключиться.
+ */
+.gallery-dock-scrim {
+    position: fixed;
+    inset: 46px 0 0;
+    z-index: 54;
+    background: var(--overlay-dialog);
+    pointer-events: none;
+}
+
+.gallery-selection-popover {
+    min-height: 250px;
+    overflow: hidden;
+    padding: 24px;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-card);
+    background: var(--surface-app);
+}
+
+.gallery-selection-popover__card {
+    overflow: hidden;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-card);
+    background: var(--surface-diff-card);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-code);
+    line-height: var(--line-height-code);
+}
+
+.gallery-selection-popover__header {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-hairline-strong);
+    background: var(--surface-card-header);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-weight: 600;
+}
+
+.gallery-selection-popover__row {
+    padding: 0 12px;
+    color: var(--text-body);
+}
+
+.gallery-selection-popover__row.is-selected {
+    background: var(--surface-selected);
+}
+
+.gallery-composer {
+    max-width: 720px;
+    overflow: hidden;
+    padding-top: var(--space-control);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-card);
+    background: var(--surface-diff-card);
+}
+
+/* --- Витрина токенов --- */
+
+.showcase {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-card);
+}
+
+.showcase__group-title {
+    margin: 0 0 var(--space-inner);
+    font-size: var(--font-size-section-title);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.showcase__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--space-inner-tight);
+}
+
+.swatch {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 0 var(--space-inner-tight);
+    padding: 6px var(--space-inner-tight);
+    border: 1px solid var(--border-hairline-strong);
+    border-radius: var(--radius-button);
+    background: var(--surface-panel);
+}
+
+.swatch__paint {
+    grid-row: span 2;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-key);
+}
+
+.swatch__paint--empty {
+    background: var(--surface-app);
+}
+
+.swatch__name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-gutter);
+    color: var(--text-secondary);
+}
+
+.swatch__value {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-scope);
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Полоса шириной ровно в измеряемое значение: ширину видно глазом, число — подписью. */
+.width-sample {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    align-items: center;
+    gap: 2px var(--space-inner);
+    margin-bottom: var(--space-inner-tight);
+}
+
+.width-sample__label {
+    grid-row: span 2;
+    font-size: var(--font-size-secondary);
+    color: var(--text-secondary);
+}
+
+/* Полоса шире кадра обрезается дорожкой: мерить её надо неурезанной, а скролл галереи трогать нельзя. */
+.width-sample__track {
+    overflow: hidden;
+}
+
+.width-sample__bar {
+    height: 10px;
+    border-radius: var(--radius-key);
+    background: var(--tier-low);
+}
+
+.width-sample__value {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-scope);
+    color: var(--text-dim);
+}
+
+.sample {
+    margin: 0 0 var(--space-inner-tight);
+    color: var(--text-primary-soft);
+}
+
+.sample--sans {
+    font-family: var(--font-sans);
+}
+
+.sample--mono {
+    font-family: var(--font-mono);
+}
+
+.sample__label {
+    display: inline-block;
+    min-width: 220px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-scope);
+    color: var(--text-dim-strong);
+}
+
+/*
+ * Тост обновления в галерее: в приложении он `position: fixed`, а карточке состояния
+ * нужен свой поток — рамка возвращает его на место и держит ту же ширину.
+ */
+.update-toast-frame {
+    position: relative;
+    width: 360px;
+}
+
+.update-toast-frame .update-toast {
+    position: static;
+}
+
+/* Язык маршрута: индикатор провенанса и плашка одной колонкой. */
+.route-locale-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner-tight);
+    max-width: 900px;
+}
+
+/*
+ * Кадр состояний тура: табы сверху, вью и панель агента рядом — как в приложении.
+ * Каркас тура позиционируется от этого кадра, поэтому у тела кадра своя система координат.
+ */
+.tour-gallery {
+    position: relative;
+}
+
+.tour-gallery__tabs {
+    display: flex;
+    flex: none;
+    justify-content: center;
+    padding: var(--space-inner) 0;
+    border-bottom: 1px solid var(--border-hairline);
+}
+
+.tour-gallery__body {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}

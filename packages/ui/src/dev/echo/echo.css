@@ -1,0 +1,239 @@
+/*
+ * Дев-страница echo-демо. Цвета переведены на токены, чтобы в UI не осталось второго
+ * набора значений. Дизайн хендоффа сюда не приезжает:
+ * это инструмент прогона матрицы харнесов, а не продуктовый экран.
+ */
+
+.screen {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 20px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-control);
+}
+
+.screen--message {
+    gap: var(--space-inner-tight);
+}
+
+.muted {
+    color: var(--text-dim);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-standard);
+}
+
+.header__pr {
+    color: var(--text-muted);
+    font-size: var(--font-size-body);
+}
+
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    font-weight: 600;
+}
+
+.pill__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+}
+
+.pill--connected .pill__dot {
+    background: var(--diff-add-text);
+}
+
+.pill--disconnected .pill__dot {
+    background: var(--error);
+}
+
+.banner {
+    padding: 12px var(--space-control);
+    border: 1px solid var(--border-standard);
+    border-left-width: 3px;
+    border-radius: var(--radius-button);
+    background: var(--surface-panel-deep);
+}
+
+.banner p {
+    margin: 6px 0 0;
+}
+
+.banner--warn {
+    border-left-color: var(--attention);
+}
+
+.banner--offline {
+    border-left-color: var(--error);
+}
+
+.command {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+    flex-wrap: wrap;
+}
+
+.command code {
+    padding: 4px var(--space-inner-tight);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-key);
+    background: var(--surface-app);
+}
+
+code,
+pre {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body);
+}
+
+button,
+select,
+textarea {
+    font: inherit;
+    color: inherit;
+}
+
+button {
+    padding: 6px 12px;
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-button);
+    background: var(--surface-control);
+    cursor: pointer;
+}
+
+button[type='submit'] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+button:disabled {
+    opacity: var(--disabled-opacity);
+    cursor: default;
+}
+
+.enqueue {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner-tight);
+}
+
+.enqueue__label {
+    font-weight: 600;
+}
+
+.enqueue__text {
+    padding: var(--space-inner-tight) var(--space-inner);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-button);
+    background: var(--surface-input);
+    resize: vertical;
+}
+
+.enqueue__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner-tight);
+}
+
+.enqueue__priority {
+    padding: 6px var(--space-inner-tight);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-button);
+    background: var(--surface-control);
+}
+
+.enqueue__error,
+.task__fail {
+    margin: 0;
+    color: var(--error-text);
+}
+
+.tasks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner);
+}
+
+.tasks__empty {
+    color: var(--text-dim);
+}
+
+.task {
+    padding: 12px var(--space-control);
+    border: 1px solid var(--border-control);
+    border-radius: var(--radius-button);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-inner-tight);
+}
+
+.task--done {
+    border-left: 3px solid var(--diff-add-text);
+}
+
+.task--failed {
+    border-left: 3px solid var(--error);
+}
+
+.task--leased {
+    border-left: 3px solid var(--attention);
+}
+
+.task__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-inner);
+    flex-wrap: wrap;
+}
+
+.task__header button {
+    margin-left: auto;
+}
+
+.task__meta {
+    color: var(--text-muted);
+    font-size: var(--font-size-body);
+}
+
+.task__status {
+    font-weight: 600;
+}
+
+.task__progress,
+.task__hint,
+.task__result {
+    margin: 0;
+}
+
+.task__hint {
+    color: var(--text-muted);
+    font-size: var(--font-size-body);
+}
+
+.task__result pre {
+    margin: var(--space-inner-tight) 0 0;
+    padding: var(--space-inner-tight) var(--space-inner);
+    border-radius: var(--radius-key);
+    background: var(--surface-panel-deep);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+summary {
+    cursor: pointer;
+}

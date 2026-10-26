@@ -1,0 +1,15 @@
+diff --git a/examples/ui/packages/grid/src/index.ts b/examples/ui/packages/grid/src/index.ts
+--- a/examples/ui/packages/grid/src/index.ts
++++ b/examples/ui/packages/grid/src/index.ts
+@@ -1,4 +1,4 @@
+ import { columns } from './columns';
+ 
+-export const count = (rows) => rows.length;
++export const count = (rows) => columns(rows).length;
+diff --git a/examples/ui/docs/added.md b/examples/ui/docs/added.md
+new file mode 100644
+--- /dev/null
++++ b/examples/ui/docs/added.md
+@@ -0,0 +1,2 @@
++# Added
++Файл появился между итерациями.

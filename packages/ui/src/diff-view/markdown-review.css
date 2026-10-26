@@ -1,0 +1,55 @@
+.markdown-review {
+    padding: 16px 24px;
+    line-height: 1.6;
+    user-select: text;
+}
+
+.markdown-review__toolbar {
+    margin-bottom: 12px;
+}
+
+.markdown-review__segment + .markdown-review__segment {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border-standard);
+}
+
+.markdown-review__block {
+    margin-bottom: var(--space-inner);
+    padding-left: var(--space-inner);
+    border-left: 2px solid transparent;
+}
+
+.markdown-review__block.is-selected,
+.markdown-review__block.is-thread-focused {
+    border-left-color: var(--accent);
+}
+
+/* Колонок номеров в документе нет: тред под строкой встаёт вровень с текстом блока (кромка 2px + отступ). */
+.markdown-review .thread-line {
+    padding-left: calc(2px + var(--space-inner));
+}
+
+.markdown-review__anchor {
+    display: none;
+}
+
+.markdown-review .md-h1 {
+    font-size: var(--font-size-pr-title-overview);
+}
+
+.markdown-review .md-h2 {
+    font-size: var(--font-size-screen-title);
+}
+
+.markdown-review .md-h3 {
+    font-size: var(--font-size-stop-title-high);
+}
+
+.markdown-review .md-pre {
+    overflow: auto;
+}
+
+.markdown-review .md-table {
+    width: 100%;
+}

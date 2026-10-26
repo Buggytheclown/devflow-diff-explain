@@ -1,0 +1,33 @@
+{
+  "name": "@sherpa/server",
+  "version": "0.0.0",
+  "description": "Сервер одного PR: HTTP и SSE, база, очередь задач, оркестраторы и адаптеры хостов",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "node build-server.mjs",
+    "dev": "tsx src/dev.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --no-error-on-unmatched-pattern",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sherpa/fixtures": "workspace:*",
+    "@sherpa/protocol": "workspace:*",
+    "diff": "^9.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@sherpa/ui": "workspace:*",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.12"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
