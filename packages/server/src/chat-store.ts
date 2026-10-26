@@ -21,6 +21,7 @@ export type ChatListener = (revision: number) => void;
 
 export interface ChatStoreOptions {
     readonly db: SherpaDatabase;
+    readonly createNotes?: boolean;
     readonly now?: () => Date;
 }
 
@@ -88,6 +89,7 @@ export class ChatStore {
         headCommit: string | null,
         enqueue: () => TransactionalEnqueue,
     ) => { exchange: ChatExchange; enqueued: TransactionalEnqueue } | null;
+    private readonly createNotes: boolean;
     private readonly txComplete: (taskId: number, answer: string) => boolean;
     private readonly txAdoptLegacy: (activeDiffId: HostId) => number;
     private readonly txMigrateNotes: (
@@ -103,6 +105,7 @@ export class ChatStore {
 
     constructor(options: ChatStoreOptions) {
         this.db = options.db;
+        this.createNotes = options.createNotes ?? true;
         this.now = options.now ?? ((): Date => new Date());
         this.txAsk = transaction(this.db, (question, anchor, headCommit, locale, enqueue, explanation) =>
             this.askInTransaction(question, anchor, headCommit, locale, enqueue, explanation),
@@ -379,7 +382,7 @@ export class ChatStore {
                  error = NULL, updated_at = ? WHERE id = ?`,
             )
             .run(answer, now, row.id);
-        if (row.anchor !== null) {
+        if (this.createNotes && row.anchor !== null) {
             const anchor = JSON.stringify(parseAnchor(row.anchor));
             this.db
                 .prepare(

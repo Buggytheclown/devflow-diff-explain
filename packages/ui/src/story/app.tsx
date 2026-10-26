@@ -3,7 +3,8 @@ import { explanationText } from '@sherpa/protocol';
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 
 import { askReviewChat, cancelReviewChat, cancelTask, fillRouteStop, fetchReviewChat, fetchReviewRoute, generateReviewRoute, retryReviewChat } from '../api.js';
-import type { AppProps } from '../app.tsx';
+import type { Store } from '../store.js';
+import type { StorySession } from './session.js';
 import { reconnectCommand } from '../components/reconnect-command.js';
 import { ChatPanel } from '../components/chat-panel.tsx';
 import '../diff-view/diff-view.css';
@@ -23,7 +24,7 @@ import './story.css';
 const EMPTY_CHAT: UiChatResponse = { exchanges: [], notes: [], chatRevision: 0 };
 const noop = (): void => undefined;
 
-export function App({ store, session, token }: AppProps) {
+export function App({ store, session, token }: { store: Store; session: StorySession; token: string }) {
     const locale = useLocale();
     const t = storyCopy[locale];
     const settings = useUiSettingsStore();

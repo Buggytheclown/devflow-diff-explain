@@ -49,10 +49,10 @@ describe('сборка пакета скилла', () => {
     it('version.json несёт версию поставки и состояние рабочего дерева', () => {
         const distVersion = JSON.parse(readFileSync(join(distDir, 'version.json'), 'utf8'));
 
-        const head = arc(['rev-parse', 'HEAD']);
+        const head = git(['rev-parse', 'HEAD']);
         expect(distVersion).toEqual({
             version: releaseVersion,
-            builtFrom: head === null ? null : arc(['status', '--short', '--', '.']) === '' ? head : `${head}-dirty`,
+            builtFrom: head === null ? null : git(['status', '--short', '--', '.']) === '' ? head : `${head}-dirty`,
             releasedAt: null,
             whatsNew: null,
         });
@@ -233,9 +233,9 @@ async function stopProcess(pid) {
     }
 }
 
-function arc(args) {
+function git(args) {
     try {
-        return execFileSync('arc', args, {
+        return execFileSync('git', args, {
             cwd: resolve(packageRoot, '../..'),
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'ignore'],

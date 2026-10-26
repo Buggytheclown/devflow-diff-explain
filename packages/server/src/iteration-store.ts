@@ -1,4 +1,4 @@
-import type { HostId, Iteration, PrDiff, ReviewHost } from '@sherpa/protocol';
+import type { HostId, Iteration, PrDiff, ReviewSource } from '@sherpa/protocol';
 import { iterationSchema, prDiffSchema } from '@sherpa/protocol';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
@@ -228,7 +228,7 @@ export class IterationStore {
  */
 export async function rememberIterationDiff(
     store: IterationStore,
-    host: ReviewHost,
+    host: ReviewSource,
     diff: PrDiff,
 ): Promise<void> {
     try {

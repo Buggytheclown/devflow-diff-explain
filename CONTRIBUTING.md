@@ -54,7 +54,7 @@ pnpm --filter @sherpa/ui dev
 
 Дев-прокси в `packages/ui/vite.config.ts` направляет `/api` на живой сервер: адрес он берёт из `SHERPA_SERVER`, иначе из первого манифеста в `~/.sherpa/servers/*.json` — порт эфемерный, зашить его нельзя, а сервер, поднятый после `vite dev`, требует перезапуска vite. Открывать `http://localhost:5173/#t=<токен>`, токен — из ссылки, которую напечатал сервер.
 
-Скилл из чекаута: собрать (`pnpm --filter @sherpa/ui build && pnpm --filter @sherpa/skill build`) и слинковать дистрибутив в харнес — `~/.claude/skills/devflow-diff-explain` (Claude Code) или `~/.agents/skills/devflow-diff-explain` (Codex) → `<репо>/packages/skill/dist`. `SHERPA_SERVER_BIN` перебивает поиск модуля сервера рядом с CLI, если нужен другой.
+Установка личной сборки: `pnpm install:local` собирает UI/CLI/сервер и устанавливает проверенную standalone-копию в `~/.agents/skills/devflow-diff-explain`. Прежняя установка сохраняется в резервной копии вне каталога скиллов; вызов `sherpa` заменяется на `devflow-diff-explain`. Данные и `.env` по-прежнему читаются из `~/.sherpa`, настройка `SHERPA_DIR` сохраняется. Для установки в другой каталог: `node scripts/install-local.mjs --target <path>`.
 
 ## Галерея состояний
 

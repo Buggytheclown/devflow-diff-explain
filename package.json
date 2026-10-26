@@ -1,6 +1,6 @@
 {
   "name": "devflow-diff-explain",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "description": "Личная Devflow Diff Explain: краткий рассказ о ПР, дифф и вопросы агенту",
   "private": true,
   "license": "UNLICENSED",
@@ -15,7 +15,8 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "docs:endpoints": "node scripts/protocol-endpoints.mjs --write",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "install:local": "node scripts/install-local.mjs --replace-sherpa"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

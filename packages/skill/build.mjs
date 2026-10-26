@@ -74,18 +74,18 @@ function writeVersionFile() {
  * в монорепозитории чужие правки по соседству к сборке отношения не имеют.
  */
 function buildRevision() {
-    const head = arc(['rev-parse', 'HEAD']);
+    const head = git(['rev-parse', 'HEAD']);
     if (head === null) {
         return null;
     }
     // Состояние дерева выяснить не вышло — честнее пометить сборку, чем обещать чистый хеш.
-    const status = arc(['status', '--short', '--', '.']);
+    const status = git(['status', '--short', '--', '.']);
     return status === '' ? head : `${head}${DIRTY_SUFFIX}`;
 }
 
-function arc(args) {
+function git(args) {
     try {
-        return execFileSync('arc', args, {
+        return execFileSync('git', args, {
             cwd: repoRoot,
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'ignore'],

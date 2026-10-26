@@ -77,12 +77,12 @@ describe('команда релиза', () => {
 
         // Дистрибутив собирается из рабочего дерева: незакоммиченные правки обязаны быть видны
         // и в отчёте, и в готовом сообщении коммита — иначе арк-лог сошлётся на чужой код.
-        const head = arc(['rev-parse', 'HEAD']);
+        const head = git(['rev-parse', 'HEAD']);
         if (head === null) {
             expect(stdout).toContain('Исходники сборки: неизвестны');
             expect(stdout).not.toContain('(сборка ');
         } else {
-            const expected = arc(['status', '--short', '--', '.']) === '' ? head : `${head}-dirty`;
+            const expected = git(['status', '--short', '--', '.']) === '' ? head : `${head}-dirty`;
             expect(stdout).toContain(`Исходники сборки: ${expected}`);
             expect(stdout).toContain(`(сборка ${expected})`);
         }
@@ -159,9 +159,9 @@ function ensureRootReadme() {
     return content;
 }
 
-function arc(args) {
+function git(args) {
     try {
-        return execFileSync('arc', args, {
+        return execFileSync('git', args, {
             cwd: repoRoot,
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'ignore'],

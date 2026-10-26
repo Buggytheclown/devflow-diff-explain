@@ -80,7 +80,7 @@ export interface UiRoutesOptions {
     /** Итерации PR: их список едет в снапшоте, а смена активной делает маршрут устаревшим. */
     readonly iterationFeed: IterationFeed | null;
     /** Прогресс чтения: его ревизия едет в канал, чтобы вторая вкладка сошлась. */
-    readonly progress: ProgressStore;
+    readonly progress: ProgressStore | null;
     /** Состояние маршрута: его ревизия едет в канал тем же способом, что и прогресс. */
     readonly route: RouteStore;
     /** История чата и заметки: событие несёт только ревизию, данные перечитываются отдельной ручкой. */
@@ -299,7 +299,7 @@ function streamState(options: UiRoutesOptions, ctx: StreamContext): void {
         unsubscribeReview = options.reviewFeed.subscribe(pushReview);
     }
     // Прогресс чтения локальный и от хоста не зависит: событие есть всегда, даже без ревью-хоста.
-    if (!res.writableEnded && !res.destroyed) {
+    if (options.progress !== null && !res.writableEnded && !res.destroyed) {
         pushProgress(options.progress.revision);
         unsubscribeProgress = options.progress.subscribe(pushProgress);
     }

@@ -15,7 +15,7 @@ const pad = (value: number): string => String(value).padStart(2, '0');
 const form = (value: number, one: string, other: string): string => plural(value, { one, other }, 'en');
 
 export const en: Dictionary = {
-    'app.name': 'Sherpa',
+    'app.name': 'Devflow Diff Explain',
     'app.stopped': 'Sherpa stopped',
     'app.connecting': 'Connecting to the server…',
     'app.reconnecting': 'Server unavailable, reconnecting…',

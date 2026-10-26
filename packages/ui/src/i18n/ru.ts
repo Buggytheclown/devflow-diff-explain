@@ -19,7 +19,7 @@ const form = (value: number, one: string, few: string, many: string): string =>
     plural(value, { one, few, many, other: many }, 'ru');
 
 export const ru = {
-    'app.name': 'Шерпа',
+    'app.name': 'Devflow Diff Explain',
     'app.stopped': 'Шерпа остановилась',
     'app.connecting': 'Подключаюсь к серверу…',
     'app.reconnecting': 'Сервер недоступен, переподключаюсь…',

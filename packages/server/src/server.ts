@@ -55,6 +55,7 @@ import { PrStateStore } from './pr-state-store.js';
 import { ProgressStore } from './progress-store.js';
 import { TaskQueue } from './queue.js';
 import { ReviewFeed } from './review-feed.js';
+import { createReadRoutes } from './read-routes.js';
 import { createReviewRoutes } from './review-routes.js';
 import type { RouteConfig } from './route-orchestrator.js';
 import { RouteOrchestrator } from './route-orchestrator.js';
@@ -264,7 +265,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         const iterationStore = new IterationStore(options.now === undefined ? { db } : { db, now: options.now });
         // Прогресс чтения локальный: он есть у любого сервера, в том числе без ревью-хоста.
         // Патчи итераций нужны ему, чтобы переносить отметки с итерации на итерацию по путям файлов.
-        const progress = new ProgressStore({
+        const progress = options.presentation === 'story' ? null : new ProgressStore({
             db,
             iterations: iterationStore,
             ...(options.now === undefined ? {} : { now: options.now }),
@@ -280,7 +281,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         // Без хоста ревью-событий не бывает вовсе — SSE-канал остаётся каналом состояния.
         // Смена статуса ревью (чужой шип) перечитывает мету: вердикты уедут в снапшот UI.
         const reviewFeed =
-            reviewHost === null
+            reviewHost === null || options.presentation === 'story'
                 ? null
                 : new ReviewFeed(reviewHost.host, {
                       ...(reviewHost.watchStatus === undefined ? {} : { watchStatus: reviewHost.watchStatus }),
@@ -292,7 +293,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         const prMeta = new PrMetaCache({ host: reviewHost?.host ?? null });
         // Буфер черновиков: текст, который хост ещё не принял, переживает и падение
         // хоста, и перезагрузку вкладки, и перезапуск сервера.
-        const draftBuffer = new DraftBufferWriter({
+        const draftBuffer = options.presentation === 'story' ? null : new DraftBufferWriter({
             host: reviewHost?.host ?? null,
             store: new DraftBufferStore(options.now === undefined ? { db } : { db, now: options.now }),
             reviewFeed,
@@ -303,7 +304,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             ...options.updateCheck,
             sherpaDir,
             settings: settingsStore,
-            enabled: reviewHost?.name !== 'fixture',
+            enabled: options.presentation !== 'story' && reviewHost?.name !== 'fixture',
         });
         // Маршрут, как и прогресс чтения, локален: без хоста он просто не покидает фазу `none`.
         const routeStore = new RouteStore(options.now === undefined ? { db } : { db, now: options.now });
@@ -320,7 +321,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             }
         }
         // Заметки создаются раньше фида: их якоря он перевозит на новую итерацию.
-        const chatStore = new ChatStore(options.now === undefined ? { db } : { db, now: options.now });
+        const chatStore = new ChatStore({ db, createNotes: options.presentation !== 'story', ...(options.now === undefined ? {} : { now: options.now }) });
         // Итерации PR: один вотчер на сервер — из него растут `uiState.iterations` и `stale`.
         const iterationFeed =
             reviewHost === null
@@ -425,30 +426,19 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 presence: uiPresence,
                 shutdownSignal: shutdownController.signal,
             }),
-            ...createReviewRoutes({
-                host: reviewHost?.host ?? null,
-                reviewFeed,
-                progress,
-                route: routeStore,
-                prMeta,
-                draftBuffer,
-                iterations: iterationStore,
-                iterationFeed,
+            ...(draftBuffer === null || progress === null ? createReadRoutes({
+                host: reviewHost?.host ?? null, prMeta, iterations: iterationStore, iterationFeed,
                 blobs: new BlobCache(sherpaDir, blobsDirOf(sherpaDir, prKey)),
-                ...(feedbackOrchestrator === null
-                    ? {}
-                    : {
-                          onPublished: () => {
-                              void feedbackOrchestrator.reconcile();
-                          },
-                      }),
-            }),
-            ...createFeedbackRoutes({
-                prKey,
-                workerStatus: () => workerRegistry.status(),
-                ...(reviewHost?.currentUser === undefined ? {} : { currentUser: reviewHost.currentUser }),
-                ...options.feedback,
-            }),
+            }) : createReviewRoutes({
+                host: reviewHost?.host ?? null, reviewFeed, progress, route: routeStore, prMeta,
+                draftBuffer, iterations: iterationStore, iterationFeed,
+                blobs: new BlobCache(sherpaDir, blobsDirOf(sherpaDir, prKey)),
+                ...(feedbackOrchestrator === null ? {} : { onPublished: () => { void feedbackOrchestrator.reconcile(); } }),
+            })),
+            ...(options.presentation === 'story' ? [] : createFeedbackRoutes({
+                prKey, workerStatus: () => workerRegistry.status(),
+                ...(reviewHost?.currentUser === undefined ? {} : { currentUser: reviewHost.currentUser }), ...options.feedback,
+            })),
             // Настройки глобальные: ручка не зависит ни от ревью-хоста, ни от стейта этого PR.
             ...createSettingsRoutes({
                 settings: settingsStore,
@@ -509,7 +499,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         // Мета PR грузится тем же фоном: снапшот отдаётся сразу, мета доезжает по SSE.
         prMeta.start();
         // Черновики, не довезённые прошлым запуском, встают в очередь повтора.
-        if (options.presentation !== 'story') draftBuffer.start();
+        draftBuffer?.start();
         // Проверка версии — тоже фоном и после listen: старт сервера её не ждёт.
         updateChecker.start();
         // Взводим самоостановку последним: раньше этого момента останавливать нечего.
@@ -596,9 +586,9 @@ function createHandle(parts: {
     reviewFeed: ReviewFeed | null;
     iterationFeed: IterationFeed | null;
     prMeta: PrMetaCache;
-    draftBuffer: DraftBufferWriter;
+    draftBuffer: DraftBufferWriter | null;
     updateChecker: UpdateChecker;
-    progress: ProgressStore;
+    progress: ProgressStore | null;
     routeStore: RouteStore;
     routeOrchestrator: RouteOrchestrator;
     chatStore: ChatStore;
@@ -633,9 +623,9 @@ function createHandle(parts: {
                 // Ретрай загрузки меты не должен проснуться после остановки сервера.
                 parts.prMeta.close();
                 // То же у повторов буфера черновиков: их подхватит следующий запуск.
-                parts.draftBuffer.close();
+                parts.draftBuffer?.close();
                 parts.updateChecker.close();
-                parts.progress.close();
+                parts.progress?.close();
                 // Автомат маршрута гасим до закрытия хранилища: его отложенный прогрев не должен
                 // проснуться над закрытой БД.
                 parts.routeOrchestrator.close();

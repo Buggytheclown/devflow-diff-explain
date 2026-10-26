@@ -1,8 +1,8 @@
 import type { DraftBufferEntry } from '@sherpa/protocol';
-import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import './app.css';
+import { MessageScreen } from './components/message-screen.tsx';
 import { fetchDraftBuffer, sendFeedback, setReviewThreadResolved } from './api.js';
 import { buildBannerSources } from './app/banners.tsx';
 import {
@@ -1234,14 +1234,7 @@ export function App({ store, session, token }: AppProps) {
     );
 }
 
-export function MessageScreen({ title, children }: { title: string; children: ReactNode }) {
-    return (
-        <main className="message-screen">
-            <h1 className="message-screen__title">{title}</h1>
-            {children}
-        </main>
-    );
-}
+export { MessageScreen } from './components/message-screen.tsx';
 
 const EMPTY_DRAFT_BUFFER: readonly DraftBufferEntry[] = [];
 /** Сколько ждать заметку после перехода: виртуализатор и маршрут дорисовывают карточки не сразу. */
