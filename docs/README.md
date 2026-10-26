@@ -16,7 +16,7 @@
 
 ## Приоритет при конфликте
 
-`product.md` → `design/SPEC-elements.md` → `design/README.md` → прототип `design/Devflow Diff Explain.dc.html`. Прототип — референс, не источник кода.
+`product.md` → `design/SPEC-elements.md` → `design/README.md` → прототип `design/Sherpa.dc.html`. Прототип — референс, не источник кода.
 
 Если документ расходится с кодом, прав код — чинить надо документ.
 

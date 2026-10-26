@@ -16,7 +16,10 @@
     "build": "pnpm -r build",
     "docs:endpoints": "node scripts/protocol-endpoints.mjs --write",
     "release": "node scripts/release.mjs",
-    "install:local": "node scripts/install-local.mjs --replace-sherpa"
+    "install:local": "node scripts/install-local.mjs --replace-sherpa",
+    "test:all": "node scripts/test-suite.mjs all",
+    "test:legacy": "node scripts/test-suite.mjs legacy",
+    "test:e2e": "pnpm --filter @sherpa/e2e e2e"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

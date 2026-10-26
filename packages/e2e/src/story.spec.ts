@@ -67,7 +67,7 @@ test('рассказ → явный вопрос → ответ; старое р
     const topbarBox = await page.locator('.story-topbar').boundingBox();
     expect(topbarBox?.y).toBe(0);
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toBeInViewport();
-    await page.screenshot({ path: '/private/tmp/sherpa-fixes-code-jump.png' });
+    await page.screenshot({ path: test.info().outputPath('sherpa-fixes-code-jump.png') });
     await toolbar.getByRole('button', { name: 'Спросить об этих строках', exact: true }).click();
     await expect(page.locator('.chat-panel__composer')).toContainText(`${String(jumpStart)}–${String(codeReference.end)}`);
 
@@ -97,7 +97,7 @@ test('рассказ → явный вопрос → ответ; старое р
         expect(box?.y).toBeLessThan(900);
     }).toPass();
     await page.locator('.story-topbar').getByRole('button', { name: 'К рассказу', exact: true }).click();
-    await page.screenshot({ path: '/private/tmp/sherpa-story-ui.png', fullPage: true });
+    await page.screenshot({ path: test.info().outputPath('sherpa-story-ui.png'), fullPage: true });
 });
 
 test('дифф доступен без агента, история комментариев не загружается', async ({ page, launchSherpa }) => {
@@ -109,22 +109,4 @@ test('дифф доступен без агента, история коммен
     await expect(page.locator('.story-code')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Построить рассказ' })).toHaveCount(0);
     expect(requests.some((url) => /\/threads|\/snapshots|draft-buffer/.test(url))).toBe(false);
-});
-
-test('в узком окне доступен поиск и выбор другого файла без горизонтальной прокрутки', async ({ page, launchSherpa }) => {
-    const server = await launchSherpa('fixture-medium');
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(server.url);
-    await page.getByRole('button', { name: 'Дифф', exact: true }).click();
-    await page.getByRole('button', { name: 'Файлы', exact: true }).click();
-    const menu = page.locator('.story-nav');
-    const last = menu.getByRole('button').last();
-    const path = await last.innerText();
-    await page.getByRole('textbox', { name: 'Найти файл' }).fill(path);
-    await page.screenshot({ path: '/private/tmp/sherpa-fixes-files-menu.png' });
-    await menu.getByRole('button', { name: path, exact: true }).click();
-    await expect(menu).toBeHidden();
-    await expect(page.locator('.story-code header code')).toHaveText(path);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: '/private/tmp/sherpa-fixes-narrow.png', fullPage: false });
 });

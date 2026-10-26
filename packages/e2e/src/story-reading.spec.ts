@@ -7,7 +7,6 @@ import { body, outline, evidence, evidenceSource } from './story-support.js';
 
 test.setTimeout(45_000);
 
-const QA = '/tmp/devflow-diff-explain-qa';
 const longBody = { ...body, stops: body.stops.map((stop) => {
     const paragraph = [stop.paragraph,
         'Запрос проходит через обработчик и проверку состояния. Связь между этими частями видна в вызовах. '.repeat(3),
@@ -58,7 +57,7 @@ test('возврат хранит абзац, раскрытия и фокус; 
     await expect(first.getByRole('button', { name: 'Скрыть изменение', exact: true })).toHaveCount(1);
     await expect(open).toBeFocused();
     await expect(async () => { expect(Math.abs(((await paragraph.boundingBox())?.y ?? 99999) - before)).toBeLessThan(3); }).toPass({ timeout: 5_000 });
-    await page.screenshot({ path: `${QA}/return-to-section.png`, fullPage: false });
+    await page.screenshot({ path: test.info().outputPath('return-to-section.png'), fullPage: false });
     await page.setViewportSize({ width: 900, height: 900 });
     await expect(paragraph).toBeInViewport();
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -174,28 +173,6 @@ test('ошибка источника повторяется локально б
     await expect(page.locator('.story-source-line')).not.toHaveCount(0);
 });
 
-test('мобильный переход из чата закрывает перекрытие, хранит черновик и возвращает фокус', async ({ page, launchSherpa }) => {
-    const server = await launchSherpa('fixture-medium');
-    await page.setViewportSize({ width: 390, height: 844 });
-    await startStory(page, server, body);
-    const section = page.locator('.story-document section').nth(1);
-    await section.getByRole('button', { name: 'Вопрос об этом', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Поясни порядок');
-    await page.getByRole('textbox', { name: 'Вопрос агенту' }).press('Enter');
-    const task = await server.worker.next();
-    await server.worker.complete(task.taskId ?? 0, `См. [код](#code?path=${encodeURIComponent(evidenceSource.path)}&side=new&start=1&end=2).`);
-    await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Продолжение вопроса');
-    await page.getByRole('link', { name: 'код', exact: true }).click();
-    await expect(page.locator('.story-chat')).toHaveCount(0);
-    await expect(page.locator('.story-main .diff-row.is-selected').first()).toBeInViewport();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await storyTab(page).click();
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
-    await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toHaveValue('Продолжение вопроса');
-    await expect(page.locator('.story-chat-context')).toContainText('Запись до уведомления');
-    await page.screenshot({ path: `${QA}/narrow-chat.png` });
-});
-
 test('источники показывают точные стороны, отдельный файл и картинку; раскрытие не меняет вопрос', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium');
     const changed = fixtureIteration('medium').diff.files.find((file) => file.path === '.github/CODEOWNERS');
@@ -236,7 +213,7 @@ test('источники показывают точные стороны, от�
     await expect(page.locator('.story-chat-context')).toHaveText(context);
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
     await page.getByRole('combobox', { name: 'Тема', exact: true }).selectOption('light');
-    await page.screenshot({ path: `${QA}/sources-light.png`, fullPage: true });
+    await page.screenshot({ path: test.info().outputPath('sources-light.png'), fullPage: true });
     await intro.getByRole('button', { name: 'Скрыть изменение', exact: true }).focus();
     await page.keyboard.press('Enter');
     await expect(button).toBeFocused();

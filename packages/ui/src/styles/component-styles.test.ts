@@ -37,32 +37,26 @@ describe('компонентные стили', () => {
         const name = path.relative(SRC, file);
         const css = readFileSync(file, 'utf8');
 
-        it(`${name}: выбор палитры остаётся в tokens.css`, () => {
+        it(`${name}: соблюдает общие правила дизайн-токенов`, () => {
             const selectors = css.replace(/\/\*[\s\S]*?\*\//g, '').match(/\[data-theme\s*(?:=|[~|^$*]=)[^\]]*\]/g);
             expect(selectors ?? []).toEqual([]);
-        });
 
-        it(`${name}: цвета только через токены`, () => {
             const literals = [
                 ...css.matchAll(/#[0-9a-fA-F]{3,8}\b/g),
                 ...css.matchAll(/\brgba?\(/g),
                 ...css.matchAll(/\bhsla?\(/g),
             ].map((match) => match[0]);
 
-            expect(literals).toEqual([]);
-        });
+            expect(literals, `${name}: цвета должны браться из токенов`).toEqual([]);
 
-        // Размер текста — целиком в rem через токены (docs/design/theme.md, «Типографика»):
-        // px здесь снова отвязал бы интерфейс от системного размера шрифта и от режима L.
-        it(`${name}: размеры текста только через токены`, () => {
+            // Размер текста — целиком в rem через токены (docs/design/theme.md, «Типографика»):
+            // px здесь снова отвязал бы интерфейс от системного размера шрифта и от режима L.
             const sizes = [...css.matchAll(/font-size:\s*([^;]+);/g)].map((match) => match[1]?.trim());
 
             expect(
                 sizes.filter((size) => size === undefined || !(size.startsWith('var(') || size === 'inherit')),
             ).toEqual([]);
-        });
 
-        it(`${name}: используются только объявленные токены`, () => {
             const used = [...css.matchAll(/var\(\s*(--[a-z0-9-]+)/g)].map((match) => match[1]);
             // Своя переменная файла — не второй набор значений, а одно место для константы
             // раскладки этой вью (её цвет всё равно не спрятать: литералы запрещены выше).

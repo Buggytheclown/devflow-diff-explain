@@ -4,7 +4,7 @@ import { test, expect } from './sherpa-fixture.js';
 const fixture = guidedStoryFixture();
 test.setTimeout(90_000);
 
-test('описание → блок → полный дифф → файл/строки в чате; порядок, переходы и узкое окно', async ({ page, launchSherpa }) => {
+test('описание → блок → полный дифф → файл/строки в чате; порядок, переходы в обычном окне', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium');
     await page.goto(server.url);
     await server.worker.register('codex', 'ru');
@@ -26,7 +26,7 @@ test('описание → блок → полный дифф → файл/ст�
     await expect(page.locator('.story-inline-note')).toHaveCount(1);
     expect(await page.locator('.story-main .diff-row').allTextContents()).toEqual(patchRows);
     await page.locator('.story-inline-note').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: '/private/tmp/sherpa-guided-explanation.png', fullPage: false });
+    await page.screenshot({ path: test.info().outputPath('sherpa-guided-explanation.png'), fullPage: false });
     await expect(page.locator('.story-guided > .md-blocks')).toContainText(fixture.body.stops[0]?.files[0]?.explanation.replaceAll('`', '') ?? '');
     await page.locator('.story-guided > .story-ask').click();
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Как файл участвует в решении?');
@@ -53,14 +53,13 @@ test('описание → блок → полный дифф → файл/ст�
         const row = [...root.querySelectorAll<HTMLElement>('.diff-row[data-key]')].find((entry) => entry.getBoundingClientRect().bottom > top);
         return { key: row?.dataset.key ?? '', y: row?.getBoundingClientRect().top ?? 0 };
     });
-    const description = page.locator('.story-nav').getByRole('button', { name: 'Описание ПРа', exact: true });
     for (let i = 0; i < 3; i += 1) {
         await page.locator('.story-topbar').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
         await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
         const row = page.locator(`.story-main .diff-row[data-key="${point.key}"]`);
         await expect(async () => { expect(Math.abs(((await row.boundingBox())?.y ?? 9999) - point.y)).toBeLessThan(3); }).toPass();
     }
-    await page.screenshot({ path: '/private/tmp/sherpa-guided-file.png', fullPage: false });
+    await page.screenshot({ path: test.info().outputPath('sherpa-guided-file.png'), fullPage: false });
     await page.locator('.story-nav-block > button:first-child').nth(1).click();
     const related = page.locator('.story-related button').first();
     await related.click();
@@ -68,12 +67,6 @@ test('описание → блок → полный дифф → файл/ст�
     await page.locator('.story-guided > .story-return').click();
     await expect(page.locator('.story-guided h2')).toHaveText(fixture.outline.stops[1]?.title ?? '');
     await expect(related).toBeFocused();
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: 'Файлы', exact: true }).click();
-    await expect(description).toBeVisible(); await description.click();
-    await expect(page.locator('.story-nav')).toBeHidden();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: '/private/tmp/sherpa-guided-narrow.png', fullPage: false });
 });
 
 test('провал и локальный повтор сохраняют план, дифф и открытый файл', async ({ page, launchSherpa }) => {

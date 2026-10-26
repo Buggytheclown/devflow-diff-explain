@@ -1,0 +1,11 @@
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+const suite = process.argv[2];
+if (!['all', 'legacy'].includes(suite)) throw new Error('Usage: node scripts/test-suite.mjs <all|legacy>');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const args = suite === 'legacy' ? ['--filter', '@sherpa/ui', 'test'] : ['-r', 'test'];
+const result = spawnSync('pnpm', args, { cwd: root, env: { ...process.env, DEVFLOW_TEST_SUITE: suite }, stdio: 'inherit' });
+if (result.error) throw result.error;
+process.exitCode = result.status ?? 1;
