@@ -72,7 +72,9 @@ export interface UiRoutesOptions {
     /** Мета PR для снапшота: её обновление тоже будит SSE-клиентов. */
     readonly prMeta: PrMetaSource;
     /** Новая версия в trunk: её появление тоже будит SSE-клиентов. */
-    readonly update: UpdateSource;
+    readonly update: UpdateSource | null;
+    /** Служебные echo-задачи доступны только на фикстурах. */
+    readonly development?: boolean;
     /** Доступность канала фидбека зависит только от OAuth-токена в окружении. */
     readonly feedback: UiFeedbackAvailability;
     /** Ревизия тредов для SSE; null — ревью-событий у этого сервера не бывает. */
@@ -102,27 +104,30 @@ const KEEPALIVE_INTERVAL_MS = 30_000;
  * снапшот `UiState` — серверные внутренности (пути файлов, workerId аренды) в него не попадают.
  */
 export function createUiRoutes(options: UiRoutesOptions): Route[] {
+    const update = options.update;
     return [
         {
             method: 'GET',
             path: UI_ENDPOINTS.state,
             handle: handlingRpcFailures(() => ({ status: 200, body: buildState(options) })),
         },
-        {
-            method: 'POST',
-            path: UI_ENDPOINTS.enqueue,
-            handle: handlingRpcFailures(async (ctx) => {
-                const request = await readUiRequest(ctx, uiEnqueueRequestSchema);
-                const record = options.queue.enqueue({
-                    type: request.type,
-                    priority: request.priority ?? 'interactive',
-                    instructions: echoInstructions(request.text),
-                    contextFiles: [],
-                });
-                const body: UiEnqueueResponse = { task: toUiTask(record) };
-                return { status: 200, body };
-            }),
-        },
+        ...(options.development === true ? [
+            {
+                method: 'POST' as const,
+                path: UI_ENDPOINTS.enqueue,
+                handle: handlingRpcFailures(async (ctx) => {
+                    const request = await readUiRequest(ctx, uiEnqueueRequestSchema);
+                    const record = options.queue.enqueue({
+                        type: request.type,
+                        priority: request.priority ?? 'interactive',
+                        instructions: echoInstructions(request.text),
+                        contextFiles: [],
+                    });
+                    const body: UiEnqueueResponse = { task: toUiTask(record) };
+                    return { status: 200, body };
+                }),
+            },
+        ] : []),
         {
             method: 'POST',
             path: UI_ENDPOINTS.cancel,
@@ -132,19 +137,21 @@ export function createUiRoutes(options: UiRoutesOptions): Route[] {
                 return { status: 200, body };
             }),
         },
-        {
-            method: 'POST',
-            path: UI_ENDPOINTS.updateCheck,
-            handle: handlingRpcFailures(async () => {
-                const result = await options.update.force();
-                // Провал проверки нельзя выдать за «обновлений нет»: палитра различает их
-                // только по коду ответа, а `{update: null}` она читает как «версия свежая».
-                if (result.failure !== null) {
-                    throw new RpcFailure('host_unavailable', `Не удалось проверить обновления: ${result.failure}`);
-                }
-                return { status: 200, body: uiUpdateCheckResponseSchema.parse({ update: result.update }) };
-            }),
-        },
+        ...(update === null ? [] : [
+            {
+                method: 'POST' as const,
+                path: UI_ENDPOINTS.updateCheck,
+                handle: handlingRpcFailures(async () => {
+                    const result = await update.force();
+                    // Провал проверки нельзя выдать за «обновлений нет»: палитра различает их
+                    // только по коду ответа, а `{update: null}` она читает как «версия свежая».
+                    if (result.failure !== null) {
+                        throw new RpcFailure('host_unavailable', `Не удалось проверить обновления: ${result.failure}`);
+                    }
+                    return { status: 200, body: uiUpdateCheckResponseSchema.parse({ update: result.update }) };
+                }),
+            },
+        ]),
         {
             method: 'GET',
             path: UI_ENDPOINTS.events,
@@ -244,7 +251,7 @@ function streamState(options: UiRoutesOptions, ctx: StreamContext): void {
     const unsubscribeQueue = options.queue.subscribeChanges(schedule);
     const unsubscribeWorker = options.registry.subscribe(schedule);
     const unsubscribePrMeta = options.prMeta.subscribe(schedule);
-    const unsubscribeUpdate = options.update.subscribe(schedule);
+    const unsubscribeUpdate = options.update?.subscribe(schedule);
     // Подписка на треды поднимается первым SSE-клиентом и гаснет с последним (см. ReviewFeed);
     // заводится после первого снапшота состояния, чтобы канал начинался с `state`.
     let unsubscribeReview: (() => void) | null = null;
@@ -258,7 +265,7 @@ function streamState(options: UiRoutesOptions, ctx: StreamContext): void {
         unsubscribeQueue();
         unsubscribeWorker();
         unsubscribePrMeta();
-        unsubscribeUpdate();
+        unsubscribeUpdate?.();
         unsubscribeReview?.();
         unsubscribeIterations?.();
         unsubscribeProgress?.();
@@ -330,7 +337,7 @@ function buildState(options: UiRoutesOptions): UiState {
         pr: options.prMeta.get(),
         feedback: options.feedback,
         iterations: options.iterationFeed?.iterations() ?? [],
-        update: options.update.get(),
+        update: options.update?.get() ?? null,
         generationCap: options.route.currentGenerationCap(),
     };
 }

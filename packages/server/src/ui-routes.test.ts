@@ -64,6 +64,7 @@ describe('ручки UI', () => {
         // хоста нет — ревью-ручки отвечают `no_review_host`, SSE остаётся каналом состояния.
         const base = {
             prKey: PR_KEY,
+            development: true,
             sherpaDir,
             longPollSeconds: 0.3,
             reviewHostFactory: () => null,
@@ -286,6 +287,7 @@ describe('ручки UI', () => {
             // Грейс паузы между вызовами сокращён: ждать минуту в тесте нечего.
             const server = await startServer({
                 prKey: PR_KEY,
+            development: true,
                 sherpaDir,
                 longPollSeconds: 30,
                 workerGapGraceSeconds: 0.3,

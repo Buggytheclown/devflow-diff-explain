@@ -40,7 +40,7 @@ export default defineConfig({
     // Дефолтные 5 с малы: сценарные тесты прогресса гоняют десятки перерисовок и на
     // загруженной машине (`pnpm -r test` держит все пакеты разом) упираются в таймаут,
     // хотя в одиночку идут 1–2 с. Зависший тест это по-прежнему ловит, просто позже.
-    test: { testTimeout: 20_000, hookTimeout: 20_000,
+    test: { testTimeout: 20_000, hookTimeout: 20_000, maxWorkers: 4,
         include: suite === 'explanation' ? explanationTests : configDefaults.include,
         exclude: suite === 'legacy' ? [...configDefaults.exclude, ...explanationTests] : configDefaults.exclude,
     },

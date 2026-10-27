@@ -78,6 +78,8 @@ import { createWorkerRoutes } from './worker-routes.js';
 export interface StartServerOptions {
     /** Ключ PR вида `<host>-<pr>`: имя манифеста и каталога стейта. */
     presentation?: 'legacy' | 'story';
+    /** Служебные задачи для локальной разработки; на фикстурах включены автоматически. */
+    development?: boolean;
     prKey: string;
     /** Корень стейта; по умолчанию `~/.sherpa`. */
     sherpaDir?: string;
@@ -300,11 +302,11 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         });
         // Проверка новой версии в trunk. На фикстурном хосте выключена: там версию
         // подставляет дев-ручка, а не Арканум.
-        const updateChecker = new UpdateChecker({
+        const updateChecker = options.presentation === 'story' ? null : new UpdateChecker({
             ...options.updateCheck,
             sherpaDir,
             settings: settingsStore,
-            enabled: options.presentation !== 'story' && reviewHost?.name !== 'fixture',
+            enabled: reviewHost?.name !== 'fixture',
         });
         // Маршрут, как и прогресс чтения, локален: без хоста он просто не покидает фазу `none`.
         const routeStore = new RouteStore(options.now === undefined ? { db } : { db, now: options.now });
@@ -419,6 +421,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 iterationFeed,
                 prMeta,
                 update: updateChecker,
+                development: options.development ?? reviewHost?.name === 'fixture',
                 feedback: feedbackAvailability(options.feedback),
                 progress,
                 route: routeStore,
@@ -444,7 +447,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 settings: settingsStore,
                 // Отклонённая версия живёт в настройках: после патча снапшот обязан пересобраться.
                 onChange: () => {
-                    updateChecker.settingsChanged();
+                    updateChecker?.settingsChanged();
                 },
             }),
             // Состояние UI этого PR (свёртки, история палитры) — локальное, ревью-хост ему не нужен.
@@ -501,7 +504,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         // Черновики, не довезённые прошлым запуском, встают в очередь повтора.
         draftBuffer?.start();
         // Проверка версии — тоже фоном и после listen: старт сервера её не ждёт.
-        updateChecker.start();
+        updateChecker?.start();
         // Взводим самоостановку последним: раньше этого момента останавливать нечего.
         idleWatch.arm(() => {
             options.onIdleStop?.(idleSeconds);
@@ -587,7 +590,7 @@ function createHandle(parts: {
     iterationFeed: IterationFeed | null;
     prMeta: PrMetaCache;
     draftBuffer: DraftBufferWriter | null;
-    updateChecker: UpdateChecker;
+    updateChecker: UpdateChecker | null;
     progress: ProgressStore | null;
     routeStore: RouteStore;
     routeOrchestrator: RouteOrchestrator;
@@ -624,7 +627,7 @@ function createHandle(parts: {
                 parts.prMeta.close();
                 // То же у повторов буфера черновиков: их подхватит следующий запуск.
                 parts.draftBuffer?.close();
-                parts.updateChecker.close();
+                parts.updateChecker?.close();
                 parts.progress?.close();
                 // Автомат маршрута гасим до закрытия хранилища: его отложенный прогрев не должен
                 // проснуться над закрытой БД.

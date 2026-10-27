@@ -28,7 +28,7 @@ describe('сервер объяснения подключает только н
         expect((await get(server.port, UI_ENDPOINTS.reviewThreads, server.token)).status).toBe(404);
         expect((await get(server.port, UI_ENDPOINTS.reviewProgress, server.token)).status).toBe(404);
         expect((await get(server.port, UI_ENDPOINTS.reviewDiff, server.token)).status).toBe(200);
-        await postJson(server.port, UI_ENDPOINTS.updateCheck, {}, server.token);
+        expect((await postJson(server.port, UI_ENDPOINTS.updateCheck, {}, server.token)).status).toBe(404);
         expect(updateFetch).not.toHaveBeenCalled();
     });
     it('ответ по строкам сохраняется в exchange без второй скрытой заметки', async () => {
@@ -47,4 +47,13 @@ describe('сервер объяснения подключает только н
         const body = await response.json() as { exchanges: {answer:string}[]; notes:unknown[] };
         expect(body.exchanges.at(-1)?.answer).toBe('Правило определяет дальнейшее действие.'); expect(body.notes).toEqual([]);
     });
+});
+
+// Настоящий источник может предоставлять тот же контракт, что фикстура, но служебных ручек у него нет.
+it('echo-задачи отсутствуют вне режима разработки', async () => {
+    const dir = await makeTempSherpaDir();
+    const server = await startServer({ prKey: 'arcanum-42', sherpaDir: dir, presentation: 'story', reviewHostFactory: () => null });
+    try {
+        expect((await postJson(server.port, UI_ENDPOINTS.enqueue, { type: 'echo', text: 'test' }, server.token)).status).toBe(404);
+    } finally { await server.close(); await removeTempSherpaDir(dir); }
 });

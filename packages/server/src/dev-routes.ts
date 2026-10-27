@@ -28,10 +28,11 @@ export interface DevRoutesOptions {
     /** Фикстурный отказ записи черновиков: им e2e проверяет буфер. */
     readonly setFailDraftWrites?: (fail: boolean) => void;
     /** Проверка версии этого сервера: на фикстуре её результат подставляет дев-ручка. */
-    readonly update: UpdateChecker;
+    readonly update: UpdateChecker | null;
 }
 
 export function createDevRoutes(options: DevRoutesOptions): Route[] {
+    const updateSource = options.update;
     return [
         {
             method: 'POST',
@@ -63,20 +64,22 @@ export function createDevRoutes(options: DevRoutesOptions): Route[] {
                       }),
                   },
               ]),
-        {
-            method: 'POST',
-            path: UI_DEV_ENDPOINTS.updateAvailable,
-            handle: handlingRpcFailures(async (ctx) => {
-                const request = await readRequest(ctx, uiDevUpdateAvailableRequestSchema, 'новой версии');
-                // Кэш на диске не трогается: подставленная версия не должна пережить перезапуск.
-                const update = options.update.setLatest({
-                    version: request.version,
-                    builtFrom: null,
-                    releasedAt: request.releasedAt,
-                    whatsNew: request.whatsNew,
-                });
-                return respond(uiUpdateCheckResponseSchema, { update }, 'local');
-            }),
-        },
+        ...(updateSource === null ? [] : [
+            {
+                method: 'POST' as const,
+                path: UI_DEV_ENDPOINTS.updateAvailable,
+                handle: handlingRpcFailures(async (ctx) => {
+                    const request = await readRequest(ctx, uiDevUpdateAvailableRequestSchema, 'новой версии');
+                    // Кэш на диске не трогается: подставленная версия не должна пережить перезапуск.
+                    const update = updateSource.setLatest({
+                        version: request.version,
+                        builtFrom: null,
+                        releasedAt: request.releasedAt,
+                        whatsNew: request.whatsNew,
+                    });
+                    return respond(uiUpdateCheckResponseSchema, { update }, 'local');
+                }),
+            },
+        ]),
     ];
 }
