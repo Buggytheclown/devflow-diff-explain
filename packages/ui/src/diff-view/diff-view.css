@@ -21,23 +21,6 @@
  * доступность side-by-side (`store.setAvailableWidth`), и потолок на нём замкнул бы контур
  * «режим → ширина → режим».
  */
-.diff-list {
-    position: relative;
-    padding: 0 var(--space-page) var(--space-bar-reserve);
-}
-
-.diff-list__inner {
-    position: relative;
-    width: 100%;
-    max-width: var(--diff-max);
-}
-
-.diff-list__item {
-    position: absolute;
-    left: 0;
-    width: 100%;
-    padding-bottom: var(--space-card);
-}
 
 /* --- Карточка файла --- */
 
@@ -52,116 +35,17 @@
     }
 }
 
-.diff-row--palette-target {
-    animation: palette-target-flash var(--motion-flash) ease-out;
-}
-
 .file-card {
-    /* Прозрачная полоса под маркеры тредов: они парят на кромке рамки (SPEC-changes-2026-09-20.md §3).
-       Полоса берётся из внешнего поля вью (`--space-page` ≥ 30px, в маршруте ещё и зазор колонок):
-       отрицательное поле выносит карточку левее на те же 14px, поэтому рамка остаётся на месте,
-       ширина кода не меняется, а потолки `--diff-max` не пересчитываются. */
     margin-left: -14px;
     padding-left: 14px;
 }
 
-.file-card__frame {
-    position: relative;
-    border: 1px solid var(--border-control);
-    border-radius: var(--radius-card);
-    background: var(--surface-diff-card);
-    /* Клип отпущен ровно налево и ровно под маркер треда: он выходит за рамку на 15px.
-       Сверху и снизу клип по рамке — иначе наружу выходит и фон липкой шапки (в маршруте она
-       закрывает им зазор до тулбара — `route.css`). `clip-path`, а не `overflow: clip`:
-       у второго запас клипа общий на все четыре стороны. */
-    clip-path: inset(0 0 0 -15px);
-}
-
-/*
- * Отпущенный клип режет по прямоугольнику и скругление углов за детей больше не держит: фон
- * липкой шапки и фоны строк заливают углы квадратом. Углы возвращает накладка ровно по рамке:
- * снаружи скругления — цвет страницы, по самому скруглению — линия рамки. Вдвоём они закрывают
- * весь излишек квадратного угла, поэтому скруглять детей не нужно: шапка липкая и своё
- * скругление увезла бы с собой на середину карточки.
- *
- * Накладка обрезана до двух полос углов, верхней и нижней: на прямых кромках ей делать нечего,
- * а маркеры тредов лежат там на рамке без помех. Слои внутри рамки: маркеры (4) < липкая шапка (5)
- * < углы (6). Шапка стоит на углах и в покое, и когда доезжает до низа карточки, поэтому углы над ней.
- * Нижняя полоса не выходит за рамку влево: закрывать снаружи рамки нечего.
- *
- * Исключение — маркер на последней строке: он лежит на нижнем левом углу, и полоса над ним
- * резала бы его в покое дугой рамки. Тогда нижняя полоса уходит под маркеры (3), а цена —
- * квадратные нижние углы шапки, пока она доезжает до низа уходящей карточки.
- */
-.file-card__frame::before,
-.file-card__frame::after {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    z-index: 6;
-    border: 1px solid var(--border-control);
-    border-radius: var(--radius-card);
-    box-shadow: 0 0 0 4px var(--surface-app);
-    pointer-events: none;
-}
-
-.file-card__frame::before {
-    clip-path: inset(-4px -4px calc(100% - var(--radius-card)) -4px);
-}
-
-.file-card__frame::after {
-    clip-path: inset(calc(100% - var(--radius-card)) -4px -4px 0);
-}
-
-.file-card__frame:has(.diff-rows > .diff-row:last-child > :is(.thread-marker, .diff-row__marker-slot--old))::after {
-    z-index: 3;
-}
-
 /* Машинные файлы приглушены (docs/design/README.md §10: generated → dim). */
-.file-card--generated .file-card__name,
-.file-card--generated .file-card__path {
-    color: var(--text-dim-strong);
-}
-
-.file-card__header {
-    position: sticky;
-    top: 0;
-    /* Над маркерами тредов (4): строка с тредом уходит под шапку вместе с маркером. */
-    z-index: 5;
-    display: flex;
-    align-items: center;
-    gap: var(--space-inner-tight);
-    padding: var(--file-header-padding);
-    min-height: var(--file-header-height);
-    background: var(--surface-card-header);
-    border-bottom: 1px solid var(--border-hairline-strong);
-}
 
 /*
  * Маркер выступает за рамку на полосу отпущенного клипа, и шапка внутри рамки его там не закрывает.
  * Полосу и левую линию рамки на высоту шапки закрывает её продолжение — цветом страницы и той же линией.
  */
-.file-card__header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: -1px;
-    left: -16px;
-    width: 15px;
-    border-right: 1px solid var(--border-control);
-    background: var(--surface-app);
-}
-
-.file-card__header--collapsible {
-    cursor: pointer;
-}
-
-.file-card__title {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    min-width: 0;
-}
 
 /*
  * Обрезка шапки (docs/design/SPEC-elements.md §1.2) — как в дереве файлов (`tree/file-tree.css`):
@@ -169,264 +53,41 @@
  * только себе самому и режется с конца.
  * `bdi` изолирует направление — иначе левая обрезка (`direction: rtl`) утащила бы слэш на другой край.
  */
-.file-card__name {
-    flex: 0 0 auto;
-    max-width: 100%;
-    overflow: hidden;
-    font-family: var(--file-label-font);
-    font-size: var(--file-name-size);
-    color: var(--text-primary-soft);
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-
-.file-card__name--deleted {
-    text-decoration: line-through;
-}
 
 /*
  * Путь до файла, а при переименовании ещё и старый путь: каждая цепочка каталогов режется
  * отдельно, имя старого файла держится до конца — как имя нового.
  */
-.file-card__path {
-    display: flex;
-    align-items: baseline;
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    font-family: var(--file-label-font);
-    font-size: var(--file-path-size);
-    color: var(--text-dim-strong);
-}
 
 /*
  * Цепочка каталогов ужимается первой — вплоть до нуля. `direction: rtl` режет начало строки,
  * а содержимое изолировано `bdi`, поэтому сам путь читается в обычном порядке.
  * `unicode-bidi: plaintext` не годится — с ним обрезка уходит вправо.
  */
-.file-card__path-dir {
-    flex: 0 1 auto;
-    min-width: 0;
-    direction: rtl;
-    text-align: left;
-}
 
 /* Имя уступает место только себе самому. */
-.file-card__path-name {
-    flex: 0 0 auto;
-    max-width: 100%;
-}
-
-.file-card__path-dir,
-.file-card__path-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.file-card__path-arrow {
-    flex: none;
-    padding: 0 4px;
-}
-
-.file-card__old-path {
-    color: var(--text-dim);
-}
-
-.file-card__counts {
-    display: flex;
-    gap: 6px;
-    /* Счётчики замыкают левую группу шапки: всё, что после них, прижато вправо. */
-    margin-right: auto;
-    font-family: var(--file-label-font);
-    font-size: var(--font-size-meta);
-}
-
-.file-card__add {
-    color: var(--diff-add-text);
-}
-
-.file-card__del {
-    color: var(--diff-del-text);
-}
 
 /* Бейдж конфликта в шапке карточки (docs/design/SPEC-elements.md §2.14): моно-чип в предупреждающей группе токенов. */
-.file-card__badge--conflict {
-    flex: none;
-    padding: 0 5px;
-    border: 1px solid var(--attention-border-strong);
-    border-radius: var(--radius-mark);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-tag);
-    line-height: 1.45;
-    color: var(--attention-text-dim);
-    white-space: nowrap;
-}
 
 /* Действия при наведении (docs/design/README.md §1): в покое их не видно, но клавиатуре они доступны. */
-.file-card__actions {
-    display: flex;
-    gap: var(--space-inner-tight);
-    opacity: 0;
-    transition: opacity var(--motion-hover) var(--motion-hover-ease);
-}
 
 /* Открытое меню живёт в портале — карточка теряет :hover, а кнопка-источник должна остаться на месте. */
-.file-card:hover .file-card__actions,
-.file-card__actions:focus-within,
-.file-card__actions:has([aria-expanded='true']) {
-    opacity: 1;
-}
-
-.file-card__expand {
-    display: flex;
-    gap: 6px;
-}
 
 /* Действия в шапке — плотный Ghost из `styles/controls.css`; текстовые «повторить» — ссылки. */
-.file-card__action {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-meta);
-}
 
 /* Тогл «просмотрено» в шапке файла (docs/design/README.md §1) — чекбокс из `styles/controls.css`. */
 
 /* --- Нотисы и служебные состояния --- */
 
-.file-card__notice,
-.file-card__hint,
-.file-card__loading,
-.file-card__collapsed {
-    display: flex;
-    align-items: center;
-    gap: var(--space-inner);
-    margin: 0;
-    padding: 7px 13px;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-meta);
-    color: var(--text-dim);
-    background: var(--surface-diff-gap);
-    border-bottom: 1px solid var(--border-hairline);
-}
-
-.file-card__hint {
-    color: var(--attention-text);
-    background: var(--attention-surface-alt);
-}
-
 /* Карточка осталась на экране вопреки фильтру (docs/design/SPEC-elements.md §2.7). */
-.file-card__kept {
-    margin: 0;
-    padding: 6px 13px;
-    font-size: var(--font-size-meta);
-    color: var(--attention-text-dim);
-    background: var(--attention-surface-alt);
-    border-bottom: 1px solid var(--attention-border-alt);
-}
 
 /* Скелетон занимает место, оценённое списком: текст держится у верхней кромки —
    в середине карточки высотой в несколько экранов его никто бы не нашёл.
 
    Первые 200 мс слот пуст (docs/design/SPEC-elements.md §3): высота строки резервируется здесь, иначе появление
    текста двигало бы карточки, которым список не передал оценку высоты. */
-.file-card__loading {
-    align-items: flex-start;
-    min-height: calc(var(--font-size-meta) * var(--line-height-body) + 14px);
-}
-
-.file-card__collapsed,
-.file-card__notice--button {
-    width: 100%;
-    border: 0;
-    border-bottom: 1px solid var(--border-hairline);
-    text-align: left;
-    cursor: pointer;
-}
-
-.file-card__collapsed:hover,
-.file-card__notice--button:hover {
-    background: var(--surface-hover);
-}
-
-.file-card__collapsed--file {
-    gap: 7px;
-}
-
-.file-card__collapsed-mark {
-    color: var(--text-dim-strong);
-}
-
-.file-card__collapsed-spacer {
-    flex: 1;
-}
-
-.file-card__collapsed-hint {
-    color: var(--text-dim-strong);
-}
-
-/*
- * Маркеры тредов свёрнутой карточки — стопкой на кромке у строки-сводки, по одному на тред.
- * Стопка и сводка делят одну ячейку сетки: строка растёт по стопке, а кнопка сводки тянется
- * на всю её высоту. Выступ влево — тот же, что у маркера строки (`left: -15px`), слой тот же (4).
- * Нижний отступ стопки с рамкой (8 + 1) не короче скругления: полоса нижних углов (6) маркер не режет.
- */
-.file-card__collapsed-row {
-    display: grid;
-}
-
-.file-card__collapsed-row > * {
-    grid-area: 1 / 1;
-}
-
-.file-card__collapsed-markers {
-    position: relative;
-    z-index: 4;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    justify-self: start;
-    margin-left: -15px;
-    padding: 6px 0 8px;
-    pointer-events: none;
-}
-
-.file-card__collapsed-markers > .thread-marker {
-    position: static;
-    pointer-events: auto;
-}
-
-/*
- * Раскрытый тред свёрнутой карточки — под шапкой, со своим маркером на кромке у верха треда.
- * Гуттера нет, поэтому отступа под номера строк нет; тред отходит от кромки, как текст сводки
- * с маркерами, иначе маркер ложится на аватар.
- */
-.file-card__marked-thread {
-    position: relative;
-}
-
-.file-card__marked-thread > .thread-marker {
-    top: 12px;
-}
-
-.file-card__marked-thread > .thread-line {
-    padding-left: 12px;
-}
-
-/* Текст сводки отходит от кромки, как номер строки от маркера в гуттере. */
-.file-card__collapsed-row > .file-card__collapsed {
-    padding-left: 25px;
-}
 
 /* --- Строки диффа --- */
-
-/*
- * Колонки номеров строк — по разрядности самого длинного показанного номера: `--gutter-digits`
- * ставит карточка, ширина одна на карточку и на все колонки номеров. Цифра меряется в шрифте
- * гуттера (у IBM Plex Mono — 0.6 кегля): `ch` в сетке ряда считался бы кеглем кода.
- * Уже двух разрядов колонка не ужимается. У номера 8px с одной стороны и 25px с другой: справа —
- * под карандаш комментария, у старых номеров unified — слева, под маркер треда на кромке карточки.
- */
 .file-card {
     /* Запасное значение: настоящее карточка ставит инлайн-стилем, он перебивает это. */
     --gutter-digits: 2;
@@ -576,42 +237,6 @@
     min-width: 0;
 }
 
-/* Раскрытый тред под строкой (`threads/threads.css`) начинается с колонки кода, в split — с кода своей половины;
-   в документе Markdown — с текста блока (`markdown-review.css`). */
-.thread-line {
-    padding-left: var(--thread-line-indent, calc(2 * var(--gutter-col) + 16px));
-}
-
-.diff-row-extras--split .thread-line {
-    padding-left: var(--thread-line-split-indent, calc(var(--gutter-col) + 14px));
-}
-
-/*
- * Маркеры тредов в side-by-side: у левой половины — на кромке карточки, у правой — на
- * разделителе половин. Слот нулевого размера, вся геометрия маркера считается от него.
- */
-.diff-row__marker-slot {
-    position: absolute;
-    top: 0;
-    /* Тот же слой, что у маркера в unified (`threads/threads.css`): под липкой шапкой. */
-    z-index: 4;
-    width: 0;
-    height: 0;
-}
-
-.diff-row__marker-slot--old {
-    left: 0;
-}
-
-.diff-row__marker-slot--new {
-    left: 50%;
-}
-
-/* Строка подсвечена, пока под ней раскрыт хоть один тред; свои фоны add/del сильнее — они про сам дифф. */
-.diff-row:where(:has(.thread-marker.is-open, .thread-marker.is-partly-open)) {
-    background: var(--surface-thread-line);
-}
-
 .diff-row:hover {
     background: var(--surface-card-header);
 }
@@ -625,7 +250,7 @@
     cursor: default;
 }
 
-.diff-row__gutter--comment {
+.diff-row__gutter--code {
     position: relative;
     padding-right: 25px;
 }
@@ -687,20 +312,12 @@
     background: var(--surface-diff-empty);
 }
 
-.diff-row.is-thread-focused,
-.diff-side.is-thread-focused {
-    background: var(--accent-selection);
-}
-
 /* Выделенный диапазон одинаков в обоих режимах (docs/design/README.md §1, docs/design/SPEC-elements.md §2.14). */
 .diff-row.is-selected,
 .diff-side.is-selected {
     background: var(--accent-selection);
 }
-
-/* Кромка выделения стоит на первом гуттере ряда, а не на «первом ребёнке»: у строки с тредом
-   первым ребёнком идёт маркер, и кромка рисовалась бы на нём. */
-.diff-row.is-selected > .diff-row__gutter:not(.diff-row__gutter--comment),
+.diff-row.is-selected > .diff-row__gutter:not(.diff-row__gutter--code),
 .diff-row__gutter.diff-side.is-selected {
     box-shadow: inset 2px 0 0 var(--accent);
 }

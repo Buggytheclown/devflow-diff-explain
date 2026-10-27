@@ -54,15 +54,13 @@ export interface EnsureServerOptions {
      */
     readonly nodeFlags?: readonly string[];
     /**
-     * Локальное ревью: каталог проекта, база сравнения, ветка, на которой построен ключ, и поручение
-     * на исход ревью. Всё это знает только CLI — серверу оно уезжает аргументами и сохраняется в стейте
+     * Локальный diff: каталог проекта, база сравнения и ветка, на которой построен ключ.
+     * Всё это знает только CLI — серверу оно уезжает аргументами и сохраняется в стейте
      * ключа, чтобы перезапуск обошёлся без них.
      */
     readonly repo?: string | undefined;
     readonly base?: string | undefined;
     readonly branch?: string | undefined;
-    /** Поручение на исход ревью (`--verdicts`): с ним ревью завершается Ship или Request changes. */
-    readonly verdicts?: string | undefined;
     /** Сколько ждём публикации манифеста; в тестах сокращается. */
     readonly startupTimeoutMs?: number;
 }
@@ -164,7 +162,7 @@ export async function loadServerModule(file: string): Promise<ServerModule> {
         // Битый файл (например, недописанный релизом) — путь и причина нужны в server.log, а не «повтори команду».
         const detail = error instanceof Error ? error.message : String(error);
         throw new CliError(
-            `devflow-diff-explain: the Sherpa server module ${file} failed to load — ${detail}.\n${REINSTALL_HINT}`,
+            `devflow-diff-explain: the Devflow Diff Explain server module ${file} failed to load — ${detail}.\n${REINSTALL_HINT}`,
         );
     }
     if (!isRecord(loaded) || typeof loaded.runServer !== 'function') {
@@ -238,7 +236,6 @@ async function spawnDaemon(
         ...(options.repo === undefined ? [] : ['--repo', options.repo]),
         ...(options.base === undefined ? [] : ['--base', options.base]),
         ...(options.branch === undefined ? [] : ['--branch', options.branch]),
-        ...(options.verdicts === undefined ? [] : ['--verdicts', options.verdicts]),
     ];
 
     const log = await fs.open(logPath, 'a');
@@ -320,7 +317,7 @@ async function prepareLogPath(sherpaDir: string, prKey: string): Promise<string>
         const detail = error instanceof Error ? error.message : String(error);
         throw new CliError(
             `devflow-diff-explain: could not prepare the state directory for the log ${logPath} — ${detail}.\n` +
-                'Check the permissions on the Sherpa state directory and call the command again.',
+                'Check the permissions on the Devflow Diff Explain state directory and call the command again.',
         );
     }
     return logPath;
@@ -372,7 +369,7 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<bool
 }
 
 const REINSTALL_HINT =
-    'Reinstall the Sherpa skill as a whole (the directory with SKILL.md and bin/). ' +
+    'Reinstall the Devflow Diff Explain skill as a whole (the directory with SKILL.md and bin/). ' +
     'Show this text to the user and stop — do not start the worker loop.';
 
 const INCOMPLETE_DISTRIBUTION =

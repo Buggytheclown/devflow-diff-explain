@@ -55,8 +55,6 @@ export interface LocalReviewSummary {
     readonly branch: string;
     /** Явная база; undefined — её считает сервер. */
     readonly base: string | undefined;
-    /** Поручение на исход ревью, подтверждённое сервером (`--verdicts`); null — ревью без вердиктов. */
-    readonly verdicts: string | null;
 }
 
 /**
@@ -70,12 +68,7 @@ export function formatUpReady(uiUrl: string, prKey: string, local: LocalReviewSu
             `Reviewing the working tree of ${local.repo} on branch ${local.branch}, ` +
                 `base ${local.base ?? defaultBaseWording(local.vcs)}.`,
         );
-        if (local.verdicts !== null) {
-            lines.push(
-                'The reviewer finishes with Ship or Request changes; both arrive as a `review.feedback` task ' +
-                    `that repeats the user's instruction: "${local.verdicts}".`,
-            );
-        }
+
     }
 
     lines.push(
@@ -172,9 +165,9 @@ export function formatOversizedResult(taskId: number, file: string, bytes: numbe
 export function helpText(): string {
     const commands: readonly (readonly [string, string])[] = [
         [
-            'devflow-diff-explain up [--local <path> [--verdicts <instruction>]] [--harness <name>] [--model <name>] ' +
+            'devflow-diff-explain up [--local <path>] [--harness <name>] [--model <name>] ' +
                 '[--lang <ru|en>] [--no-open]',
-            'start the review server and become its worker',
+            'start the explanation server and become its worker',
         ],
         [
             'devflow-diff-explain worker register [--harness <name>] [--model <name>] [--lang <ru|en>]',
@@ -192,11 +185,6 @@ export function helpText(): string {
             'review the working tree of this project directory instead of a PR; only for `up`',
         ],
         ['--base <ref>', 'what the working tree is compared with; only with `--local`'],
-        [
-            '--verdicts <instruction>',
-            "the user's instruction for the outcome of the review, in their words; the reviewer then " +
-                'finishes with Ship or Request changes instead of Comment; only with `--local`',
-        ],
         ['--harness <name>', 'harness label in the worker status; for `up` and `worker register`'],
         ['--model <name>', 'model name in the worker status; for `up` and `worker register`'],
         [
@@ -208,7 +196,7 @@ export function helpText(): string {
     ];
 
     return [
-        `devflow-diff-explain ${CLI_VERSION} (protocol ${PROTOCOL_VERSION}) — the Sherpa worker CLI.`,
+        `devflow-diff-explain ${CLI_VERSION} (protocol ${PROTOCOL_VERSION}) — the Devflow Diff Explain worker CLI.`,
         '',
         'Commands:',
         ...twoColumns(commands),

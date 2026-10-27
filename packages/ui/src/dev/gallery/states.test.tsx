@@ -8,7 +8,7 @@ import { GALLERY_STATES } from './states.tsx';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// Виртуализатор списка файлов требует ResizeObserver; в jsdom раскладки нет, наблюдать нечего.
+// В jsdom нет раскладки; тестовые изображения и компоненты могут наблюдать размер.
 (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
     observe(): void {
         // Раскладки нет.

@@ -1,4 +1,4 @@
-import { VERDICTS_INSTRUCTION_MAX_CHARS } from '@sherpa/protocol';
+
 import { describe, expect, it } from 'vitest';
 
 import { parseArgs, sanitizeLabel } from './args.js';
@@ -29,7 +29,7 @@ describe('разбор аргументов', () => {
                 prKey: 'arcanum-1',
                 local: undefined,
                 base: undefined,
-                verdicts: undefined,
+
                 harness: 'claude-code',
                 model: 'claude-opus-5',
                 lang: undefined,
@@ -41,7 +41,7 @@ describe('разбор аргументов', () => {
             prKey: undefined,
             local: undefined,
             base: undefined,
-            verdicts: undefined,
+
             harness: undefined,
             model: undefined,
             lang: undefined,
@@ -60,45 +60,6 @@ describe('разбор аргументов', () => {
             base: 'trunk~3',
         });
         expect(parseArgs(['up', '--local=/tmp/app'])).toMatchObject({ local: '/tmp/app', base: undefined });
-    });
-
-    it('up --local --verdicts <instruction>: поручение только у локального ревью и только у up', () => {
-        expect(parseArgs(['up', '--local', '.', '--verdicts', 'on ship, commit and open a PR'])).toMatchObject({
-            local: '.',
-            verdicts: 'on ship, commit and open a PR',
-        });
-        expect(parseArgs(['up', '--local', '.', '--verdicts=  on ship, merge  '])).toMatchObject({
-            verdicts: 'on ship, merge',
-        });
-        expect(parseArgs(['up', '--local', '.'])).toMatchObject({ verdicts: undefined });
-        expect(() => parseArgs(['up', '--verdicts', 'on ship, merge'])).toThrow(
-            '`--verdicts` only makes sense with `--local`',
-        );
-        expect(() => parseArgs(['up', '--pr', 'arcanum-1', '--verdicts', 'on ship, merge'])).toThrow(
-            '`--verdicts` only makes sense with `--local`',
-        );
-        expect(() => parseArgs(['worker', 'next', '--verdicts', 'on ship, merge'])).toThrow(
-            '--local, --base and --verdicts are only available for `devflow-diff-explain up`',
-        );
-    });
-
-    it('up --verdicts без поручения, с пустым или слишком длинным — отказ с подсказкой', () => {
-        for (const argv of [
-            ['up', '--local', '.', '--verdicts'],
-            ['up', '--local', '.', '--verdicts', '--no-open'],
-            ['up', '--local', '.', '--verdicts='],
-            ['up', '--local', '.', '--verdicts', '   '],
-        ]) {
-            expect(() => parseArgs(argv)).toThrow("`--verdicts` needs the user's instruction");
-        }
-
-        const limit = VERDICTS_INSTRUCTION_MAX_CHARS;
-        expect(parseArgs(['up', '--local', '.', '--verdicts', 'x'.repeat(limit)])).toMatchObject({
-            verdicts: 'x'.repeat(limit),
-        });
-        expect(() => parseArgs(['up', '--local', '.', '--verdicts', 'x'.repeat(limit + 1)])).toThrow(
-            `the \`--verdicts\` instruction is ${String(limit + 1)} characters long, the limit is ${String(limit)}`,
-        );
     });
 
     it('up --local без пути — отказ с подсказкой, а не безымянный «нет значения»', () => {
@@ -236,4 +197,8 @@ describe('разбор аргументов', () => {
             expect(() => parseArgs(argv), argv.join(' ')).toThrow(contains);
         }
     });
+});
+
+it('команда объяснения не принимает флаг вердиктов', () => {
+    expect(() => parseArgs(['up', '--local', '.', '--verdicts', 'ship'])).toThrow('unknown flag --verdicts');
 });

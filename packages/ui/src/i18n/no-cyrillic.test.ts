@@ -22,7 +22,7 @@ describe('перевод UI', () => {
     it('не содержит кириллицы вне комментариев', () => {
         const files = sources(SRC).filter((file) => !skipped(file));
         // Страховка от молчаливого «ничего не нашли»: сломанный обход дал бы зелёный тест впустую.
-        expect(files.length, 'обход каталога ничего не нашёл').toBeGreaterThan(100);
+        expect(files).toEqual(expect.arrayContaining(['main.tsx', 'story/app.tsx', 'diff/parse.ts']));
 
         const found: string[] = [];
         for (const file of files) {

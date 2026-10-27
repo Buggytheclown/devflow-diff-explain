@@ -5,7 +5,7 @@ import type { FlowContext, FlowDiagram, FlowState, PrDiff, ReviewSource, RouteSn
 import { flowDiagramResultSchema, generateJsonSchemas } from '@sherpa/protocol';
 import type { TaskQueue, TaskRecord, TaskResultAcceptance } from './queue.js';
 import type { RouteStore } from './route-store.js';
-import { walkPatch } from './route/diff-index.js';
+import { savedPatchIndex } from './saved-patch.js';
 import { CONTEXT_BUDGET_BYTES, prDiffPayload } from './route-payload.js';
 import type { SharedPayloadStore } from './shared-payload.js';
 import { diffKeyOf } from './shared-payload.js';
@@ -129,6 +129,7 @@ Return contextRequests with diagram:null to request context; otherwise return co
 /** Проверяем наличие всех строк, а не только попадание концов в разные ханки. */
 export function diagramSourceErrors(diagram: FlowDiagram, diff: PrDiff, contexts: readonly FlowContext[]): string[] {
     const errors: string[] = [];
+    const index = savedPatchIndex(diff);
     for (const item of [...diagram.nodes, ...diagram.edges]) {
         let changed = false;
         for (const source of item.sources) {
@@ -136,10 +137,9 @@ export function diagramSourceErrors(diagram: FlowDiagram, diff: PrDiff, contexts
                 if (!contexts.some((entry) => entry.id === source.id && entry.revision === diff.headCommit)) errors.push(`Unknown saved context: ${source.id}`);
                 continue;
             }
-            const file = diff.files.find((entry) => (source.side === 'old' ? entry.oldPath ?? entry.path : entry.path) === source.path);
-            const lines = [...walkPatch(file?.patch ?? '')].filter((line) => line[source.side] !== null && (line[source.side] ?? 0) >= source.start && (line[source.side] ?? 0) <= source.end);
-            if (new Set(lines.map((line) => line[source.side])).size !== source.end - source.start + 1) errors.push(`Unavailable saved patch lines: ${source.path}:${String(source.start)}-${String(source.end)}`);
-            changed ||= lines.some((line) => line.changed);
+            const lines = index.range(index.file(source.path, source.side), source);
+            if (lines === null) errors.push(`Unavailable saved patch lines: ${source.path}:${String(source.start)}-${String(source.end)}`);
+            changed ||= lines?.some((line) => line.changed) ?? false;
         }
         if ((item.change === 'added' || item.change === 'modified') && !changed) errors.push('PR changes need supporting changed patch lines.');
     }

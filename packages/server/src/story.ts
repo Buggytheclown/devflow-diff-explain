@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { ExplanationBlock, ReadableExample, GuidedFile, Locale, PrDiff, StoryEvidenceBlock } from '@sherpa/protocol';
 import { readableSkeletonResultSchema, readableSectionResultSchema, guidedSkeletonResultSchema, guidedSectionResultSchema, storySkeletonResultSchema, storySectionResultSchema } from '@sherpa/protocol';
 
-import { walkPatch } from './route/diff-index.js';
+import { savedPatchIndex } from './saved-patch.js';
 import { storyEvidenceResolver } from './story-evidence.js';
 import { explanationRules } from './explanation-rules.js';
 import { markupErrors, paragraphMarkupErrors } from './route/paragraph-markup.js';
@@ -73,6 +73,7 @@ export function validateStorySection(
         errors.push(`Return every assigned section exactly once: ${targets.join(', ')}.`);
     }
     const resolve = storyEvidenceResolver(diff);
+    const patch = savedPatchIndex(diff);
     const example = (value: { text: string; evidence: Parameters<typeof resolve>[0] } | null | undefined): ReadableExample | null | undefined => {
         if (value == null) return value;
         errors.push(...paragraphMarkupErrors('example', 1, value.text), ...voiceErrors('example', value.text, locale));
@@ -96,10 +97,8 @@ export function validateStorySection(
                 const source = diff.files.find((entry) => entry.path === file.path);
                 if (source === undefined) { errors.push(`${at}: Unknown changed file ${file.path}.`); return []; }
                 errors.push(...paragraphMarkupErrors(`${at}.${file.path}`, stop.planIndex, file.explanation), ...voiceErrors(`${at}.${file.path}`, file.explanation, locale));
-                const patch = source.patch === null ? [] : [...walkPatch(source.patch)];
                 for (const note of file.annotations) {
-                    const lines = patch.filter((line) => { const n = line[note.side]; return n !== null && n >= note.start && n <= note.end; });
-                    if (lines.length !== note.end - note.start + 1) errors.push(`${at}: Annotation range is not fully present in saved patch ${file.path}.`);
+                    if (patch.range(source, note) === null) errors.push(`${at}: Annotation range is not fully present in saved patch ${file.path}.`);
                     errors.push(...paragraphMarkupErrors(`${at}.annotation`, stop.planIndex, note.text), ...voiceErrors(`${at}.annotation`, note.text, locale));
                 }
                 const sample = 'example' in file ? example(file.example) : undefined;

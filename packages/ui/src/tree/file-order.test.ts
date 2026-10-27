@@ -2,7 +2,6 @@ import { fixtureIteration } from '@sherpa/fixtures';
 import { describe, expect, it } from 'vitest';
 
 import { inTreeOrder, withTreeOrder } from './file-order.js';
-import { buildFileTree } from './file-tree.js';
 
 /** Порядок файлов UI — порядок дерева: каталоги раньше файлов на каждом уровне, обе группы по алфавиту. */
 
@@ -34,26 +33,12 @@ describe('порядок файлов', () => {
         expect(order(['src/b.ts', 'src/B2.ts', 'src/a.ts'])).toEqual(['src/a.ts', 'src/b.ts', 'src/B2.ts']);
     });
 
-    it('совпадает с порядком файлов в дереве, хотя хост отдал их иначе', () => {
+    it('сортирует копию диффа, сохраняя исходный порядок и данные файлов', () => {
         const diff = fixtureIteration('medium').diff;
-        const every = new Map<string, boolean>();
-        for (const file of diff.files) {
-            const segments = file.path.split('/');
-            for (let index = 1; index < segments.length; index += 1) {
-                every.set(segments.slice(0, index).join('/'), false);
-            }
-        }
-        const tree = buildFileTree({
-            files: diff.files,
-            pciFileIds: new Set(),
-            mineFileIds: null,
-            readState: new Map(),
-            routeFiles: null,
-            collapsed: every,
-        });
-        const treePaths = tree.rows.flatMap((row) => (row.kind === 'file' ? [row.path] : []));
-
-        expect(diff.files.map((file) => file.path)).not.toEqual(treePaths);
-        expect(withTreeOrder(diff).files.map((file) => file.path)).toEqual(treePaths);
+        const original = diff.files.map((file) => file.path);
+        const sorted = withTreeOrder(diff);
+        expect(sorted.files.map((file) => file.path)).toEqual(order(original));
+        expect(diff.files.map((file) => file.path)).toEqual(original);
+        expect(new Set(sorted.files)).toEqual(new Set(diff.files));
     });
 });

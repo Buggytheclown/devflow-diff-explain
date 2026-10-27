@@ -2,16 +2,7 @@ import type { Task } from '@sherpa/protocol';
 import { RESULT_MAX_BYTES } from '@sherpa/protocol';
 import { describe, expect, it } from 'vitest';
 
-import {
-    formatCompleteResponse,
-    formatDone,
-    formatOversizedResult,
-    formatRpcError,
-    formatTask,
-    formatUiUrl,
-    formatUpReady,
-    helpText,
-} from './format.js';
+import { formatCompleteResponse, formatDone, formatOversizedResult, formatRpcError, formatTask, formatUiUrl, formatUpReady } from './format.js';
 
 const task: Task = {
     id: 42,
@@ -43,14 +34,14 @@ describe('итог up на локальном ревью', () => {
             repo: '/repo/app',
             branch: 'feature',
             base: undefined,
-            verdicts: null,
+
         });
         const git = formatUpReady(uiUrl, 'local-git-app-0badc0de', {
             vcs: 'git',
             repo: '/repo/app',
             branch: 'feature',
             base: undefined,
-            verdicts: null,
+
         });
 
         expect(arc).toContain('on branch feature, base merge-base with trunk.');
@@ -63,50 +54,11 @@ describe('итог up на локальном ревью', () => {
             repo: '/repo/app',
             branch: 'feature',
             base: 'origin/main~2',
-            verdicts: null,
+
         });
 
         expect(ready).toContain('base origin/main~2.');
         expect(ready).not.toContain('Ship');
-    });
-
-    it('режим вердиктов называется отдельной строкой вместе с поручением', () => {
-        const ready = formatUpReady(uiUrl, 'local-arc-app-0badc0de', {
-            vcs: 'arc',
-            repo: '/repo/app',
-            branch: 'feature',
-            base: undefined,
-            verdicts: 'on ship, commit and open a PR',
-        });
-
-        expect(ready).toContain(
-            'The reviewer finishes with Ship or Request changes; both arrive as a `review.feedback` task ' +
-                'that repeats the user\'s instruction: "on ship, commit and open a PR".',
-        );
-    });
-
-    it('поручение в строке готовности печатается дословно, без экранирования', () => {
-        const verdicts = 'on ship, commit with message "SHERPA-61: done" in C:\\work\nthen open a PR';
-        const ready = formatUpReady(uiUrl, 'local-arc-app-0badc0de', {
-            vcs: 'arc',
-            repo: '/repo/app',
-            branch: 'feature',
-            base: undefined,
-            verdicts,
-        });
-
-        expect(ready).toContain(`that repeats the user's instruction: "${verdicts}".`);
-    });
-});
-
-describe('справка', () => {
-    it('называет --verdicts с поручением у up и его связку с --local', () => {
-        const help = helpText();
-
-        expect(help).toContain('devflow-diff-explain up [--local <path> [--verdicts <instruction>]]');
-        expect(help).toMatch(
-            /--verdicts <instruction> +the user's instruction for the outcome of the review, in their words; the reviewer then finishes with Ship or Request changes instead of Comment; only with `--local`/u,
-        );
     });
 });
 

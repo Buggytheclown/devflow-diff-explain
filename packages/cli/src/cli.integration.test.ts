@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PROGRESS_TEXT_MAX_CHARS, RESULT_MAX_BYTES } from '@sherpa/protocol';
 import type { SherpaServer } from '@sherpa/server';
-import { selectReviewHost, startServer } from '@sherpa/server';
+import { startServer } from '@sherpa/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CliIo } from './cli.js';
@@ -182,79 +182,6 @@ describe('CLI против сервера', () => {
         expect(result.stdout).toContain('on branch feature, base trunk~3');
         expect(result.stdout).toContain(`devflow-diff-explain worker next --pr ${localKey}`);
         expect(server.workerRegistry.status()).toMatchObject({ kind: 'connected' });
-    });
-
-    // Живой сервер аргументов запуска не видит: поручение называет каждый `up --local`, побеждает последний.
-    it('up --local передаёт поручение живому серверу, worker register его не трогает', async () => {
-        const localKey = localPrKey('arc', await fs.realpath(workDir), 'feature');
-        const calls: (string | null)[] = [];
-        const fixture = selectReviewHost('fixture-small');
-        if (fixture === null) {
-            throw new Error('фикстурный хост не выбрался');
-        }
-        server = await startServer({
-            prKey: localKey,
-            sherpaDir,
-            longPollSeconds: 0.2,
-            reviewHostFactory: () => ({
-                ...fixture,
-                setLocalVerdicts: (instruction) => {
-                    calls.push(instruction);
-                    return true;
-                },
-            }),
-        });
-        const arc: NonNullable<CliIo['runCommand']> = (_command, args) =>
-            Promise.resolve({
-                exitCode: 0,
-                stdout: args[0] === 'root' ? `${workDir}\n` : JSON.stringify({ branch: 'feature' }),
-                stderr: '',
-                failure: null,
-            });
-
-        const withVerdicts = await sherpaWith(
-            { runCommand: arc },
-            'up',
-            '--local',
-            workDir,
-            '--verdicts',
-            'on ship, commit and open a PR',
-        );
-        await sherpaWith({ runCommand: arc }, 'worker', 'register', '--pr', localKey);
-        const changed = await sherpaWith({ runCommand: arc }, 'up', '--local', workDir, '--verdicts', 'on ship, merge');
-        const without = await sherpaWith({ runCommand: arc }, 'up', '--local', workDir);
-
-        expect(withVerdicts.code).toBe(0);
-        expect(withVerdicts.stdout).toContain('The reviewer finishes with Ship or Request changes');
-        expect(withVerdicts.stdout).toContain('"on ship, commit and open a PR"');
-        expect(changed.stdout).toContain('"on ship, merge"');
-        expect(without.code).toBe(0);
-        expect(without.stdout).not.toContain('Ship or Request changes');
-        expect(calls).toEqual(['on ship, commit and open a PR', 'on ship, merge', null]);
-    });
-
-    // Сервер без режима вердиктов изображает живой сервер старой сборки: поле он отбрасывает, эха нет.
-    it('up --local --verdicts против сервера, который режим не применил, падает и вердиктов не обещает', async () => {
-        const localKey = localPrKey('arc', await fs.realpath(workDir), 'feature');
-        server = await startServer({ prKey: localKey, sherpaDir, longPollSeconds: 0.2, reviewHostFactory: () => null });
-        const arc: NonNullable<CliIo['runCommand']> = (_command, args) =>
-            Promise.resolve({
-                exitCode: 0,
-                stdout: args[0] === 'root' ? `${workDir}\n` : JSON.stringify({ branch: 'feature' }),
-                stderr: '',
-                failure: null,
-            });
-
-        const withVerdicts = await sherpaWith({ runCommand: arc }, 'up', '--local', workDir, '--verdicts', 'on ship, merge');
-        const without = await sherpaWith({ runCommand: arc }, 'up', '--local', workDir);
-
-        expect(withVerdicts.code).toBe(1);
-        expect(withVerdicts.stderr).toContain('older than this CLI and ignores `--verdicts`');
-        expect(withVerdicts.stderr).toContain(path.join(sherpaDir, 'servers', `${localKey}.json`));
-        expect(withVerdicts.stdout).not.toContain('Ship or Request changes');
-        // Без флага сверять нечего: Comment старый сервер и так показывает.
-        expect(without.code).toBe(0);
-        expect(without.stdout).not.toContain('Ship or Request changes');
     });
 
     it('браузер открывается только при холодном старте и без --no-open', async () => {

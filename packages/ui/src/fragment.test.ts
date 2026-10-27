@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_ROUTE_FILTER, parseRouteFilter } from './session/session-store.js';
 import { parseFragment, readFragmentParam, readToken, updateFragment } from './fragment.js';
 
 describe('readToken', () => {
@@ -64,28 +63,6 @@ describe('updateFragment', () => {
 
     it('работает от пустого фрагмента', () => {
         expect(updateFragment('', { view: 'route' })).toBe('#view=route');
-    });
-});
-
-/**
- * Фильтр «что нового» ходит через фрагмент так же, как пресет: main.tsx читает его при старте
- * и пишет обратно в `persist`. Тест держит ровно эту композицию — сам main.tsx рендерит корень
- * и в vitest не поднимается.
- */
-describe('фильтр маршрута во фрагменте', () => {
-    const read = (hash: string) => parseRouteFilter(readFragmentParam(hash, 'routeFilter')) ?? DEFAULT_ROUTE_FILTER;
-    const write = (hash: string, routeFilter: 'all' | 'new') =>
-        updateFragment(hash, { routeFilter: routeFilter === DEFAULT_ROUTE_FILTER ? null : routeFilter });
-
-    it('читается из адреса, мусор и отсутствие дают дефолт', () => {
-        expect(read('#t=abc&routeFilter=new')).toBe('new');
-        expect(read('#t=abc&routeFilter=мусор')).toBe('all');
-        expect(read('#t=abc')).toBe('all');
-    });
-
-    it('пишется обратно, дефолт в адрес не уходит', () => {
-        expect(write('#t=abc&view=route', 'new')).toBe('#t=abc&view=route&routeFilter=new');
-        expect(write('#t=abc&view=route&routeFilter=new', 'all')).toBe('#t=abc&view=route');
     });
 });
 

@@ -157,8 +157,6 @@ describe('подъём сервера в `up`', () => {
         const base = baseIndex === -1 ? null : argv[baseIndex + 1];
         const branchIndex = argv.indexOf('--branch');
         const branch = branchIndex === -1 ? null : argv[branchIndex + 1];
-        const verdictsIndex = argv.indexOf('--verdicts');
-        const verdicts = verdictsIndex === -1 ? null : argv[verdictsIndex + 1];
         const token = 'f'.repeat(64);
 
         let slowFirstHealth = argv.includes('--slow-first-health');
@@ -183,7 +181,6 @@ describe('подъём сервера в `up`', () => {
             repo,
             base,
             branch,
-            verdicts,
             port: server.address().port,
             pid: process.pid,
             token,
@@ -197,7 +194,7 @@ describe('подъём сервера в `up`', () => {
 
     async function up(
         serverBin: string,
-        local?: { repo: string; base?: string; branch?: string; verdicts?: string },
+        local?: { repo: string; base?: string; branch?: string },
         nodeFlags?: readonly string[],
     ) {
         return ensureServer({
@@ -209,7 +206,7 @@ describe('подъём сервера в `up`', () => {
             ...(nodeFlags === undefined ? {} : { nodeFlags }),
             ...(local === undefined
                 ? {}
-                : { repo: local.repo, base: local.base, branch: local.branch, verdicts: local.verdicts }),
+                : { repo: local.repo, base: local.base, branch: local.branch }),
         });
     }
 
@@ -287,13 +284,6 @@ describe('подъём сервера в `up`', () => {
         expect(manifest.repo).toBe('/repo/app');
         expect(manifest.base).toBe('trunk~3');
         expect(manifest.branch).toBe('feature');
-        expect(manifest.verdicts).toBeNull();
-    });
-
-    it('поручение уезжает демону значением --verdicts', async () => {
-        await up(await fakeServer(WORKING_SERVER), { repo: '/repo/app', verdicts: 'on ship, open a PR' });
-
-        expect((await readManifest(sherpaDir)).verdicts).toBe('on ship, open a PR');
     });
 
     it('без локального ревью ни --repo, ни --base, ни --branch демону не передаются', async () => {
@@ -303,7 +293,6 @@ describe('подъём сервера в `up`', () => {
         expect(manifest.repo).toBeNull();
         expect(manifest.base).toBeNull();
         expect(manifest.branch).toBeNull();
-        expect(manifest.verdicts).toBeNull();
     });
 
     it('живой манифест переиспользуется: второй сервер не поднимается', async () => {
@@ -455,7 +444,6 @@ interface TestManifest {
     readonly repo?: string | null;
     readonly base?: string | null;
     readonly branch?: string | null;
-    readonly verdicts?: string | null;
 }
 
 async function readManifest(sherpaDir: string): Promise<TestManifest> {

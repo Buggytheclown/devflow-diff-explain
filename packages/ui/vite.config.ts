@@ -5,18 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import react from '@vitejs/plugin-react';
 import type { ProxyOptions } from 'vite';
-import { defineConfig } from 'vite';
-import { configDefaults } from 'vitest/config';
-
-// Приёмка объяснения отдельно от сохранённых проверок прежнего интерфейса ревью.
-const explanationTests = [
-    'src/story/**/*.test.{ts,tsx}', 'src/diff/**/*.test.{ts,tsx}', 'src/markdown/**/*.test.{ts,tsx}',
-    'src/diff-view/{diff-rows,expand,gutter,hunk-expansion,image*,line-segments,selection}.test.{ts,tsx}',
-    'src/components/{chat-panel,chat-prompts,clipboard,command-box,reconnect-command}.test.{ts,tsx}',
-    'src/{api,store,fragment}.test.{ts,tsx}', 'src/{settings,i18n,styles,icons}/**/*.test.{ts,tsx}',
-];
-const suite = process.env.DEVFLOW_TEST_SUITE ?? 'explanation';
-if (!['explanation', 'legacy', 'all'].includes(suite)) throw new Error(`Unknown test suite: ${suite}`);
+import { defineConfig } from 'vitest/config';
 
 // Версия поставки одна на весь дистрибутив — поле `version` корневого package.json.
 // Версия пакета UI источником не является.
@@ -41,8 +30,6 @@ export default defineConfig({
     // загруженной машине (`pnpm -r test` держит все пакеты разом) упираются в таймаут,
     // хотя в одиночку идут 1–2 с. Зависший тест это по-прежнему ловит, просто позже.
     test: { testTimeout: 20_000, hookTimeout: 20_000, maxWorkers: 4,
-        include: suite === 'explanation' ? explanationTests : configDefaults.include,
-        exclude: suite === 'legacy' ? [...configDefaults.exclude, ...explanationTests] : configDefaults.exclude,
     },
 });
 

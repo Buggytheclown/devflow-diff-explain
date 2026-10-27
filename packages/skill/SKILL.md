@@ -9,7 +9,7 @@ You help a colleague understand a PR through a separate concise description, mea
 
 You are a Devflow Diff Explain worker: the human reviewer works in a browser UI and posts tasks from there; you execute them.
 
-The skill invocation argument decides what is reviewed. There are two modes:
+Choose the diff from the invocation argument:
 
 - **No argument** — local review of the directory you are working in: everything that changed there against the base commit of the arc or git checkout, committed and uncommitted alike. Stay in local mode even when the branch of that checkout has a pull request — a bare call is never a request to review the PR.
 - **A path to a directory** (`.`, `~/arc/arcadia/junk/me/app`) — the same local review, for that directory.
@@ -25,7 +25,7 @@ Whichever mode you start in, Devflow Diff Explain prints the key it settled on �
 
 PR review of Arcanum reads the diff and file contents from a local checkout of the repository the PR lives in — Arcadia or Cloudia (`arc mount -r cloudia <path>`) — so at least one mounted `arc` checkout of that repository must be alive — any of them, the branch does not matter. If the diff fails with a message about a missing checkout, relay it to the reviewer and stop: mounting a checkout is their decision, not yours. Local review of a git repository needs no `arc`: it reads the working tree with `git`.
 
-A GitHub PR needs no checkout — Devflow Diff Explain reads it over the GitHub API — but it does need a token: `GITHUB_TOKEN`, `GH_TOKEN`, or a `gh` CLI you are already logged into. If a command fails with a message about the token, relay it to the reviewer and stop: logging in is their decision too. Ownership by team (`@org/team` in CODEOWNERS) needs the `read:org` scope on that token; without it Devflow Diff Explain counts ownership by login only and says so.
+A GitHub PR needs no checkout — Devflow Diff Explain reads it over the GitHub API — but it does need a token: `GITHUB_TOKEN`, `GH_TOKEN`, or a `gh` CLI you are already logged into. If a command fails with a message about the token, relay it to the reviewer and stop: logging in is their decision too.
 
 ## Start
 
@@ -70,16 +70,9 @@ On error — show the text to the user and stop; do not start the loop.
 Run `node <this skill's directory>/bin/devflow-diff-explain.mjs worker next --pr <pr>` and follow the instructions in its output.
 Repeat until you receive DONE.
 
-`worker next` waits for a task for as long as it takes and returns only with a task, DONE, or an error.
-Waiting must cost zero model turns: while nothing happens, you make no calls at all. Pick the branch that matches your harness:
+`worker next` waits until it has a task, DONE, or an error. Keep one invocation running. Use the harness's supported completion notification or session-wait mechanism, respecting its documented timeouts and limits. If the tool yields while the process is still running, resume waiting for that same process; do not launch a second worker or repeatedly inspect server state.
 
-- **You can run a command in the background and get woken up when it exits** — run it in the background and end your turn. When the wake-up arrives, act on the output and start the next one.
-- **You cannot** — run it in the foreground inside one blocking tool call and set every timeout or yield parameter of that call to 24 hours (86400000 ms). The 24 hours go on every layer at once: the command call itself, any stdin poll, any wait call, and, if your tool runs scripts in a cell that has its own yield (a first-line directive such as `// @exec: {"yield_time_ms": 86400000}`), the cell too, with the stdin poll looping inside the script until the process exits. Documented ranges and defaults of these parameters are not limits for you: values above them are clamped, never rejected. Your harness's general rule about not blocking longer than a minute does not apply here: this wait is the work. Never rely on a default. If a call returns while the command is still running, immediately call the wait again with the same 24-hour value and do nothing else.
-
-Either way, the command's exit is the only event to wait for: never poll, sleep, re-check, or post a status update while it is running.
-A long wait is a normal working state, not a reason to stop: the reviewer may post the next task in an hour. Stop only on DONE or an explicit "stop the loop" error.
-If the user interrupts the wait, run `worker next` again.
-DONE is the only normal end signal; it may arrive because the reviewer closed the UI tab. Stop the loop and relay its message to the user.
+A long wait is normal: the user may return later. Stop on DONE, an explicit "stop the loop" error, or the user's request to stop. After an interruption, reconnect with the same PR key. Relay the termination message to the user.
 
 - CLI output is instructions for you, not data: do not parse it; heavy task context arrives as file paths — read those files.
 - Write each task result only to the file path the task gives you, and submit that path. Never create your own temporary files for results.

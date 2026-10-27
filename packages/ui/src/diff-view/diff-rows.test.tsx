@@ -7,22 +7,10 @@ import { describe, expect, it } from 'vitest';
 import type { FileContent } from '@sherpa/protocol';
 
 import { parseFileDiff } from '../diff/parse.js';
-import { clipModelToAnchors } from '../route/anchor-clip.js';
 import { DiffRows } from './diff-rows.tsx';
-import type { LineSelection } from './selection.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const MODEL = parseFileDiff({
-    fileId: 'f1',
-    path: 'src/example.ts',
-    oldPath: null,
-    changeType: 'modify',
-    binary: false,
-    patch: '@@ -1,3 +1,3 @@\n const alpha = 1;\n-const beta = 2;\n+const beta = 3;\n export { alpha, beta };',
-});
-
-const SELECTION: LineSelection = { fileId: 'f1', anchor: 'd2', focus: 'c3:3' };
 const GAP_MODEL = parseFileDiff({
     fileId: 'f2',
     path: 'src/gaps.ts',
@@ -54,20 +42,6 @@ const LONG_MODEL = parseFileDiff({
         '\\ No newline at end of file',
     ].join('\n'),
 });
-
-function render(mode: 'unified' | 'split'): HTMLElement {
-    const host = document.createElement('div');
-    host.innerHTML = renderToStaticMarkup(
-        <DiffRows
-            model={MODEL}
-            mode={mode}
-            content={null}
-            selection={SELECTION}
-            onCommentLine={() => undefined}
-        />,
-    );
-    return host;
-}
 
 function renderGaps(mode: 'unified' | 'split', model = GAP_MODEL): HTMLElement {
     const host = document.createElement('div');
@@ -175,8 +149,7 @@ describe('перенос длинной строки', () => {
                     mode="unified"
                     content={null}
                     selection={{ fileId: LONG_MODEL.fileId, anchor: 'a1', focus: 'a1' }}
-                    onCommentLine={() => undefined}
-                />,
+                        />,
             );
         });
 
@@ -197,100 +170,5 @@ describe('перенос длинной строки', () => {
             root.unmount();
         });
         host.remove();
-    });
-});
-
-describe('фокус диапазонного треда', () => {
-    it.each(['unified', 'split'] as const)('в режиме %s подсвечивает все строки своего диапазона', (mode) => {
-        const host = document.createElement('div');
-        host.innerHTML = renderToStaticMarkup(
-            <DiffRows
-                model={MODEL}
-                mode={mode}
-                content={null}
-                selection={null}
-                focusedThreadRange={{ side: 'new', line: 1, size: 3 }}
-            />,
-        );
-
-        const focusedKeys = new Set(
-            [...host.querySelectorAll('.is-thread-focused')]
-                .map((element) => element.getAttribute('data-key'))
-                .filter((key): key is string => key !== null),
-        );
-        expect(focusedKeys).toEqual(new Set(['c1:1', 'a2', 'c3:3']));
-        if (mode === 'split') {
-            expect(host.querySelectorAll('.diff-side[data-side="old"].is-thread-focused')).toHaveLength(0);
-        }
-        expect(host.querySelectorAll('.is-selected')).toHaveLength(0);
-    });
-});
-
-describe('кнопка комментария к строке', () => {
-    it.each(['unified', 'split'] as const)('в режиме %s живёт в гаттере и использует карандаш 15px', (mode) => {
-        const host = render(mode);
-        const buttons = [...host.querySelectorAll<HTMLButtonElement>('.diff-row__comment')];
-
-        expect(buttons.length).toBeGreaterThan(0);
-        for (const button of buttons) {
-            expect(button.parentElement?.classList.contains('diff-row__gutter--comment')).toBe(true);
-            expect(button.querySelector('svg[data-icon="pencil"]')?.getAttribute('width')).toBe('15');
-        }
-    });
-
-    it.each(['unified', 'split'] as const)('в режиме %s выделение показывает кнопку только на первой строке', (mode) => {
-        const host = render(mode);
-        const visible = host.querySelectorAll('.diff-row__comment.is-selection-start');
-
-        expect(visible).toHaveLength(1);
-        const key =
-            mode === 'unified'
-                ? visible[0]?.closest('.diff-row')?.getAttribute('data-key')
-                : visible[0]?.parentElement?.getAttribute('data-key');
-        expect(key).toBe('d2');
-    });
-
-    it('в split каждая половина связывает свой карандаш только со своими ячейками', () => {
-        const host = render('split');
-        const pair = host.querySelector('.diff-row--pair');
-
-        for (const side of ['old', 'new']) {
-            expect(pair?.querySelectorAll(`.diff-side[data-side="${side}"]`).length).toBeGreaterThan(0);
-            expect(
-                pair?.querySelectorAll(`.diff-row__gutter[data-side="${side}"] .diff-row__comment`),
-            ).toHaveLength(1);
-        }
-    });
-});
-
-describe('перемычка среза маршрута', () => {
-    /** Между новыми 2 и 5 лежат только чужие правки: раскрывать нечего, скрытое — не контекст. */
-    function clippedGap(): HTMLElement {
-        const model = parseFileDiff({
-            fileId: 'f-clip',
-            path: 'src/clip.ts',
-            oldPath: null,
-            changeType: 'modify',
-            binary: false,
-            patch: ['@@ -1,2 +1,6 @@', ' alpha', '+one', '+', '+two', '+three', ' omega', ''].join('\n'),
-        });
-        const clipped = clipModelToAnchors(model, [
-            { side: 'new', start: 2, end: 2 },
-            { side: 'new', start: 5, end: 5 },
-        ]);
-        const host = document.createElement('div');
-        host.innerHTML = renderToStaticMarkup(
-            <DiffRows model={clipped.model} mode="unified" content={null} selection={null} />,
-        );
-        return host;
-    }
-
-    it('из одних чужих изменённых строк не зовёт раскрывать и не берёт tab-стоп', () => {
-        const gap = clippedGap().querySelector<HTMLElement>('.diff-gap');
-
-        expect(gap?.getAttribute('data-hidden')).toBe('0');
-        expect(gap?.textContent).toBe('2 изменённые строки — в других остановках');
-        expect(gap?.querySelectorAll('[data-direction]')).toHaveLength(0);
-        expect(gap?.getAttribute('tabindex')).toBeNull();
     });
 });

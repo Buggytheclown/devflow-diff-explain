@@ -48,21 +48,8 @@ describe('словари', () => {
     });
 
     it('t подставляет параметры на выбранном языке', () => {
-        expect(createT('ru')('ship.progress', 12, 2412)).toBe('12 / 2 412 файлов');
-        expect(createT('en')('ship.progress', 12, 2412)).toBe('12 / 2,412 files');
-    });
-
-    it('заметка второго захода согласована по числу на обоих языках', () => {
-        // «N из M остановок»: существительное считается по M, а не по числу перенесённых.
-        expect(createT('en')('iteration.secondPass.carried.kept', 1, 6)).toBe('1 of 6 stops stayed viewed. ');
-        expect(createT('en')('iteration.secondPass.carried.kept', 1, 1)).toBe('1 of 1 stop stayed viewed. ');
-        expect(createT('en')('iteration.secondPass.carried.none', 1)).toBe('None of the 1 stop stayed viewed. ');
-        expect(createT('ru')('iteration.secondPass.carried.kept', 1, 6)).toBe(
-            'Просмотренной осталась 1 остановка из 6. ',
-        );
-        expect(createT('ru')('iteration.secondPass.carried.kept', 3, 6)).toBe(
-            'Просмотренными остались 3 остановки из 6. ',
-        );
+        expect(createT('ru')('chat.history.failed', 'offline')).toContain('offline');
+        expect(createT('en')('chat.history.failed', 'offline')).toContain('offline');
     });
 });
 
@@ -125,65 +112,5 @@ describe('форматирование', () => {
         const now = Date.parse('2026-09-03T12:00:00.000Z');
         expect(relativeTime('не дата', now, 'ru')).toBe('только что');
         expect(relativeTime(new Date(now + 60_000).toISOString(), now, 'en')).toBe('just now');
-    });
-});
-
-/**
- * Числительные: шаблоны, где сказуемое, местоимение или единица счёта раньше стояли
- * в фиксированной форме и расходились с числом. Проверяем именно единицу — множественное
- * число у этих строк было верным и до правки.
- */
-describe('согласование с числом', () => {
-    const t = createT('ru');
-    const e = createT('en');
-
-    it('русские шаблоны согласуются в единственном числе', () => {
-        expect(t('route.gen.filling.counter', 1, 7)).toBe('1 из 7 готова');
-        expect(t('route.filling.banner', 1, 7)).toContain('1 из 7 остановок готова');
-        expect(t('route.gen.step.diffFiles', 1)).toBe('Читаю весь дифф · 1 файл');
-        expect(t('route.lazyMore', 1)).toBe('ещё 1 карточка — появится при прокрутке');
-        expect(t('route.stopFile.collapsed', 1)).toBe('1 изменённая строка свёрнута моделью');
-        expect(t('route.other.counted', 1, 1)).toContain('осталась без остановки');
-        expect(t('route.other.counted', 1, 1)).toContain('она не пропала, а собралась здесь');
-        expect(t('route.other.failedFiles', 1)).toContain('— его непокрытые строки');
-        expect(t('margin.footer.failed', 1)).toContain('— его строки');
-        expect(t('diff.expand.loaded', 1)).toBe('догружено 1 строка');
-        expect(t('diff.gap.hiddenCount', 1)).toBe('1 строка скрыта');
-        expect(t('diff.gap.loadAll', 1, '…')).toBe('догрузить 1 строку, …');
-        expect(t('audit.line', 1, 1, 2)).toMatch(/^Показан только 1 файл/u);
-        expect(t('prComments.buffered.title', 1)).toContain('пока не сохранится');
-        expect(t('ship.disabled.buffered', 1)).toContain('пока не сохранится');
-        expect(t('complete.outsideRoute.value', 1)).toBe('1 строка, которую модель не разместила');
-        expect(t('route.stop.conflicts', 1)).toContain('разрешить его можно только вне Шерпы');
-        expect(t('route.other.conflicts', 1)).toContain('разрешить его можно только вне Шерпы, в покрытие он не входит');
-        expect(t('banner.generationCap', 1)).toContain('проверьте его в Полном диффе');
-        expect(t('overview.ownership.stats', 'CODEOWNERS', 1, 1, 5, 21)).toBe(
-            'CODEOWNERS · 1 из 1 файла · 5 из 21 строки — ваши',
-        );
-        expect(t('palette.truncated', 21)).toBe('Показаны первые 21 совпадение');
-    });
-
-    it('русские шаблоны с безличным сказуемым не сбиваются на «строки не объяснены»', () => {
-        expect(t('coverage.legend.unexplained', 5)).toBe('5 строк не объяснено');
-        expect(t('complete.openThreads', 5)).toMatch(/^5 тредов ещё открыто/u);
-        expect(t('ship.guard.stops', 2)).toBe('2 остановки не просмотрены — всё равно шипнуть?');
-        expect(t('ship.guard.files', 2)).toBe('2 файла не просмотрены — всё равно шипнуть?');
-    });
-
-    it('английские шаблоны согласуются в единственном числе', () => {
-        expect(e('route.gen.step.diffFiles', 1)).toBe('Reading the whole diff · 1 file');
-        expect(e('route.lazyMore', 1)).toBe('1 more card — it appears as you scroll');
-        expect(e('route.other.counted', 1, 1)).toContain('so it is not lost — it collects here');
-        expect(e('route.other.failedFiles', 1)).toContain('— its uncovered lines');
-        expect(e('margin.footer.failed', 1)).toContain('— its lines');
-        expect(e('diff.expand.loaded', 1)).toBe('1 line loaded');
-        expect(e('diff.gap.hiddenCount', 1)).toBe('1 line hidden');
-        expect(e('audit.line', 1, 1, 2)).toMatch(/^Showing only 1 audit-scope file/u);
-        expect(e('prComments.buffered.title', 1)).toContain('until it is saved');
-        expect(e('ship.disabled.buffered', 1)).toContain('until it is');
-        expect(e('route.stop.conflicts', 1)).toContain('resolve it outside Sherpa');
-        expect(e('route.other.conflicts', 1)).toContain('resolve it outside Sherpa; it is out of coverage');
-        expect(e('banner.generationCap', 1)).toContain('check it in the full diff');
-        expect(e('palette.truncated', 1)).toBe('Showing the first 1 match');
     });
 });

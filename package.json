@@ -16,8 +16,7 @@
     "build": "pnpm -r build",
     "docs:endpoints": "node scripts/protocol-endpoints.mjs --write",
     "install:local": "node scripts/install-local.mjs --replace-sherpa",
-    "test:all": "node scripts/test-suite.mjs all",
-    "test:legacy": "node scripts/test-suite.mjs legacy",
+    "test:all": "pnpm -r test",
     "test:e2e": "pnpm --filter @sherpa/e2e e2e"
   },
   "devDependencies": {

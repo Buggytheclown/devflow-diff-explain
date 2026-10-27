@@ -1,5 +1,5 @@
 import type { Locale } from '@sherpa/protocol';
-import { VERDICTS_INSTRUCTION_MAX_CHARS, localeSchema } from '@sherpa/protocol';
+import { localeSchema } from '@sherpa/protocol';
 
 import { CliError } from './errors.js';
 
@@ -19,11 +19,6 @@ export type Command =
           readonly local: string | undefined;
           /** База сравнения локального ревью (`--base`); только вместе с `--local`. */
           readonly base: string | undefined;
-          /**
-           * Поручение пользователя на исход локального ревью (`--verdicts <instruction>`): с ним ревью
-           * завершается Ship или Request changes; только вместе с `--local`.
-           */
-          readonly verdicts: string | undefined;
           /** Метка харнеса для статуса воркера в UI; необязательна. */
           readonly harness: string | undefined;
           /** Имя модели воркера для статуса воркера в UI; необязательно. */
@@ -76,7 +71,6 @@ const OPTIONS = [
     '--harness',
     '--model',
     '--lang',
-    '--verdicts',
 ] as const;
 const FLAGS = ['--no-open'] as const;
 type OptionName = (typeof OPTIONS)[number];
@@ -110,8 +104,8 @@ export function parseArgs(argv: readonly string[]): Command {
     if (group !== 'up' && flags.size > 0) {
         throw new CliError('devflow-diff-explain: --no-open is only available for `devflow-diff-explain up`.');
     }
-    if (group !== 'up' && (options.has('--local') || options.has('--base') || options.has('--verdicts'))) {
-        throw new CliError('devflow-diff-explain: --local, --base and --verdicts are only available for `devflow-diff-explain up`.');
+    if (group !== 'up' && (options.has('--local') || options.has('--base'))) {
+        throw new CliError('devflow-diff-explain: --local and --base are only available for `devflow-diff-explain up`.');
     }
     if (group === 'up') {
         return parseUpCommand(positionals, options, flags, prKey);
@@ -157,7 +151,7 @@ function parseUpCommand(
     if (positionals.length > 1) {
         throw new CliError(
             `devflow-diff-explain: unexpected arguments after \`up\`: ${positionals.slice(1).join(' ')}.\n` +
-                'Expected `devflow-diff-explain up [--pr <pr key> | --local <path> [--base <ref>] [--verdicts <instruction>]] ' +
+                'Expected `devflow-diff-explain up [--pr <pr key> | --local <path> [--base <ref>]] ' +
                 '[--harness <harness name>] [--model <model name>] [--lang <ru|en>] [--no-open]`; ' +
                 'without `--pr` and `--local` the PR is taken from the arc branch of the current directory.',
         );
@@ -177,20 +171,11 @@ function parseUpCommand(
                 'Call `devflow-diff-explain up --local <path> --base <ref>`; for a PR the base comes from the host.',
         );
     }
-    const verdicts = parseVerdicts(options.get('--verdicts'));
-    if (verdicts !== undefined && local === undefined) {
-        throw new CliError(
-            'devflow-diff-explain: `--verdicts` only makes sense with `--local`.\n' +
-                'Call `devflow-diff-explain up --local <path> --verdicts \'<instruction>\'`; a PR takes its verdicts from the host.',
-        );
-    }
-
     return {
         kind: 'up',
         prKey,
         local,
         base: base === '' ? undefined : base,
-        verdicts,
         harness: sanitizeLabel(options.get('--harness')),
         model: sanitizeLabel(options.get('--model')),
         lang: parseLang(options.get('--lang')),
@@ -209,30 +194,6 @@ function parseLocal(raw: string | undefined): string | undefined {
     }
     return value;
 }
-
-/** Поручение из `--verdicts`: непустое и не длиннее `VERDICTS_INSTRUCTION_MAX_CHARS`. */
-function parseVerdicts(raw: string | undefined): string | undefined {
-    if (raw === undefined) {
-        return undefined;
-    }
-    const value = raw.trim();
-    if (value === '') {
-        throw new CliError(MISSING_VERDICTS_INSTRUCTION);
-    }
-    if (value.length > VERDICTS_INSTRUCTION_MAX_CHARS) {
-        throw new CliError(
-            `devflow-diff-explain: the \`--verdicts\` instruction is ${String(value.length)} characters long, ` +
-                `the limit is ${String(VERDICTS_INSTRUCTION_MAX_CHARS)}.\n` +
-                'Pass what the user asked for on ship or on request changes in a sentence or two, in their words.',
-        );
-    }
-    return value;
-}
-
-const MISSING_VERDICTS_INSTRUCTION =
-    'devflow-diff-explain: `--verdicts` needs the user\'s instruction for the outcome of the review.\n' +
-    'Call `devflow-diff-explain up --local <path> --verdicts \'<what to do on ship or on request changes>\'` ' +
-    'in the user\'s words, in single quotes; without such an instruction leave the flag out.';
 
 const MISSING_LOCAL_PATH =
     'devflow-diff-explain: `--local` needs the path of the project directory to review.\n' +
@@ -403,13 +364,11 @@ function splitArgs(argv: readonly string[]): {
     return { options, flags, positionals };
 }
 
-/** Каталог проекта и поручение угадать нельзя, поэтому отказ называет, чего именно не хватает. */
+/** Отказ называет, какое значение аргумента нужно передать явно. */
 function missingValueMessage(name: OptionName): string {
     switch (name) {
         case '--local':
             return MISSING_LOCAL_PATH;
-        case '--verdicts':
-            return MISSING_VERDICTS_INSTRUCTION;
         default:
             return `devflow-diff-explain: flag ${name} has no value.`;
     }

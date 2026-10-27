@@ -25,7 +25,6 @@ import {
 } from './format.js';
 import { resolveLocalTarget } from './local.js';
 import {
-    manifestPathFor,
     serverBinOverrideFrom,
     sherpaDirFrom,
     taskResultDirFor,
@@ -114,32 +113,16 @@ async function up(command: Extract<Command, { kind: 'up' }>, io: CliIo): Promise
         nodeFlags: io.daemonNodeFlags ?? [],
         ...(local === null
             ? {}
-            : { repo: local.repo, base: local.base, branch: local.branch, verdicts: command.verdicts }),
+            : { repo: local.repo, base: local.base, branch: local.branch }),
     });
-    // Слот воркера всегда достаётся свежей сессии: сервер перехватывает его даже у живой прежней,
-    // поэтому `up` регистрируется обычным ходом и запасных путей не имеет. Режим вердиктов едет
-    // и сюда: уже живой сервер аргументов запуска не видит, а побеждает последний `up`.
-    const registered = await registerWorker(
-        prKey,
-        labelsOf(command),
-        io,
-        local === null ? undefined : (command.verdicts ?? null),
-    );
-    // Живой сервер старой сборки `localVerdicts` молча отбрасывает и эха не шлёт: ревьюер увидит
-    // только Comment, а агент прождёт вердикт, которого не будет.
-    if (command.verdicts !== undefined && registered.localVerdicts !== command.verdicts) {
-        throw new CliError(
-            'The Devflow Diff Explain server already running for this review is older than this CLI and ignores ' +
-                '`--verdicts`: the reviewer would see only Comment. Stop that server (its pid is in ' +
-                `${manifestPathFor(sherpaDirFrom(io.env), prKey)}) and run the same \`devflow-diff-explain up\` command again.`,
-        );
-    }
+    // Новый up передаёт слот воркера текущей сессии.
+    await registerWorker(prKey, labelsOf(command), io);
 
     io.out(
         formatUpReady(
             server.uiUrl,
             prKey,
-            local === null ? null : { ...local, verdicts: registered.localVerdicts ?? null },
+            local,
         ),
     );
     if (server.started && !command.noOpen) {
@@ -177,10 +160,9 @@ async function registerWorker(
     prKeyArg: string | undefined,
     labels: WorkerLabels,
     io: CliIo,
-    localVerdicts?: string | null,
 ): Promise<WorkerRegisterResponse> {
     const connection = await connectAs(prKeyArg, io.env, freshWorkerId(io.env), io.runCommand);
-    return requestRegister(connection, labels, localVerdicts);
+    return requestRegister(connection, labels);
 }
 
 /** Метки сессии из аргументов команды: `up` и `worker register` объявляют их одинаково. */

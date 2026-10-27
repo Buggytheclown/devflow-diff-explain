@@ -58,8 +58,6 @@ export interface WorkerLabels {
 export async function requestRegister(
     connection: ServerConnection,
     labels: WorkerLabels,
-    /** Поручение на исход локального ревью (`up --local`): null — режим снять, undefined — не трогать. */
-    localVerdicts?: string | null,
 ): Promise<WorkerRegisterResponse> {
     return callWorker<WorkerRegisterRequest, WorkerRegisterResponse>(connection, {
         endpoint: WORKER_ENDPOINTS.register,
@@ -67,7 +65,6 @@ export async function requestRegister(
             ...(labels.harness === undefined ? {} : { harness: labels.harness }),
             ...(labels.model === undefined ? {} : { model: labels.model }),
             ...(labels.lang === undefined ? {} : { lang: labels.lang }),
-            ...(localVerdicts === undefined ? {} : { localVerdicts }),
         },
         requestSchema: workerRegisterRequestSchema,
         responseSchema: workerRegisterResponseSchema,

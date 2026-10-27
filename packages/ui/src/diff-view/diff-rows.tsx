@@ -6,15 +6,14 @@ import type { DiffFileModel, DiffGap, DiffLine } from '../diff/model.js';
 import type { Translate } from '../i18n/index.js';
 import { useT } from '../i18n/index.js';
 import { Icon } from '../icons/icon.tsx';
-import { useReadOnlyIteration, useReadOnlyReason } from '../iterations/read-only.tsx';
 import type { ContextExpandRequest, GapExpandResult } from './context-expansion.js';
 import type { ExpandDirection } from './expand.js';
 import { EXPAND_STEP, gapKeyOf, hiddenLinesOf } from './expand.js';
 import type { LineSegment } from './line-segments.js';
 import { hasTabs, lineSegments } from './line-segments.js';
-import type { LineKey, LineRange, LineSelection } from './selection.js';
+import type { LineKey, LineSelection } from './selection.js';
 import { lineKey, selectedLines } from './selection.js';
-import type { DiffMode } from './store.js';
+type DiffMode = 'unified' | 'split';
 
 /**
  * Строки диффа: unified (docs/design/README.md §1 «Diff rows (unified)») и side-by-side. Разметка и цвета —
@@ -41,26 +40,13 @@ type Row = { readonly hunk?: number } & (
     | { readonly kind: 'pair'; readonly left: LineCell | null; readonly right: LineCell | null }
 );
 
-/** Строка одной стороны диффа: пара «сторона + номер», которой адресуются треды и заметки. */
-export interface LinePosition {
-    readonly side: 'old' | 'new';
-    readonly line: number;
-}
-
 export interface DiffRowsProps {
     readonly model: DiffFileModel;
     readonly mode: DiffMode;
     /** Нужно только чтобы честно назвать длину хвостового пропуска. */
     readonly content: FileContent | null;
     readonly selection: LineSelection | null;
-    readonly focusedThreadRange?: LineRange | null;
     readonly renderAfterLine?: ((side: 'old' | 'new', line: number) => ReactNode) | undefined;
-    /**
-     * Маркер треда внутри самого ряда (docs/design/SPEC-changes-2026-09-20.md §3): в unified
-     * он один на ряд и собирает обе стороны, в split — свой у каждой половины.
-     */
-    readonly renderLineMarker?: ((positions: readonly LinePosition[]) => ReactNode) | undefined;
-    readonly onCommentLine?: ((side: 'old' | 'new', line: number) => void) | undefined;
     readonly onLineFocus?: ((side: 'old' | 'new', line: number) => void) | undefined;
     readonly onLineBlur?: (() => void) | undefined;
     readonly onExpandContext?: ((request: ContextExpandRequest) => Promise<GapExpandResult>) | undefined;
@@ -79,10 +65,7 @@ export function DiffRows({
     mode,
     content,
     selection,
-    focusedThreadRange = null,
     renderAfterLine,
-    renderLineMarker,
-    onCommentLine,
     onLineFocus,
     onLineBlur,
     onExpandContext = NOOP_EXPAND,
@@ -96,7 +79,7 @@ export function DiffRows({
     const effective: DiffMode = mode === 'split' && !oneSided ? 'split' : 'unified';
     const rows = useMemo(() => buildRows(model, effective), [model, effective]);
     const selected = useMemo(() => selectedLines(model, selection), [model, selection]);
-    const selectionStart = selected.values().next().value ?? null;
+
     const firstGap = rows.find((row) => row.kind === 'gap');
     const firstGapKey = firstGap?.kind === 'gap' ? gapKeyOf(firstGap.gap) : null;
 
@@ -137,11 +120,9 @@ export function DiffRows({
                             <UnifiedRow
                                 cell={row.cell}
                                 selected={isSelected(selected, row.cell)}
-                                threadFocused={isThreadFocused(row.cell, focusedThreadRange)}
-                                selectionStart={row.cell.key === selectionStart}
+
                                 hunk={row.hunk}
-                                marker={renderLineMarker?.(positions) ?? null}
-                                onCommentLine={onCommentLine}
+
                                 onLineFocus={onLineFocus}
                                 onLineBlur={onLineBlur}
                             />
@@ -164,13 +145,9 @@ export function DiffRows({
                             right={row.right}
                             leftSelected={isSelected(selected, row.left)}
                             rightSelected={isSelected(selected, row.right)}
-                            leftThreadFocused={isThreadFocused(row.left, focusedThreadRange, 'old')}
-                            rightThreadFocused={isThreadFocused(row.right, focusedThreadRange, 'new')}
-                            selectionStart={selectionStart}
+
                             hunk={row.hunk}
-                            leftMarker={oldLine === null ? null : (renderLineMarker?.([{ side: 'old', line: oldLine }]) ?? null)}
-                            rightMarker={newLine === null ? null : (renderLineMarker?.([{ side: 'new', line: newLine }]) ?? null)}
-                            onCommentLine={onCommentLine}
+
                             onLineFocus={onLineFocus}
                             onLineBlur={onLineBlur}
                         />
@@ -189,18 +166,6 @@ export function DiffRows({
 
 function isSelected(selected: ReadonlySet<LineKey>, cell: LineCell | null): boolean {
     return cell?.key != null && selected.has(cell.key);
-}
-
-function isThreadFocused(
-    cell: LineCell | null,
-    range: LineRange | null,
-    side: 'old' | 'new' = range?.side ?? 'new',
-): boolean {
-    if (range?.side !== side) {
-        return false;
-    }
-    const line = side === 'old' ? cell?.line.oldLine : cell?.line.newLine;
-    return line != null && line >= range.line && line < range.line + Math.max(range.size, 1);
 }
 
 function buildRows(model: DiffFileModel, mode: DiffMode): Row[] {
@@ -493,21 +458,15 @@ function gapAriaLabel(direction: ExpandDirection, hidden: number | null, t: Tran
 const UnifiedRow = memo(function UnifiedRow({
     cell,
     selected,
-    threadFocused,
-    selectionStart,
     hunk,
-    marker,
-    onCommentLine,
     onLineFocus,
     onLineBlur,
 }: {
     cell: LineCell;
     selected: boolean;
-    threadFocused: boolean;
-    selectionStart: boolean;
+
     hunk: number | undefined;
-    marker: ReactNode;
-    onCommentLine: ((side: 'old' | 'new', line: number) => void) | undefined;
+
     onLineFocus: ((side: 'old' | 'new', line: number) => void) | undefined;
     onLineBlur: (() => void) | undefined;
 }) {
@@ -515,7 +474,7 @@ const UnifiedRow = memo(function UnifiedRow({
     const position = positionOf(cell, 'new');
     return (
         <div
-            className={`diff-row diff-row--${line.kind}${selected ? ' is-selected' : ''}${threadFocused ? ' is-thread-focused' : ''}`}
+            className={`diff-row diff-row--${line.kind}${selected ? ' is-selected' : ''}`}
             data-key={cell.key ?? undefined}
             data-hunk={hunk}
             tabIndex={position === null ? undefined : 0}
@@ -527,18 +486,9 @@ const UnifiedRow = memo(function UnifiedRow({
             }}
             onBlur={onLineBlur}
         >
-            {marker}
             <span className="diff-row__gutter">{line.oldLine ?? ''}</span>
-            <span className="diff-row__gutter diff-row__gutter--comment">
+            <span className="diff-row__gutter diff-row__gutter--code">
                 {line.newLine ?? ''}
-                {position === null ? null : (
-                    <CommentButton
-                        side={position.side}
-                        line={position.line}
-                        selectionStart={selectionStart}
-                        onCommentLine={onCommentLine}
-                    />
-                )}
             </span>
             <span className="diff-row__sign">{sign(line)}</span>
             <Code line={line} />
@@ -551,13 +501,7 @@ const SplitRow = memo(function SplitRow({
     right,
     leftSelected,
     rightSelected,
-    leftThreadFocused,
-    rightThreadFocused,
-    selectionStart,
     hunk,
-    leftMarker,
-    rightMarker,
-    onCommentLine,
     onLineFocus,
     onLineBlur,
 }: {
@@ -565,32 +509,19 @@ const SplitRow = memo(function SplitRow({
     right: LineCell | null;
     leftSelected: boolean;
     rightSelected: boolean;
-    leftThreadFocused: boolean;
-    rightThreadFocused: boolean;
-    selectionStart: LineKey | null;
+
     hunk: number | undefined;
-    leftMarker: ReactNode;
-    rightMarker: ReactNode;
-    onCommentLine: ((side: 'old' | 'new', line: number) => void) | undefined;
+
     onLineFocus: ((side: 'old' | 'new', line: number) => void) | undefined;
     onLineBlur: (() => void) | undefined;
 }) {
     return (
         <div className="diff-row diff-row--pair" data-hunk={hunk}>
-            {/* Маркер левой половины стоит на кромке карточки, правой — на разделителе половин (§3). */}
-            {leftMarker === null ? null : (
-                <span className="diff-row__marker-slot diff-row__marker-slot--old">{leftMarker}</span>
-            )}
-            {rightMarker === null ? null : (
-                <span className="diff-row__marker-slot diff-row__marker-slot--new">{rightMarker}</span>
-            )}
             <Side
                 cell={left}
                 side="old"
                 selected={leftSelected}
-                threadFocused={leftThreadFocused}
-                selectionStart={left?.key === selectionStart && left !== right}
-                onCommentLine={onCommentLine}
+
                 onLineFocus={onLineFocus}
                 onLineBlur={onLineBlur}
             />
@@ -598,9 +529,7 @@ const SplitRow = memo(function SplitRow({
                 cell={right}
                 side="new"
                 selected={rightSelected}
-                threadFocused={rightThreadFocused}
-                selectionStart={right?.key === selectionStart}
-                onCommentLine={onCommentLine}
+
                 onLineFocus={onLineFocus}
                 onLineBlur={onLineBlur}
             />
@@ -612,18 +541,13 @@ function Side({
     cell,
     side,
     selected,
-    threadFocused,
-    selectionStart,
-    onCommentLine,
     onLineFocus,
     onLineBlur,
 }: {
     cell: LineCell | null;
     side: 'old' | 'new';
     selected: boolean;
-    threadFocused: boolean;
-    selectionStart: boolean;
-    onCommentLine: ((side: 'old' | 'new', line: number) => void) | undefined;
+
     onLineFocus: ((side: 'old' | 'new', line: number) => void) | undefined;
     onLineBlur: (() => void) | undefined;
 }) {
@@ -640,28 +564,17 @@ function Side({
     }
 
     const { line } = cell;
-    const className = `diff-side diff-side--${line.kind}${selected ? ' is-selected' : ''}${threadFocused ? ' is-thread-focused' : ''}`;
+    const className = `diff-side diff-side--${line.kind}${selected ? ' is-selected' : ''}`;
     const key = cell.key ?? undefined;
     const position = positionOf(cell, side);
     return (
         <>
             <span
-                className={`diff-row__gutter diff-row__gutter--comment ${className}${halfStart}`}
+                className={`diff-row__gutter diff-row__gutter--code ${className}${halfStart}`}
                 data-key={key}
                 data-side={side}
             >
                 {(side === 'old' ? line.oldLine : line.newLine) ?? ''}
-                {position === null ? null : (
-                    <CommentButton
-                        side={position.side}
-                        line={position.line}
-                        split
-                        selectionStart={selectionStart}
-                        onFocus={() => onLineFocus?.(position.side, position.line)}
-                        onBlur={onLineBlur}
-                        onCommentLine={onCommentLine}
-                    />
-                )}
             </span>
             <span className={`diff-row__sign ${className}`} data-key={key} data-side={side}>
                 {sign(line)}
@@ -682,48 +595,6 @@ function Side({
                 onBlur={onLineBlur}
             />
         </>
-    );
-}
-
-function CommentButton({
-    side,
-    line,
-    split = false,
-    selectionStart,
-    onFocus,
-    onBlur,
-    onCommentLine,
-}: {
-    side: 'old' | 'new';
-    line: number;
-    split?: boolean;
-    selectionStart: boolean;
-    onFocus?: (() => void) | undefined;
-    onBlur?: (() => void) | undefined;
-    onCommentLine: ((side: 'old' | 'new', line: number) => void) | undefined;
-}) {
-    const t = useT();
-    // Комментировать можно только активную итерацию.
-    const readOnly = useReadOnlyIteration();
-    const readOnlyReason = useReadOnlyReason();
-    if (onCommentLine === undefined) return null;
-    return (
-        <button
-            type="button"
-            className={`diff-row__comment${selectionStart ? ' is-selection-start' : ''}`}
-            aria-label={
-                split
-                    ? t(side === 'old' ? 'diff.row.commentOld' : 'diff.row.commentNew', line)
-                    : t('diff.row.comment', line)
-            }
-            disabled={readOnly}
-            title={readOnly ? readOnlyReason : undefined}
-            onFocus={onFocus}
-            onBlur={onBlur}
-            onClick={() => { onCommentLine(side, line); }}
-        >
-            <Icon name="pencil" size={15} />
-        </button>
     );
 }
 

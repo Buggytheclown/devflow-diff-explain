@@ -3,7 +3,6 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
     testDir: './src',
     // Приёмка продукта: desktop-флоу объяснения, включая чтение сохранённых v2/v3.
-    testMatch: '**/{readable-story,guided-story,story,story-reading}.spec.ts',
     globalSetup: './src/global-setup.ts',
     workers: 1,
     fullyParallel: false,
