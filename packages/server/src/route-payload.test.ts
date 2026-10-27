@@ -319,7 +319,7 @@ describe('запись payload на диск', () => {
         expect(input.instructions).toContain('Plan a concise coherent explanation');
         // Своего у скелета нет: каталог генерации держит только схему результата.
         expect(fs.readdirSync(path.dirname(input.resultSchemaFile ?? ''))).toEqual([
-            'route-readableSkeleton-result.schema.json',
+            'route-overviewSkeleton-result.schema.json',
         ]);
     });
 
@@ -330,7 +330,7 @@ describe('запись payload на диск', () => {
 
         const schemas = generateJsonSchemas();
         const readSchema = (file: string | undefined): unknown => JSON.parse(fs.readFileSync(file ?? '', 'utf8'));
-        expect(readSchema(skeleton.resultSchemaFile)).toEqual(schemas.readableSkeletonResult);
+        expect(readSchema(skeleton.resultSchemaFile)).toEqual(schemas.overviewSkeletonResult);
         expect(readSchema(sections.resultSchemaFile)).toEqual(schemas.readableSectionResult);
     });
 

@@ -131,6 +131,8 @@ export const guidedFileSchema = z.object({
     explanation: z.string().min(1).max(840).nullable(),
     example: readableExampleSchema.nullable().optional(),
     annotations: z.array(guidedAnnotationSchema).max(12),
+    status: z.enum(['queued', 'filling', 'ready', 'failed']).optional(),
+    failure: z.string().nullable().optional(),
 });
 export type GuidedFile = z.infer<typeof guidedFileSchema>;
 export type GuidedAnnotation = z.infer<typeof guidedAnnotationSchema>;
@@ -196,7 +198,7 @@ export type RouteCarried = z.infer<typeof routeCarriedSchema>;
  */
 const routeSnapshotBase = z.object({
     presentation: z.enum(['legacy', 'story']).optional(),
-    storyContractVersion: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
+    storyContractVersion: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional(),
     summaryEvidence: storyEvidenceBlockSchema.optional(),
     flow: flowStateSchema.optional(),
     snapshotId: z.string().min(1),
@@ -225,7 +227,7 @@ const routeSnapshotBase = z.object({
 
 /** Общие инварианты объяснения для собственного хранения и совместимой HTTP-проекции. */
 export function checkExplanationSnapshot(snapshot: {
-    storyContractVersion?: 2 | 3 | 4 | undefined;
+    storyContractVersion?: 2 | 3 | 4 | 5 | undefined;
     presentation?: 'story' | 'legacy' | undefined;
     summaryEvidence?: z.infer<typeof storyEvidenceBlockSchema> | undefined;
     flow?: z.infer<typeof flowStateSchema> | undefined;
@@ -236,7 +238,7 @@ export function checkExplanationSnapshot(snapshot: {
     if (snapshot.presentation !== 'story' || snapshot.summaryEvidence === undefined) {
         ctx.addIssue({ code: 'custom', message: 'Story needs its introduction evidence.' });
     }
-    if (snapshot.flow !== undefined && snapshot.flow.status !== 'unavailable') {
+    if (snapshot.flow?.status === 'pending' || snapshot.flow?.status === 'ready') {
         const contexts = snapshot.flow.contexts;
         if (new Set(contexts.map((entry) => entry.id)).size !== contexts.length || contexts.some((entry) => entry.revision !== snapshot.commit)) {
             ctx.addIssue({ code: 'custom', path: ['flow', 'contexts'], message: 'Flow context must have unique IDs and match the saved head revision.' });
@@ -390,6 +392,27 @@ export const readableSectionResultSchema = z.object({ contractVersion: z.literal
     files: z.array(z.object({ path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(360), example: rawReadableExampleSchema.nullable(), annotations: z.array(guidedAnnotationSchema).max(12) }).strict()
         .refine((file) => file.explanation.length + (file.example?.text.length ?? 0) <= 620, 'Keep the file introduction and example within 620 characters.')).min(1),
 }).strict().refine((stop) => stop.paragraph.length + (stop.example?.text.length ?? 0) <= 620, 'Keep the block introduction and example within 620 characters.')).min(1).max(20) }).strict();
+
+/** Обзор и частичное заполнение назначенных файлов; предел описания — защитный размер payload. */
+export const overviewSkeletonResultSchema = readableSkeletonResultSchema.extend({
+    contractVersion: z.literal(5), summary: z.string().trim().min(1).max(20_000),
+});
+export const sectionAssignmentSchema = z.object({ files: z.array(relativeCodePathSchema).min(1).max(3), introduction: z.boolean() }).strict();
+export type SectionAssignment = z.infer<typeof sectionAssignmentSchema>;
+export const progressiveSectionResultSchema = z.object({
+    contractVersion: z.literal(5),
+    stops: z.array(z.object({
+        planIndex: z.number().int().positive(),
+        paragraph: z.string().trim().min(1).max(400).nullable(),
+        evidence: rawStoryEvidenceBlockSchema.nullable(), example: rawReadableExampleSchema.nullable(),
+        files: z.array(z.object({
+            path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(360),
+            example: rawReadableExampleSchema.nullable(), annotations: z.array(guidedAnnotationSchema).max(12),
+        }).strict().refine((file) => file.explanation.length + (file.example?.text.length ?? 0) <= 620, 'Keep the file introduction and example within 620 characters.')).min(1).max(3),
+    }).strict().refine((stop) => (stop.paragraph === null) === (stop.evidence === null) &&
+        (stop.paragraph !== null || stop.example === null), 'Introduction and its evidence must be both present or both null.')
+        .refine((stop) => (stop.paragraph?.length ?? 0) + (stop.example?.text.length ?? 0) <= 620, 'Keep the block introduction and example within 620 characters.')).min(1).max(1),
+}).strict();
 
 export type StorySkeletonResult = z.infer<typeof storySkeletonResultSchema>;
 export type StorySectionResult = z.infer<typeof storySectionResultSchema>;

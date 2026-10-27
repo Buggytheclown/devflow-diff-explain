@@ -1,5 +1,10 @@
 import { formatCount, formatDecimal, plural } from './format.js';
 import type { Dictionary } from './ru.js';
+import type { preparationRu, overviewRu } from './ru.js';
+
+export const overviewEn: Record<keyof typeof overviewRu, string> = { sourcesHint: 'These sources support the overview. Find every changed file in the route and “All changes”.', diagramLimited: 'Part of the flow is unconfirmed by the available code. See the diagram sources for limitations.', legacyDetails: 'Overall readiness was not measured for this format. Saved materials are readable; updates start manually.', revision: 'Code revision' };
+
+export const preparationEn: Record<keyof typeof preparationRu, string> = { title: 'Explanation preparation', planning: 'Reading changes, preparing the overview and block order', preparing: 'Preparing explanations', ready: 'Explanation ready', partial: 'Explanation partially ready', failed: 'Preparation failed', cancelled: 'Preparation stopped', idle: 'No explanation yet', legacy: 'Saved explanation · overall progress unavailable', previous: 'Previous explanation', latest: 'Open new explanation', offline: 'Agent disconnected. Ready materials remain available; preparation resumes on connection.', blocks: 'Blocks', files: 'Files', diagram: 'Diagram', description: 'Overview', pending: 'pending', unavailable: 'unavailable', not_applicable: 'not needed', done: 'ready', cancel: 'Stop', stage: 'Overview and diagram first, then file explanations', missing: 'Remaining', units: 'parts', overviewTitle: 'PR overview', overviewPending: 'Preparing the problem and solution overview', diagramTitle: 'Data flow', diagramPending: 'The diagram follows the overview, before file explanations', routeTitle: 'Route through changes', routePending: 'Organizing blocks and files for understanding', diagramNotNeeded: 'Diagram not needed: ', retryDiagram: 'Retry diagram', connectToRetry: 'Connect the agent to retry the diagram.', overviewSources: 'Overview sources', fileCount: 'files' };
 
 /**
  * Английский словарь. Подписи элементов взяты из `docs/design/SPEC-elements.md` там, где он их

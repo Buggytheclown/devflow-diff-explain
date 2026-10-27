@@ -7,11 +7,13 @@ import type { ReadingPosition } from './reading-position.js';
 import { capturePosition, restorePosition, revealCode } from './reading-position.js';
 import type { ReadingRequest, ReturnPoint, StoryMemory } from './reading-state.js';
 import { storyMemory, returnForSnapshot } from './reading-state.js';
+import { readPositions, writeCache } from './reading-cache.js';
 
 /** Память принадлежит вкладке, а не удаляемым компонентам документа и файла. */
 export function useReadingSession(root: RefObject<HTMLElement | null>, scope: string, storyKey: string | null) {
     const focuses = useRef(new Map<string, string>());
-    const positions = useRef(new Map<string, ReadingPosition>());
+    const [initialPositions] = useState(() => new Map<string, ReadingPosition>(readPositions()));
+    const positions = useRef(initialPositions);
     const stories = useRef(new Map<string, StoryMemory>());
     const [origin, setOrigin] = useState<ReturnPoint | null>(null);
     const [expansions, setExpansions] = useState<Record<string, ReadonlySet<string>>>({});
@@ -33,7 +35,7 @@ export function useReadingSession(root: RefObject<HTMLElement | null>, scope: st
             if (address !== undefined) focuses.current.set(scope, address);
         }
         const position = capturePosition(root.current);
-        if (position !== null) positions.current.set(scope, position);
+        if (position !== null) { positions.current.set(scope, position); writeCache('positions', [...positions.current].slice(-100)); }
         if (storyKey !== null && scope === storyKey) {
             const memory = saved(storyKey);
             memory.position = position;
@@ -52,7 +54,7 @@ export function useReadingSession(root: RefObject<HTMLElement | null>, scope: st
     useLayoutEffect(() => {
         if (previousStory.current !== storyKey) {
             previousStory.current = storyKey;
-            if (scope === storyKey) pending.current = { kind: 'restore', scope, epoch: ++epoch.current, position: null, focus: 'intro' };
+            pending.current = { kind: 'restore', scope, epoch: ++epoch.current, position: positions.current.get(scope) ?? null, focus: null };
         }
         const request = pending.current;
         if (request?.scope !== scope || root.current === null || request.epoch !== epoch.current) return;

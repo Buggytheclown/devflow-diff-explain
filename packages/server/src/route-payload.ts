@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { ExplanationBlock, FileDiff, Locale, PrDiff, PrMeta, RouteStop, StoryEvidenceBlock, UiGenerationCap } from '@sherpa/protocol';
+import type { ExplanationBlock, FileDiff, Locale, PrDiff, PrMeta, RouteStop, StoryEvidenceBlock, UiGenerationCap, SectionAssignment } from '@sherpa/protocol';
 import { generateJsonSchemas } from '@sherpa/protocol';
 
 import { storyGuide } from './story.js';
@@ -55,6 +55,8 @@ export interface RouteTaskContext extends RoutePayloadContext {
     readonly locale: Locale;
     readonly introduction?: string;
     readonly introductionEvidence?: StoryEvidenceBlock | undefined;
+    readonly version?: number;
+    readonly assignment?: SectionAssignment;
 }
 
 export interface RoutePayloadWriterOptions {
@@ -100,7 +102,7 @@ export class RoutePayloadWriter {
                 this.shared.guide('skeleton-guide', storyGuide('skeleton', locale)),
                 prDiff.file,
             ],
-            resultSchemaFile: this.writeSchema('readableSkeleton'),
+            resultSchemaFile: this.writeSchema('overviewSkeleton'),
         };
     }
 
@@ -125,7 +127,7 @@ export class RoutePayloadWriter {
         intents: ReadonlyMap<number, string>,
     ): EnqueueInput {
         const locale = context.locale;
-        const name = `section-${planIndexes.map(pad2).join('-')}-plan.md`;
+        const name = `section-${planIndexes.map(pad2).join('-')}${context.assignment === undefined ? '' : `-${randomBytes(4).toString('hex')}`}-plan.md`;
         const plan = this.writeFile(name, explanationPlanContext(planIndexes, stops, intents, context));
         const prDiff = this.prDiff(context);
         return {
@@ -133,11 +135,11 @@ export class RoutePayloadWriter {
             priority: 'background',
             instructions: `Write every assigned section (${planIndexes.join(', ')}) as one coherent concise explanation, continuing the introduction without repeating it. Follow the guide and attached result schema.`,
             contextFiles: [
-                this.shared.guide('section-guide', storyGuide('section', locale)),
+                this.shared.guide('section-guide', storyGuide('section', locale, context.version === 5 ? 5 : 4)),
                 prDiff.file,
                 plan,
             ],
-            resultSchemaFile: this.writeSchema('readableSection'),
+            resultSchemaFile: this.writeSchema(context.version === 5 ? 'progressiveSection' : 'readableSection'),
         };
     }
 
@@ -222,7 +224,7 @@ export class RoutePayloadWriter {
     }
 
     /** Схема результата файлом (docs/protocol.md §4): канон — zod, JSON Schema — производная. */
-    private writeSchema(kind: 'readableSkeleton' | 'readableSection'): string {
+    private writeSchema(kind: 'overviewSkeleton' | 'readableSkeleton' | 'readableSection' | 'progressiveSection'): string {
         const key = `${kind}Result`;
         const schema = generateJsonSchemas()[key];
         return this.writeFile(`route-${kind}-result.schema.json`, `${JSON.stringify(schema, null, 2)}\n`);
@@ -253,9 +255,10 @@ function explanationPlanContext(
 ): string {
     const blocks = stops.filter((stop) => planIndexes.includes(stop.planIndex)).map((stop) => ({
         planIndex: stop.planIndex, title: stop.title, intent: intents.get(stop.planIndex),
-        files: stop.guidedFiles, relatedFiles: stop.relatedFiles,
+        files: stop.guidedFiles?.filter((file) => context.assignment === undefined || context.assignment.files.includes(file.path)), relatedFiles: stop.relatedFiles,
     }));
     return [
+        '## Assignment', JSON.stringify(context.assignment ?? null),
         '## Accepted blocks and ordered file assignments', JSON.stringify(blocks),
         '## Already shown introduction', context.introduction ?? '',
         '## Accepted introduction evidence', JSON.stringify(context.introductionEvidence ?? null), '',

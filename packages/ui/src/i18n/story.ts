@@ -1,5 +1,9 @@
 import { storyRu, guidedRu, flowRu } from './ru.js';
 import { storyEn, guidedEn, flowEn } from './en.js';
+import { preparationRu, overviewRu } from './ru.js';
+import { preparationEn, overviewEn } from './en.js';
+
+export const preparationCopy = { ru: { ...preparationRu, ...overviewRu }, en: { ...preparationEn, ...overviewEn } };
 
 export const storyCopy = { ru: storyRu, en: storyEn };
 

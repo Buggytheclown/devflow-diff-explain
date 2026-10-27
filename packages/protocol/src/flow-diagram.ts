@@ -31,14 +31,18 @@ export const flowDiagramSchema = z.object({
 });
 export const flowDiagramResultSchema = z.object({
     contextRequests: z.array(flowContextRequestSchema).max(4), diagram: flowDiagramSchema.nullable(), reason: z.string().trim().min(1).max(300).nullable(),
+    outcome: z.enum(['not_applicable', 'unavailable']).optional(),
 }).strict().refine((value) => value.contextRequests.length > 0 ? value.diagram === null : value.diagram !== null || value.reason !== null,
-    'Request context first, or return a diagram, or state why it is unavailable.');
+    'Request context first, or return a diagram, or state why it is unavailable.')
+    .refine((value) => value.outcome === undefined || (value.diagram === null && value.contextRequests.length === 0 && value.reason !== null),
+        'A terminal outcome needs a reason and cannot include a diagram or context requests.');
 const contexts = z.array(flowContextSchema).max(8);
 export const readyFlowSchema = z.object({ status: z.literal('ready'), diagram: flowDiagramSchema, contexts });
 export const flowStateSchema = z.discriminatedUnion('status', [
     z.object({ status: z.literal('pending'), taskId: z.number().int().positive().nullable(), round: z.number().int().min(0).max(2), requests: z.array(flowContextRequestSchema).max(4), contexts, missing: z.array(z.string()).max(8) }),
     readyFlowSchema,
     z.object({ status: z.literal('unavailable'), reason: z.string().min(1).max(300) }),
+    z.object({ status: z.literal('not_applicable'), reason: z.string().min(1).max(300) }),
 ]);
 export type FlowContext = z.infer<typeof flowContextSchema>;
 export type FlowDiagram = z.infer<typeof flowDiagramSchema>;

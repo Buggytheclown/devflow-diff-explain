@@ -16,7 +16,8 @@ test('рассказ → явный вопрос → ответ; старое р
     const submitted = await server.worker.complete(plan.taskId ?? 0, JSON.stringify(outline));
     expect(submitted.stdout).not.toContain('rejected');
     await expect(page.locator('.story-document')).toContainText(outline.summary);
-    await expect(page.getByText('Дописываю рассказ. Введение уже можно читать.')).toBeVisible();
+    await expect(page.getByRole('progressbar')).toBeVisible();
+    await expect(page.locator('.story-document section')).toHaveCount(1);
     await page.getByRole('button', { name: 'Показать изменение', exact: true }).click();
     await expect(page.locator('.story-source-line')).not.toHaveCount(0);
     const compose = await server.worker.next();

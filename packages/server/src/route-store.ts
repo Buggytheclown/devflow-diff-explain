@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import type {
     ExplanationSnapshot,
     FlowState,
+    Generation,
+    SectionAssignment,
     HostId,
     Locale,
     PrDiff,
@@ -14,7 +17,7 @@ import type {
     UiGenerationCap,
     UiRouteState,
 } from '@sherpa/protocol';
-import { localeSchema, routeSnapshotSchema, uiGenerationCapSchema, uiRouteStateSchema } from '@sherpa/protocol';
+import { generationSchema, sectionAssignmentSchema, localeSchema, routeSnapshotSchema, uiGenerationCapSchema, uiRouteStateSchema } from '@sherpa/protocol';
 
 import type { AcceptedExplanation, ExplanationFilling } from './story.js';
 import { reviewProjection, storedSnapshot, restoreSnapshot } from './explanation-compat.js';
@@ -68,6 +71,7 @@ export interface RouteTaskBinding {
      */
     readonly diffId: HostId | null;
     readonly planIndexes: number[];
+    readonly assignment?: SectionAssignment;
 }
 
 /**
@@ -118,6 +122,7 @@ interface RouteTaskRow extends SqlRow {
     kind: string;
     diff_id: string | null;
     plan_indexes: string;
+    assignment: string | null;
 }
 
 // `stale` в хранилище всегда null: его считает `IterationFeed` на границе чтения (`withStale`).
@@ -177,7 +182,24 @@ export class RouteStore {
 
     /** Состояние для UI; копия — потребитель волен её мутировать. */
     read(): UiRouteState {
-        return structuredClone(this.state);
+        const generation = this.generation();
+        return structuredClone({ ...this.state, ...(generation === null ? {} : { generation }) });
+    }
+
+    generation(): Generation | null {
+        const row = this.db.prepare("SELECT value FROM meta WHERE key='preparation_generation'").get();
+        return typeof row?.value === 'string' ? generationSchema.parse(JSON.parse(row.value)) : null;
+    }
+
+    private writeGeneration(value: Generation): void {
+        this.db.prepare("INSERT INTO meta(key,value) VALUES('preparation_generation',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            .run(JSON.stringify(generationSchema.parse(value)));
+    }
+
+    setGenerationStatus(status: Generation['status']): void {
+        const generation = this.generation();
+        if (generation === null || generation.status === status) return;
+        this.commit(this.state, this.intents, () => { this.writeGeneration({ ...generation, status }); return {}; });
     }
 
     /** Текущий снапшот PR; null — маршрута сейчас нет (генерация не шла, сброшена или провалилась). */
@@ -224,19 +246,22 @@ export class RouteStore {
     }
 
     /** Новая генерация: старый снапшот остаётся читаемым до приёмки нового плана. */
-    beginSkeleton(generation?: { locale: Locale; presentation: 'legacy' | 'story' }): void {
+    beginSkeleton(generation?: { locale: Locale; presentation: 'legacy' | 'story'; version?: number; commit?: string }): void {
         this.commit({ ...this.state, phase: 'reading', failure: null }, new Map(), generation === undefined ? undefined : () => {
             this.setGenerationLocale(generation.locale);
             this.setGenerationPresentation(generation.presentation);
             this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                .run(generation.presentation === 'story' ? '2' : '1');
+                .run(generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
+            if (generation.version === 5) this.writeGeneration({ id: randomUUID(), commit: generation.commit ?? null,
+                snapshotId: null, previousSnapshotId: this.state.snapshot?.snapshotId ?? null, status: 'running' });
+            else this.db.prepare("DELETE FROM meta WHERE key='preparation_generation'").run();
             return {};
         });
     }
 
     /** Эпоха формата задания; прежний ключ meta сохранён для рестарта незавершённых задач. */
     generationTaskEpoch(): number {
-        return this.db.prepare("SELECT value FROM meta WHERE key='generation_story_contract_version'").get()?.value === '2' ? 2 : 1;
+        return Number(this.db.prepare("SELECT value FROM meta WHERE key='generation_story_contract_version'").get()?.value ?? 1);
     }
 
     /**
@@ -267,7 +292,11 @@ export class RouteStore {
         this.commit(
             { ...this.state, phase: 'filling', snapshot, failure: null },
             new Map(input.skeleton.intents),
-            stepOf(snapshot, onSnapshot),
+            () => {
+                const generation = this.generation();
+                if (generation !== null) this.writeGeneration({ ...generation, snapshotId: snapshot.snapshotId });
+                return stepOf(snapshot, onSnapshot)?.() ?? {};
+            },
         );
     }
 
@@ -321,6 +350,24 @@ export class RouteStore {
         this.commit({ ...this.state, snapshot: { ...snapshot, stops } });
     }
 
+    /** Частичные задачи не меняют готовые соседние файлы и вводное пояснение блока. */
+    setFileStatuses(updates: ReadonlyMap<string, RouteStopStatusUpdate>): void {
+        const snapshot = this.state.snapshot;
+        if (snapshot === null) return;
+        const stops = snapshot.stops.map((stop) => {
+            const files = stop.guidedFiles?.map((file) => {
+                const update = updates.get(file.fileId);
+                return file.explanation !== null ? { ...file, status: 'ready' as const, failure: null }
+                    : update === undefined ? file : { ...file, status: update.status, failure: update.note ?? null };
+            });
+            const ready = stop.paragraph !== null && files?.every((file) => file.explanation !== null);
+            const active = files?.some((file) => file.status === 'queued' || file.status === 'filling');
+            return { ...stop, guidedFiles: files, status: ready ? 'ready' as const
+                : active ? 'filling' as const : files?.some((file) => file.status === 'failed') ? 'failed' as const : 'queued' as const };
+        });
+        this.commit({ ...this.state, snapshot: { ...snapshot, stops } });
+    }
+
     /** Незавершённый стоп возвращается в штатную фазу заполнения без сброса остального маршрута. */
     beginStopFill(planIndex: number): void {
         const snapshot = this.state.snapshot;
@@ -368,7 +415,11 @@ export class RouteStore {
      * Причина — одно русское предложение, сырой вывод модели — для «Open raw output».
      */
     fail(message: string, rawOutput: string | null): void {
-        this.commit({ ...this.state, phase: 'failed', failure: { message, rawOutput } });
+        this.commit({ ...this.state, phase: 'failed', failure: { message, rawOutput } }, this.intents, () => {
+            const generation = this.generation();
+            if (generation !== null && generation.status !== 'cancelled') this.writeGeneration({ ...generation, status: 'failed' });
+            return {};
+        });
     }
 
     /** PR ниже порога маршрута (docs/architecture.md §7.6) — считается по диффу, поэтому приезжает отдельно от фазы. */
@@ -378,6 +429,7 @@ export class RouteStore {
 
     /** Отмена скелета: перестройка возвращает старый маршрут, первая генерация — пустое состояние. */
     cancelSkeleton(): void {
+        this.setGenerationStatus('cancelled');
         if (this.state.snapshot === null) {
             this.reset();
             return;
@@ -463,21 +515,22 @@ export class RouteStore {
         kind: RouteTaskBinding['kind'],
         diffId: HostId,
         planIndexes: readonly number[],
+        assignment?: SectionAssignment,
     ): void {
         this.db
             .prepare(
-                `INSERT INTO route_tasks (task_id, kind, diff_id, plan_indexes, created_at)
-                 VALUES (?, ?, ?, ?, ?)
+                `INSERT INTO route_tasks (task_id, kind, diff_id, plan_indexes, created_at, assignment)
+                 VALUES (?, ?, ?, ?, ?, ?)
                  ON CONFLICT(task_id) DO UPDATE SET kind = excluded.kind, diff_id = excluded.diff_id,
-                    plan_indexes = excluded.plan_indexes`,
+                    plan_indexes = excluded.plan_indexes, assignment = excluded.assignment`,
             )
-            .run(taskId, kind, diffId, JSON.stringify([...planIndexes]), this.now().toISOString());
+            .run(taskId, kind, diffId, JSON.stringify([...planIndexes]), this.now().toISOString(), assignment === undefined ? null : JSON.stringify(sectionAssignmentSchema.parse(assignment)));
     }
 
     /** Привязки задач текущей генерации, в порядке постановки. */
     bindings(): Map<number, RouteTaskBinding> {
         const rows = this.db
-            .prepare('SELECT task_id, kind, diff_id, plan_indexes FROM route_tasks ORDER BY task_id')
+            .prepare('SELECT task_id, kind, diff_id, plan_indexes, assignment FROM route_tasks ORDER BY task_id')
             .all() as RouteTaskRow[];
         const bindings = new Map<number, RouteTaskBinding>();
         for (const row of rows) {
@@ -485,6 +538,7 @@ export class RouteStore {
                 kind: row.kind === 'skeleton' ? 'skeleton' : 'section',
                 diffId: row.diff_id,
                 planIndexes: parsePlanIndexes(row.plan_indexes),
+                ...(row.assignment === null ? {} : { assignment: sectionAssignmentSchema.parse(JSON.parse(row.assignment)) }),
             });
         }
         return bindings;

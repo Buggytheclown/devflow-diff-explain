@@ -20,7 +20,7 @@ export type RouteValidation<T> =
  */
 export interface AcceptedSkeleton {
     readonly summary: string;
-    readonly storyContractVersion?: 2 | 3 | 4;
+    readonly storyContractVersion?: 2 | 3 | 4 | 5;
     readonly summaryEvidence?: StoryEvidenceBlock;
     readonly stops: RouteStop[];
     /** Порядок полного тура: id стопов, «Прочее» последним. */
@@ -47,5 +47,15 @@ export interface RouteStopFilling {
 
 /** Плановый слот + заполнение = готовый стоп снапшота. */
 export function applyFilling(stop: RouteStop, filling: RouteStopFilling | ExplanationFilling): RouteStop {
+    if ('partial' in filling && filling.partial) {
+        const updated = new Map(filling.guidedFiles?.map((file) => [file.fileId, file]));
+        const files = stop.guidedFiles?.map((file) => {
+            const incoming = updated.get(file.fileId);
+            return incoming === undefined ? file : { ...incoming, status: 'ready' as const, failure: null };
+        });
+        const paragraph = filling.paragraph ?? stop.paragraph;
+        return { ...stop, ...(filling.paragraph === null ? {} : { paragraph, storyEvidence: filling.storyEvidence, example: filling.example }),
+            guidedFiles: files, status: paragraph !== null && files?.every((file) => file.explanation !== null) ? 'ready' : 'filling' };
+    }
     return { ...stop, ...filling, status: 'ready' };
 }

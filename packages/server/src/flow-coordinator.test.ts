@@ -40,10 +40,10 @@ describe('независимая схема закреплённого пото�
     afterEach(async () => { flow.close(); db.close(); await removeTempSherpaDir(dir); });
 
     it('достраивается отдельно от готового текста и сохраняется после рестарта', async () => {
+        const pending = await task();
         const body = validateStorySection(JSON.stringify(fixture.body), [1, 2], fixture.diff, 'ru', store.current()?.stops, 4);
         if (!body.ok) throw new Error(body.errors.join('\n'));
         store.applyFillings(body.value, provenance); store.markReady();
-        const pending = await task();
         expect(store.read().phase).toBe('ready');
         expect(queue.complete('test', pending.id, JSON.stringify({ contextRequests: [], diagram: fixture.diagram, reason: null })).kind).toBe('accepted');
         expect(store.current()?.flow?.status).toBe('ready');

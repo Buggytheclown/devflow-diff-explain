@@ -23,3 +23,4 @@ export * from './version.js';
 export * from './flow-diagram.js';
 
 export * from './explanation.js';
+export * from './preparation.js';

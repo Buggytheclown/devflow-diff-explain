@@ -3,6 +3,7 @@ import { rpcErrorSchema, UI_ENDPOINTS, uiCancelResponseSchema, uiChatAskResponse
 import type { z } from 'zod';
 
 import { activeT } from './i18n/index.js';
+import { uiReviewWriteAckSchema } from '@sherpa/protocol';
 import { withTreeOrder } from './tree/file-order.js';
 
 /**
@@ -89,6 +90,14 @@ export async function fetchReviewRoute(
     snapshotId?: string | null,
 ): Promise<UiReviewRouteResponse> {
     return get(withQuery(UI_ENDPOINTS.reviewRoute, { snapshot: snapshotId }), token, uiReviewRouteResponseSchema);
+}
+
+export async function retryRouteDiagram(token: string, snapshotId: string): Promise<void> {
+    await post(UI_ENDPOINTS.reviewRouteRetryDiagram, token, { snapshotId }, uiReviewWriteAckSchema);
+}
+
+export async function cancelRouteGeneration(token: string, generationId: string): Promise<void> {
+    await post(UI_ENDPOINTS.reviewRouteCancelGeneration, token, { generationId }, uiReviewWriteAckSchema);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { generationSchema } from './preparation.js';
 
 import { agentNoteIdSchema, agentNoteSchema, chatExplanationSchema, chatAnchorSchema, chatExchangeIdSchema, chatExchangeSchema } from './chat.js';
 import { distributionVersionSchema } from './distribution.js';
@@ -283,6 +284,7 @@ export const uiRouteStaleSchema = z.object({
 export type UiRouteStale = z.infer<typeof uiRouteStaleSchema>;
 
 export const uiRouteStateSchema = z.object({
+    generation: generationSchema.optional(),
     phase: uiRoutePhaseSchema,
     /** PR ниже порога маршрута (`docs/architecture.md §7.6`): генерация не ставится, UI открывается на полном диффе с пометкой. */
     smallPr: z.boolean(),
@@ -300,6 +302,8 @@ export const uiRouteStateSchema = z.object({
     stale: uiRouteStaleSchema.nullable(),
 });
 export type UiRouteState = z.infer<typeof uiRouteStateSchema>;
+export const uiRouteRetryDiagramRequestSchema = z.object({ snapshotId: z.string().min(1) }).strict();
+export const uiRouteCancelGenerationRequestSchema = z.object({ generationId: z.string().min(1) }).strict();
 
 /** Без `snapshot` — текущее состояние маршрута; с ним — прошлый снапшот в `snapshot`, фаза как у него была. */
 export const uiReviewRouteRequestSchema = z.object({ snapshot: z.string().min(1).optional() });
@@ -929,6 +933,10 @@ export const UI_ENDPOINTS = {
     reviewRouteGenerate: '/api/ui/review/route/generate',
     /** POST `uiRouteFillStopRequestSchema` → `uiRouteFillStopResponseSchema`. */
     reviewRouteFillStop: '/api/ui/review/route/fill-stop',
+    /** POST `uiRouteRetryDiagramRequestSchema` → `uiReviewWriteAckSchema`. */
+    reviewRouteRetryDiagram: '/api/ui/review/route/retry-diagram',
+    /** POST `uiRouteCancelGenerationRequestSchema` → `uiReviewWriteAckSchema`. */
+    reviewRouteCancelGeneration: '/api/ui/review/route/cancel-generation',
     /** GET → `uiChatResponseSchema`. */
     reviewChat: '/api/ui/review/chat',
     /** POST `uiChatAskRequestSchema` → `uiChatAskResponseSchema`. */

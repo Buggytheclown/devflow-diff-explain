@@ -16,6 +16,9 @@ import {
     uiRouteFillStopResponseSchema,
     uiRouteGenerateRequestSchema,
     uiRouteGenerateResponseSchema,
+    uiRouteRetryDiagramRequestSchema,
+    uiRouteCancelGenerationRequestSchema,
+    uiReviewWriteAckSchema,
 } from '@sherpa/protocol';
 import type { z } from 'zod';
 
@@ -49,6 +52,22 @@ export interface RouteRoutesOptions {
 
 export function createRouteRoutes(options: RouteRoutesOptions): Route[] {
     return [
+        {
+            method: 'POST', path: UI_ENDPOINTS.reviewRouteRetryDiagram,
+            handle: handlingRpcFailures(async (ctx) => {
+                const request = await readRouteRequest(ctx, uiRouteRetryDiagramRequestSchema);
+                options.orchestrator.retryDiagram(request.snapshotId);
+                return respond(uiReviewWriteAckSchema, { acknowledged: true }, 'local');
+            }),
+        },
+        {
+            method: 'POST', path: UI_ENDPOINTS.reviewRouteCancelGeneration,
+            handle: handlingRpcFailures(async (ctx) => {
+                const request = await readRouteRequest(ctx, uiRouteCancelGenerationRequestSchema);
+                options.orchestrator.cancelGeneration(request.generationId);
+                return respond(uiReviewWriteAckSchema, { acknowledged: true }, 'local');
+            }),
+        },
         {
             method: 'GET',
             path: UI_ENDPOINTS.reviewRoute,

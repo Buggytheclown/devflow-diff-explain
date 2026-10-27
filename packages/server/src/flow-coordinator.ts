@@ -45,8 +45,9 @@ export class FlowCoordinator {
             for (const task of queue.listTasks()) {
                 if (task.type === 'route.diagram' && (task.status === 'queued' || task.status === 'leased') && task.id !== (!replacing && snapshot?.flow?.status === 'pending' ? snapshot.flow.taskId : null)) queue.cancel(task.id);
             }
-            if (replacing) return;
-            if (snapshot?.storyContractVersion !== 4 || (snapshot.flow !== undefined && snapshot.flow.status !== 'pending')) return;
+            if (replacing || store.generation()?.status === 'cancelled') return;
+            if (snapshot?.storyContractVersion !== 5 && store.read().phase === 'ready' && snapshot?.flow === undefined) return;
+            if ((snapshot?.storyContractVersion !== 4 && snapshot?.storyContractVersion !== 5) || (snapshot.flow !== undefined && snapshot.flow.status !== 'pending')) return;
             const state: Extract<FlowState, {status: 'pending'}> = snapshot.flow ?? { status: 'pending', taskId: null, round: 0, requests: [], contexts: [], missing: [] };
             if (state.taskId !== null) {
                 const task = queue.listTasks().find((entry) => entry.id === state.taskId);
@@ -83,7 +84,7 @@ export class FlowCoordinator {
     }
     private current(id: string, taskId: number | null): boolean {
         const value = this.options.store.current();
-        return !this.stopped && this.options.store.read().phase !== 'reading' && value?.snapshotId === id && (value.flow === undefined ? taskId === null : value.flow.status === 'pending' && value.flow.taskId === taskId);
+        return !this.stopped && this.options.store.generation()?.status !== 'cancelled' && this.options.store.read().phase !== 'reading' && value?.snapshotId === id && (value.flow === undefined ? taskId === null : value.flow.status === 'pending' && value.flow.taskId === taskId);
     }
     acceptResult(task: TaskRecord, result: string): TaskResultAcceptance | null {
         if (task.type !== 'route.diagram') return null;
@@ -97,12 +98,13 @@ export class FlowCoordinator {
         const parsed = flowDiagramResultSchema.safeParse(raw);
         if (!parsed.success) return { kind: 'rejected', errors: parsed.error.issues.map((issue) => issue.message) };
         const value = parsed.data;
+        if (value.outcome === 'not_applicable' && state.missing.length > 0) return { kind: 'rejected', errors: ['Missing context is unavailability, not evidence that a diagram is inapplicable. Return a partial diagram or outcome unavailable.'] };
         if (value.contextRequests.length > 0 && state.round >= 2) return { kind: 'rejected', errors: ['Context budget exhausted. Return a partial diagram with local unknowns, or a reason.'] };
         const errors = value.diagram === null ? [] : diagramSourceErrors(value.diagram, diff, state.contexts);
         if (errors.length > 0) return { kind: 'rejected', errors };
         const next: FlowState = value.contextRequests.length > 0 ? { ...state, taskId: null, round: state.round + 1, requests: value.contextRequests }
             : value.diagram !== null ? { status: 'ready', diagram: value.diagram, contexts: state.contexts }
-                : { status: 'unavailable', reason: value.reason ?? 'Diagram unavailable.' };
+                : { status: value.outcome === 'not_applicable' ? 'not_applicable' : 'unavailable', reason: value.reason ?? 'Diagram unavailable.' };
         return { kind: 'accepted', onCommitted: () => { if (this.current(snapshot.snapshotId, task.id)) this.options.store.setFlow(snapshot.snapshotId, next); } };
     }
     private message(snapshot: RouteSnapshot, ru: string, en: string): string { return snapshot.provenance.locale === 'ru' ? ru : en; }
@@ -121,7 +123,7 @@ Draw a small meaningful source -> transformation -> consumer flow. Order edges a
 Every node AND edge has change: existing, added, modified, or unknown. Mark only what this PR demonstrably changes. Every edge has kind: data or control, and a label saying what passes or what starts. Runtime wiring must be confirmed, not inferred from executors/exports alone. Retry permission is not guaranteed retry.
 Known items need minimal sources: {kind:patch,path,side,start,end} in the saved full diff, or {kind:context,id} from saved context snippets. Changed items need changed patch lines. Unknown items need a local limitation; say what is unknown instead of asserting an unverified connection.
 If the diff omits necessary context, request up to four specific path/start/end ranges (80 lines each). The server reads only the pinned head revision and returns saved snippets. At most two rounds. Do not browse current checkout or remote code yourself. Unavailable context stays unknown. Use the saved patch index for omitted PR patches.
-Return contextRequests with diagram:null to request context; otherwise return contextRequests:[] and diagram. If a useful flow cannot be established, diagram:null with a concise localized reason. Follow the attached JSON schema. Do not claim examples or code were executed.`);
+Return contextRequests with diagram:null to request context; otherwise return contextRequests:[] and diagram. If the accessible change has no useful data/control flow, return diagram:null, outcome:not_applicable and a concise localized reason. Missing necessary context, source errors or technical failures require outcome:unavailable; they never mean not_applicable. For a ready diagram or context request omit outcome. Follow the attached JSON schema. Do not claim examples or code were executed.`);
         return { type: 'route.diagram' as const, priority: 'background' as const, instructions: 'Read the saved PR context and guide. Explain the general flow and mark the PR changes. Return JSON matching the schema.', contextFiles: [guide, prDiff, context], resultSchemaFile: schema };
     }
 }

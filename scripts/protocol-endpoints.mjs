@@ -56,6 +56,8 @@ const DESCRIPTIONS = {
         reviewSnapshots: 'список снапшотов маршрута',
         reviewRouteGenerate: 'запуск и перезапуск генерации маршрута',
         reviewRouteFillStop: 'перезаполнение одной остановки',
+        reviewRouteRetryDiagram: 'локальный повтор схемы текущего разбора',
+        reviewRouteCancelGeneration: 'остановка подготовки с сохранением готовых материалов',
         reviewChat: 'история вопросов и ответов',
         reviewChatAsk: 'вопрос агенту',
         reviewChatCancel: 'отмена заданного вопроса',

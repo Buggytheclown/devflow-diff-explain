@@ -16,7 +16,7 @@ import {
     workerStatusSchema,
 } from './messages.js';
 import { reviewFeedbackResultSchema } from './review.js';
-import { readableSkeletonResultSchema, readableSectionResultSchema, guidedSkeletonResultSchema, guidedSectionResultSchema, routeSectionResultSchema, routeSkeletonResultSchema, routeSnapshotSchema, storySkeletonResultSchema, storySectionResultSchema } from './route.js';
+import { overviewSkeletonResultSchema, progressiveSectionResultSchema, readableSkeletonResultSchema, readableSectionResultSchema, guidedSkeletonResultSchema, guidedSectionResultSchema, routeSectionResultSchema, routeSkeletonResultSchema, routeSnapshotSchema, storySkeletonResultSchema, storySectionResultSchema } from './route.js';
 import { leaseSchema, taskSchema } from './task.js';
 import {
     uiCancelRequestSchema,
@@ -57,6 +57,8 @@ export function generateJsonSchemas(): Record<string, unknown> {
         flowDiagramResult: flowDiagramResultSchema,
         readableSkeletonResult: readableSkeletonResultSchema,
         readableSectionResult: readableSectionResultSchema,
+        overviewSkeletonResult: overviewSkeletonResultSchema,
+        progressiveSectionResult: progressiveSectionResultSchema,
         guidedSkeletonResult: guidedSkeletonResultSchema,
         guidedSectionResult: guidedSectionResultSchema,
         storySkeletonResult: storySkeletonResultSchema,

@@ -22,7 +22,7 @@ function evidence<T extends z.ZodType>(source: T) {
 export const rawStoryEvidenceBlockSchema = evidence(rawStorySourceSchema);
 export const storyEvidenceBlockSchema = evidence(storySourceSchema);
 export const storyExplanationEvidenceSchema = z.object({
-    contractVersion: z.union([z.literal(2), z.literal(3), z.literal(4)]),
+    contractVersion: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
     introduction: storyEvidenceBlockSchema,
     flow: readyFlowSchema.optional(),
     sections: z.array(z.object({ id: z.string().min(1), evidence: storyEvidenceBlockSchema }).strict()).max(41),

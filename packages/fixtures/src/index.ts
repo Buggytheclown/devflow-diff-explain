@@ -48,3 +48,4 @@ export { fileContentOf } from './file-content.js';
 export type { FixtureData, FixtureInterdiff, FixtureIteration, FixtureIterationView, FixtureName } from './data/index.js';
 export { guidedStoryFixture } from './guided-story.js';
 export { readableStoryFixture } from './readable-story.js';
+export { overviewStoryFixture } from './overview-story.js';

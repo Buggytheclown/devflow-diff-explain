@@ -87,7 +87,7 @@ test('возврат хранит абзац, раскрытия и фокус; 
     await expect(page.locator('.story-code header code')).toHaveText(otherPath);
 });
 
-test('новый push и поздняя загрузка не подменяют выбранную версию; новое поколение возвращает к введению', async ({ page, launchSherpa }) => {
+test('новый push и поздняя загрузка не подменяют выбранную версию; новый разбор открывается явно', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium');
     await startStory(page, server);
     await page.locator('.story-document section').nth(1).getByRole('button', { name: 'Показать изменение', exact: true }).click();
@@ -124,12 +124,16 @@ test('новый push и поздняя загрузка не подменяют
     await expect(page.locator('.story-return')).toHaveText('К рассказу · Введение');
     await storyTab(page).click();
     await expect(page.locator('[data-reading="intro:0"]')).toBeInViewport();
+    await expect(page.getByRole('button', { name: 'Скрыть изменение', exact: true })).toHaveCount(1);
+    await expect(page.locator('.story-provenance')).toHaveText(oldCommit);
+    await page.getByRole('button', { name: 'Открыть новый разбор', exact: true }).click();
+    await expect(page.locator('[data-reading="intro:0"]')).toBeInViewport();
     await expect(page.getByRole('button', { name: 'Скрыть изменение', exact: true })).toHaveCount(0);
     const section = await server.worker.next();
     await server.worker.complete(section.taskId ?? 0, JSON.stringify(body));
     await diffTab(page).click();
-    await page.getByRole('button', { name: 'Открыть новый дифф', exact: true }).click();
     await expect(page.locator('.story-provenance')).not.toHaveText(oldCommit);
+    await expect(page.getByRole('button', { name: 'Открыть новый дифф', exact: true })).toHaveCount(0);
 });
 
 test('ошибка источника повторяется локально без новой задачи; legacy остаётся свёрнутым и честно подписан', async ({ page, launchSherpa }) => {

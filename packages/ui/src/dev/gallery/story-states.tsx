@@ -6,6 +6,7 @@ import { EvidenceSource } from '../../story/evidence.tsx';
 import { parseFileDiff } from '../../diff/parse.js';
 import { toParseRequest } from '../../diff/model.js';
 import { FlowDiagram, ExplanationExample } from '../../story/flow-diagram.tsx';
+import { OverviewSkeleton, Preparation } from '../../story/preparation.tsx';
 import { GuidedDocument } from '../../story/guided-document.tsx';
 import { ReadFile } from '../../story/read-file.tsx';
 import { SelectionBar, StoryDocument } from '../../story/app.tsx';
@@ -73,6 +74,10 @@ function GuidedGallery({ page, pending = false, readableView = false }: { page: 
 }
 const readable = readableStoryFixture();
 export const GUIDED_STORY_STATES: readonly GalleryState[] = [
+    { id: 'overview-scaffold', group: 'По диффу', title: 'Первый кадр · постоянный каркас обзора', render: () => <main className="story-main"><Preparation route={{ phase: 'reading', smallPr: false, snapshot: null, failure: null, stale: null }} connected /><OverviewSkeleton /></main> },
+    { id: 'overview-progress', group: 'По диффу', title: 'Общий прогресс · файлы готовы, схема недоступна', render: () => <main className="story-main"><Preparation route={{ phase: 'ready', smallPr: false, snapshot: { ...readable.snapshot, storyContractVersion: 5, flow: { status: 'unavailable', reason: 'Не удалось получить контекст.' } }, failure: null, stale: null }} connected /><FlowDiagram flow={{ status: 'unavailable', reason: 'Не удалось получить контекст.' }} onRetry={noop} connected /></main> },
+    { id: 'overview-previous', group: 'По диффу', title: 'Перестройка · предыдущий разбор остаётся открыт', render: () => <main className="story-main"><Preparation route={{ phase: 'reading', smallPr: false, snapshot: readable.snapshot, generation: { id: 'new', commit: 'next', snapshotId: null, previousSnapshotId: readable.snapshot.snapshotId, status: 'running' }, failure: null, stale: null }} displayedId={readable.snapshot.snapshotId} connected={false} /><GuidedGallery page="intro" readableView /></main> },
+    { id: 'overview-diagram-offline', group: 'По диффу', title: 'Локальный повтор схемы · агент отключён', render: () => <main className="story-main"><FlowDiagram flow={{ status: 'unavailable', reason: 'Схема не подготовлена. Описание и файлы доступны.' }} onRetry={noop} /></main> },
     { id: 'readable-description-route', group: 'По диффу', title: 'Описание · общий поток и маршрут справа', render: () => <GuidedGallery page="intro" readableView /> },
     { id: 'readable-file-cards', group: 'По диффу', title: 'Блок · назначения файлов до перехода в дифф', render: () => <GuidedGallery page="guided-1" readableView /> },
     { id: 'readable-flow', group: 'По диффу', title: 'Общий поток · изменения и неполный контекст', render: () => <main className="story-main"><FlowDiagram flow={readable.snapshot.flow} /></main> },

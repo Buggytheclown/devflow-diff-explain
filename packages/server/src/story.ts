@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { ExplanationBlock, ReadableExample, GuidedFile, Locale, PrDiff, StoryEvidenceBlock } from '@sherpa/protocol';
-import { readableSkeletonResultSchema, readableSectionResultSchema, guidedSkeletonResultSchema, guidedSectionResultSchema, storySkeletonResultSchema, storySectionResultSchema } from '@sherpa/protocol';
+import type { ExplanationBlock, ReadableExample, GuidedFile, Locale, PrDiff, StoryEvidenceBlock, SectionAssignment } from '@sherpa/protocol';
+import { overviewSkeletonResultSchema, progressiveSectionResultSchema, readableSkeletonResultSchema, readableSectionResultSchema, guidedSkeletonResultSchema, guidedSectionResultSchema, storySkeletonResultSchema, storySectionResultSchema } from '@sherpa/protocol';
 
 import { savedPatchIndex } from './saved-patch.js';
 import { storyEvidenceResolver } from './story-evidence.js';
@@ -12,16 +12,16 @@ import { voiceErrors } from './route/voice.js';
 
 /** Принятый план и заполнение не зависят от модели ревью. */
 export interface AcceptedExplanation {
-    summary: string; storyContractVersion: 2 | 3 | 4; summaryEvidence: StoryEvidenceBlock;
+    summary: string; storyContractVersion: 2 | 3 | 4 | 5; summaryEvidence: StoryEvidenceBlock;
     stops: ExplanationBlock[]; tourOrder: string[]; intents: Map<number, string>;
 }
 export interface ExplanationFilling {
-    planIndex: number; paragraph: string; storyEvidence?: StoryEvidenceBlock;
+    planIndex: number; paragraph: string | null; storyEvidence?: StoryEvidenceBlock; partial?: boolean;
     guidedFiles?: GuidedFile[]; example?: ReadableExample | null;
 }
 
 export function validateStorySkeleton(raw: string, diff: PrDiff, locale: Locale): RouteValidation<AcceptedExplanation> {
-    const parsed = parseResult(raw, z.union([readableSkeletonResultSchema, guidedSkeletonResultSchema, storySkeletonResultSchema]), 'story outline');
+    const parsed = parseResult(raw, z.union([overviewSkeletonResultSchema, readableSkeletonResultSchema, guidedSkeletonResultSchema, storySkeletonResultSchema]), 'story outline');
     if (!parsed.ok) return parsed;
     const evidence = storyEvidenceResolver(diff)(parsed.value.evidence, parsed.value.summary);
     if (!evidence.ok) return evidence;
@@ -45,7 +45,7 @@ export function validateStorySkeleton(raw: string, diff: PrDiff, locale: Locale)
             if (owners.has(file.fileId)) errors.push(`Assign ${file.path} to exactly one block; use relatedFiles for cross-links.`);
             owners.add(file.fileId);
         }
-        return { ...stop, guidedFiles: files.map((file) => ({ ...file, explanation: null, annotations: [] })),
+        return { ...stop, guidedFiles: files.map((file) => ({ ...file, explanation: null, annotations: [], ...(outline.contractVersion === 5 ? { status: 'queued' as const } : {}) })),
             relatedFiles: planned.relatedFiles.flatMap(resolveFile) };
     });
     if (outline.contractVersion !== 2) for (const file of diff.files) {
@@ -58,11 +58,12 @@ export function validateStorySkeleton(raw: string, diff: PrDiff, locale: Locale)
 }
 
 export function validateStorySection(
-    raw: string, targets: readonly number[], diff: PrDiff, locale: Locale, plannedStops?: readonly ExplanationBlock[], expectedVersion?: number,
+    raw: string, targets: readonly number[], diff: PrDiff, locale: Locale, plannedStops?: readonly ExplanationBlock[], expectedVersion?: number, assignment?: SectionAssignment,
 ): RouteValidation<ExplanationFilling[]> {
-    const parsed = parseResult(raw, z.union([readableSectionResultSchema, guidedSectionResultSchema, storySectionResultSchema]), 'story');
+    const parsed = parseResult(raw, z.union([progressiveSectionResultSchema, readableSectionResultSchema, guidedSectionResultSchema, storySectionResultSchema]), 'story');
     if (!parsed.ok) return parsed;
     const errors: string[] = [];
+    if (expectedVersion === 5 && parsed.value.contractVersion !== 5) return { ok: false, errors: ['Return contractVersion 5 and only the assigned files.'] };
     if (expectedVersion === 4 && parsed.value.contractVersion !== 4) return { ok: false, errors: ['This explanation requires contractVersion 4, short introductions and explicit optional examples.'] };
     if (plannedStops?.some((stop) => stop.guidedFiles !== undefined) && parsed.value.contractVersion === 2) {
         return { ok: false, errors: ['This plan needs contractVersion 3 and its assigned file explanations.'] };
@@ -83,13 +84,15 @@ export function validateStorySection(
     };
     const fillings = parsed.value.stops.map((stop): ExplanationFilling => {
         const at = `story.stops[${String(stop.planIndex)}]`;
-        errors.push(...paragraphMarkupErrors(`${at}.paragraph`, stop.planIndex, stop.paragraph),
+        if (assignment !== undefined && assignment.introduction !== (stop.paragraph !== null)) errors.push(`${at}: Return the block introduction only when assignment.introduction is true; otherwise paragraph, evidence and example must be null.`);
+        if (stop.paragraph !== null) errors.push(...paragraphMarkupErrors(`${at}.paragraph`, stop.planIndex, stop.paragraph),
             ...voiceErrors(`${at}.paragraph`, stop.paragraph, locale));
-        const evidence = resolve(stop.evidence, stop.paragraph);
-        if (!evidence.ok) errors.push(...evidence.errors.map((error) => `${at}: ${error}`));
+        const evidence = stop.evidence !== null && stop.paragraph !== null ? resolve(stop.evidence, stop.paragraph) : undefined;
+        if (evidence !== undefined && !evidence.ok) errors.push(...evidence.errors.map((error) => `${at}: ${error}`));
         let guidedFiles: GuidedFile[] | undefined;
         if ('files' in stop) {
-            const planned = plannedStops?.find((entry) => entry.planIndex === stop.planIndex)?.guidedFiles;
+            const planned = plannedStops?.find((entry) => entry.planIndex === stop.planIndex)?.guidedFiles
+                ?.filter((file) => assignment === undefined || assignment.files.includes(file.path));
             if (planned?.length !== stop.files.length || planned.some((file, index) => file.path !== stop.files[index]?.path)) {
                 errors.push(`${at}: Return the assigned files exactly once in their accepted order.`);
             }
@@ -105,14 +108,15 @@ export function validateStorySection(
                 return [{ path: file.path, explanation: file.explanation, annotations: file.annotations, fileId: source.fileId, ...(sample === undefined ? {} : { example: sample }) }];
             });
         }
-        return { ...('example' in stop ? { example: example(stop.example) ?? null } : {}), ...(guidedFiles === undefined ? {} : { guidedFiles }), planIndex: stop.planIndex, paragraph: stop.paragraph,
-            ...(evidence.ok ? { storyEvidence: evidence.value } : {}),
+        return { ...('example' in stop && stop.paragraph !== null ? { example: example(stop.example) ?? null } : {}), ...(guidedFiles === undefined ? {} : { guidedFiles }), planIndex: stop.planIndex, paragraph: stop.paragraph,
+            ...(parsed.value.contractVersion === 5 ? { partial: true } : {}),
+            ...(evidence?.ok === true ? { storyEvidence: evidence.value } : {}),
         };
     });
     return errors.length === 0 ? { ok: true, value: fillings } : { ok: false, errors };
 }
 
-export function storyGuide(stage: 'skeleton' | 'section', locale: Locale): string {
+export function storyGuide(stage: 'skeleton' | 'section', locale: Locale, version: 4 | 5 = 5): string {
     return `# Explain this pull request to a colleague
 
 Write in ${locale === 'ru' ? 'Russian' : 'English'}. Guide a colleague through the FULL PR diff.
@@ -141,7 +145,7 @@ Use plain words, precise facts and causal connections; details are requested exp
 No praise, emoji, rhetorical questions or filler. Read shared files once; do not audit the repository.
 ${explanationRules}
 
-Return contractVersion: 4. Every introduction/paragraph has evidence.claims, each with:
+Return contractVersion: ${String(version)}. Every non-null introduction/paragraph has evidence.claims, each with:
 - quote: an exact non-empty substring of that paragraph's Markdown, including markup, unique within its block;
 - sources: minimal supporting saved-patch sources. A lines source has kind: "lines", exact path, side: "old" or "new", start/end gutter numbers (up to 20 lines).
   A file source has kind: "file" and the canonical changed-file path, for file metadata only, not unseen contents.
@@ -151,10 +155,11 @@ Cover all key behavioural/mechanism claims. Both sides need evidence for a befor
 Do not fabricate an empty "before" source for an addition. Code is displayed from saved sources; never reproduce it in prose.
 Use a small number of claims/sources, not the schema's maximum counts. Self-check prose, evidence and introduction for consistency.
 
-${stage === 'skeleton' ? `Return summary (at most 500 characters), its evidence and stops (title, internal intent, files: ordered canonical changed-file paths, relatedFiles: canonical cross-link paths), in explanatory dependency order. Assign every changed file exactly once.
+${stage === 'skeleton' ? `Return summary, its evidence and stops (title, internal intent, files: ordered canonical changed-file paths, relatedFiles: canonical cross-link paths), in explanatory dependency order. Assign every changed file exactly once.
+${version === 5 ? 'The description must be self-contained: explain the scenario/problem, the approach and observable result, its place in the surrounding system, and implemented versus wired boundaries. Use a few short paragraphs when useful; there is no 500-character product target. Do not compress away the problem or context. Keep file-by-file details near code.' : 'The summary has at most 500 characters.'}
 State a concrete visible outcome in the introduction: what is now possible or different. Avoid generic announcements such as "the order/path/structure changed".
-Reserve the mechanism, exact values and detailed before/after comparison for the sections.
-The introduction is shown immediately with its sources, before the sections. Do not assign review priorities or a catch-all.` : `Continue the accepted introduction without repeating or rewriting it. Return all assigned stops with planIndex, paragraph, evidence, and files in the exact accepted order. Each block and file has example: null or {text (at most 260 characters), evidence (same claims format)}. Example claim quotes refer to its exact text. Each file needs path, explanation (at most 360 characters), annotations (side, start, end, text at most 840 characters).
+Reserve exact values, method inventories and file-by-file implementation details for the sections; retain the approach and essential conditions in the overview.
+The introduction is shown immediately with links to its sources, before the sections. Do not assign review priorities or a catch-all.` : `Continue the accepted introduction without repeating or rewriting it. Return all assigned stops with planIndex, paragraph, evidence, and files in the exact accepted order. ${version === 5 ? 'Return ONLY the files in assignment.files. When assignment.introduction is false, set paragraph, evidence and example to null; the accepted block introduction is already preserved. Other files are handled by separate tasks.' : ''} Each block and file has example: null or {text (at most 260 characters), evidence (same claims format)}. Example claim quotes refer to its exact text. Each file needs path, explanation (at most 360 characters), annotations (side, start, end, text at most 840 characters).
 Add a confirmed mechanism, boundary or consequence instead of restating the introduction. Even for a tiny change, avoid repeating the same facts or inventing extra detail.
 Each block paragraph has at most 400 characters. A block/file introduction plus its example together have at most 620 characters; use less when possible. Do not return the old anchors field.`}
 

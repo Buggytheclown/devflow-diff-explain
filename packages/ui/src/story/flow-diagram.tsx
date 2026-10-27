@@ -4,7 +4,8 @@ import { useLocale } from '../i18n/index.js';
 import { parseStopBlocks } from '@sherpa/protocol/markdown';
 import { renderBlock } from '../markdown/markdown.tsx';
 
-import { flowCopy } from '../i18n/story.js';
+import { flowCopy, preparationCopy } from '../i18n/story.js';
+import { Skeleton } from './preparation.tsx';
 
 
 export function ExplanationExample({ example }: { example: ReadableExample | null | undefined }) {
@@ -17,12 +18,15 @@ export function ExplanationExample({ example }: { example: ReadableExample | nul
 }
 
 /** Связанные переходы объединены в цепочку; длинный путь продолжается следующей строкой. */
-export function FlowDiagram({ flow }: { flow: FlowState | undefined }) {
-    const t = flowCopy[useLocale()];
+export function FlowDiagram({ flow, onRetry, connected = false }: { flow: FlowState | undefined; onRetry?: (() => void) | undefined; connected?: boolean | undefined }) {
+    const locale = useLocale();
+    const t = flowCopy[locale];
+    const pt = preparationCopy[locale];
     const id = useId();
     if (flow === undefined) return null;
-    if (flow.status === 'pending') return <p className="story-notice" role="status" data-reading="flow-pending">{t.pending}</p>;
-    if (flow.status === 'unavailable') return <p className="story-notice" data-reading="flow-unavailable">{flow.reason}</p>;
+    if (flow.status === 'pending') return <div data-reading="flow-pending"><Skeleton diagram label={t.pending} /></div>;
+    if (flow.status === 'not_applicable') return <p className="story-notice">{pt.diagramNotNeeded}{flow.reason}</p>;
+    if (flow.status === 'unavailable') return <div className="story-notice" data-reading="flow-unavailable"><p>{flow.reason}</p>{onRetry === undefined ? null : <><button className="ctl" disabled={!connected} onClick={onRetry}>{pt.retryDiagram}</button>{connected ? null : <small>{pt.connectToRetry}</small>}</>}</div>;
     const { diagram, contexts } = flow;
     const rows: (typeof diagram.edges)[] = [];
     for (const edge of diagram.edges) {
@@ -41,6 +45,7 @@ export function FlowDiagram({ flow }: { flow: FlowState | undefined }) {
     return <section className="story-flow" aria-labelledby={id} data-reading="flow">
         <h3 id={id}>{diagram.title}</h3>
         <ul className="story-flow-legend" aria-label={t.title}>{(['existing', 'added', 'modified', 'unknown'] as const).map((change) => <li className={`story-flow--${change}`} key={change}>{t[change]}</li>)}</ul>
+        {[...diagram.nodes, ...diagram.edges].some((entry) => entry.change === 'unknown' || entry.limitation !== null) ? <p className="story-flow-limit">{pt.diagramLimited}</p> : null}
         <div className="story-flow-graph" role="list">{rows.map((row, i) => <div className={`story-flow-edge${row.length === 2 ? ' story-flow-edge--chain' : ''}`} role="listitem" key={i}>
             {node(row[0]?.from ?? '')}{row.map((edge, j) => <Fragment key={j}><div className={`story-flow-arrow story-flow--${edge.change}`}><span>{edge.label}</span><span className="story-flow-line" aria-hidden="true">→</span><small>{t[edge.kind]} · {t[edge.change]}</small></div>{node(edge.to)}</Fragment>)}
         </div>)}</div>

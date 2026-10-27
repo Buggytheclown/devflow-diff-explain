@@ -13,6 +13,7 @@ import type {
     UiRouteFillStopResponse,
     UiRouteGenerateResponse,
     WorkerStatus,
+    SectionAssignment,
 } from '@sherpa/protocol';
 
 import { validateStorySkeleton, validateStorySection } from './story.js';
@@ -97,6 +98,7 @@ export class RouteOrchestrator {
 
     private unsubscribeQueue: (() => void) | null = null;
     private unsubscribeWorker: (() => void) | null = null;
+    private unsubscribeStore: (() => void) | null = null;
     private warmupTimer: NodeJS.Timeout | null = null;
 
     private closed = false;
@@ -118,7 +120,7 @@ export class RouteOrchestrator {
     /** Подписки автомата и разовый прогрев. Зовётся один раз при сборке сервера. */
     start(): void {
         this.flow.start();
-        if (this.store.generationPresentation() === 'story' && this.store.generationTaskEpoch() !== 2) {
+        if (this.store.generationPresentation() === 'story' && ![2, 3].includes(this.store.generationTaskEpoch())) {
             const phase = this.store.read().phase;
             if (phase === 'reading' || phase === 'filling' || this.hasOpenRouteTask()) {
                 this.cancelOpenRouteTasks();
@@ -129,6 +131,7 @@ export class RouteOrchestrator {
         this.unsubscribeQueue = this.queue.subscribeChanges(() => {
             this.reconcile();
         });
+        this.unsubscribeStore = this.store.subscribe(() => { queueMicrotask(() => { this.reconcile(); }); });
         // Подключение агента — момент, когда генерацию есть кому выполнить.
         this.unsubscribeWorker = this.registry.subscribe((status: WorkerStatus) => {
             if (status.kind === 'connected') {
@@ -149,6 +152,7 @@ export class RouteOrchestrator {
         this.closed = true;
         this.unsubscribeQueue?.();
         this.unsubscribeWorker?.();
+        this.unsubscribeStore?.();
         if (this.warmupTimer !== null) {
             clearTimeout(this.warmupTimer);
             this.warmupTimer = null;
@@ -258,8 +262,34 @@ export class RouteOrchestrator {
 
         // Прогресс не чистим: незаполненный стоп нельзя отметить в UI, отметки остальных живут.
         this.store.beginStopFill(planIndex);
+        this.store.setGenerationStatus('running');
         this.reconcile();
         return 'started';
+    }
+
+    retryDiagram(snapshotId: string): void {
+        const snapshot = this.store.current();
+        if (snapshot?.snapshotId !== snapshotId) throw new RpcFailure('bad_request', 'Этот разбор уже сменился. Откройте текущий результат.');
+        if (this.store.read().phase === 'reading') throw new RpcFailure('bad_request', 'Сейчас готовится новый разбор. Дождитесь описания.');
+        if (snapshot.flow?.status !== 'unavailable') return;
+        this.store.setGenerationStatus('running');
+        this.store.setFlow(snapshotId, { status: 'pending', taskId: null, round: 0, requests: [], contexts: [], missing: [] });
+    }
+
+    cancelGeneration(generationId: string): void {
+        if (this.store.generation()?.id !== generationId) throw new RpcFailure('bad_request', 'Подготовка уже сменилась. Обновите экран.');
+        this.store.setGenerationStatus('cancelled');
+        this.cancelOpenRouteTasks();
+        for (const task of this.queue.listTasks()) if (task.type === 'route.diagram' && (task.status === 'queued' || task.status === 'leased')) this.queue.cancel(task.id);
+        const current = this.store.current();
+        const snapshot = current?.snapshotId === this.store.generation()?.snapshotId ? current : null;
+        const updates = new Map<string, RouteStopStatusUpdate>();
+        for (const file of snapshot?.stops.flatMap((block) => block.guidedFiles ?? []) ?? []) {
+            if (file.explanation === null) updates.set(file.fileId, { status: 'failed', note: 'Подготовка остановлена.' });
+        }
+        if (snapshot?.storyContractVersion === 5) this.store.setFileStatuses(updates);
+        if (snapshot?.flow?.status === 'pending') this.store.setFlow(snapshot.snapshotId, { status: 'unavailable', reason: 'Подготовка схемы остановлена.' });
+        this.store.fail('Подготовка остановлена. Готовые материалы сохранены.', null);
     }
 
     /**
@@ -339,7 +369,7 @@ export class RouteOrchestrator {
         }
 
         const locale = snapshotLocale(snapshot);
-        const validation = validateStorySection(result, binding.planIndexes, diff, locale, snapshot.stops, snapshot.storyContractVersion);
+        const validation = validateStorySection(result, binding.planIndexes, diff, locale, snapshot.stops, snapshot.storyContractVersion, binding.assignment);
         if (!validation.ok) {
             return { kind: 'rejected', errors: validation.errors };
         }
@@ -404,6 +434,7 @@ export class RouteOrchestrator {
     }
 
     private reconcileOnce(): void {
+        if (this.store.generation()?.status === 'cancelled') return;
         this.cancelOrphanRouteTasks();
 
         const state = this.store.read();
@@ -417,6 +448,10 @@ export class RouteOrchestrator {
         }
 
         const snapshot = state.snapshot;
+        if (snapshot.storyContractVersion === 5) {
+            this.reconcileFiles(snapshot);
+            return;
+        }
         const strings = routeStrings(snapshotLocale(snapshot));
         const tasks = this.routeTasks();
         const sectionOf = new Map<number, TaskRecord>();
@@ -459,6 +494,48 @@ export class RouteOrchestrator {
             } else {
                 this.store.markReady();
             }
+        }
+    }
+
+    private reconcileFiles(snapshot: RouteSnapshot): void {
+        // Обзор со схемой завершается раньше подробностей. Отказ схемы не блокирует файлы.
+        if (snapshot.flow === undefined || snapshot.flow.status === 'pending') return;
+        const assignments = new Map<string, TaskRecord>();
+        for (const { record, binding } of this.routeTasks()) {
+            for (const file of binding.assignment?.files ?? []) assignments.set(file, record);
+        }
+        const updates = new Map<string, RouteStopStatusUpdate>();
+        const pending = new Map<number, string[]>();
+        const strings = routeStrings(snapshotLocale(snapshot));
+        for (const block of snapshot.stops) {
+            for (const file of block.guidedFiles ?? []) {
+                if (file.explanation !== null) continue;
+                const task = assignments.get(file.path);
+                if (task === undefined) {
+                    const paths = pending.get(block.planIndex) ?? [];
+                    paths.push(file.path); pending.set(block.planIndex, paths);
+                    updates.set(file.fileId, { status: 'queued' });
+                } else updates.set(file.fileId, stopStatusOf(task, strings));
+            }
+        }
+        this.store.setFileStatuses(updates);
+        const diff = this.diffOf(snapshot.diffId);
+        if (diff === null) { this.awaitOrAbandonDiff(snapshot.diffId); return; }
+        for (const block of snapshot.stops) {
+            const paths = pending.get(block.planIndex) ?? [];
+            for (let offset = 0; offset < paths.length; offset += 3) {
+                const assignment = { files: paths.slice(offset, offset + 3), introduction: block.paragraph === null && offset === 0 };
+                const input = this.payload.sectionTask({ diff, meta: this.meta, locale: snapshotLocale(snapshot), version: 5,
+                    introduction: snapshot.summary, introductionEvidence: snapshot.summaryEvidence, assignment },
+                    [block.planIndex], snapshot.stops, this.store.stopIntents());
+                this.enqueueRouteTask('section', snapshot.diffId, [block.planIndex], input, assignment);
+            }
+        }
+        const current = this.store.current();
+        const remaining = current?.stops.flatMap((block) => block.guidedFiles ?? []) ?? [];
+        if (pending.size === 0 && !remaining.some((file) => file.status === 'queued' || file.status === 'filling')) {
+            if (current?.stops.every((block) => block.status === 'ready')) this.store.markReady();
+            else this.store.fail('Часть пояснений не готова. Повторите незавершённый блок.', null);
         }
     }
 
@@ -511,7 +588,7 @@ export class RouteOrchestrator {
         // Язык — в хранилище, а не в поле: задачу скелета может принять уже следующий процесс.
         this.cancelOpenRouteTasks();
         this.store.clearBindings();
-        this.store.beginSkeleton({ locale, presentation: 'story' });
+        this.store.beginSkeleton({ locale, presentation: 'story', version: 5, commit: diff.headCommit });
         // Payload прошлой генерации больше никому не нужен: её задачи только что отменены.
         this.payload.beginGeneration();
         this.startSkeletonTask();
@@ -580,12 +657,13 @@ export class RouteOrchestrator {
         diffId: HostId,
         planIndexes: readonly number[],
         input: EnqueueInput,
+        assignment?: SectionAssignment,
     ): void {
         const outer = this.reconciling;
         this.reconciling = true;
         try {
             const record = this.queue.enqueue(input);
-            this.store.bindTask(record.id, kind, diffId, planIndexes);
+            this.store.bindTask(record.id, kind, diffId, planIndexes, assignment);
         } finally {
             this.reconciling = outer;
         }

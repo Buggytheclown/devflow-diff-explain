@@ -1,6 +1,8 @@
 import type { FileDiff, PrDiff, UiChatAskAnchor } from '@sherpa/protocol';
 
 import { fetchReviewDiff } from '../api.js';
+import { uiChatAskAnchorSchema } from '@sherpa/protocol';
+import { readCache, writeCache } from './reading-cache.js';
 import type { DiffClient } from '../diff/client.js';
 import { createDiffClient } from '../diff/client.js';
 import type { DiffFileModel } from '../diff/model.js';
@@ -29,7 +31,7 @@ export function createStoryData(token: string) {
         file: (diffId: string, fileId: string): SavedFile => {
             const key = `${diffId}:${fileId}`;
             let state = files.get(key);
-            if (state === undefined) { state = { model: null, selected: null }; files.set(key, state); }
+            if (state === undefined) { state = { model: null, selected: readCache(`selection:${key}`, uiChatAskAnchorSchema) ?? null }; files.set(key, state); }
             return state;
         },
         view: (diffId: string): DiffMemory => {
@@ -40,6 +42,7 @@ export function createStoryData(token: string) {
         updateFile: (diffId: string, fileId: string, patch: Partial<SavedFile>) => {
             const key = `${diffId}:${fileId}`;
             files.set(key, { model: null, selected: null, ...files.get(key), ...patch });
+            if ('selected' in patch) writeCache(`selection:${key}`, patch.selected);
         },
         updateView: (diffId: string, patch: Partial<DiffMemory>) => {
             views.set(diffId, { fileId: null, query: '', ...views.get(diffId), ...patch });

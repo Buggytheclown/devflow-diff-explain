@@ -488,6 +488,10 @@ export const MIGRATIONS: readonly Migration[] = [
         name: '022-chat-explanation',
         sql: `ALTER TABLE chat_exchanges ADD COLUMN explanation TEXT;`,
     },
+    {
+        name: '023-section-assignment',
+        sql: `ALTER TABLE route_tasks ADD COLUMN assignment TEXT;`,
+    },
 ];
 
 /** Ключ версии схемы в таблице `meta`. */
