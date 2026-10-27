@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 /**
- * Доменные типы ревью (`docs/architecture.md §5`, `docs/product.md §4a`): то, что пересекает границу хост-адаптера
+ * Доменные типы ревью (`docs/architecture.md`, `docs/architecture.md`): то, что пересекает границу хост-адаптера
  * и уходит в UI. Хост-специфика (стики-шип как механика, знаковые id Арканума,
  * `common_status` и т. п.) остаётся вердиктами и непрозрачными строками — в модель не протекает.
- * Формы выверены по разведке API Арканума (`docs/research/arcanum-api.md`).
+ * Формы выверены по разведке API Арканума (`docs/architecture.md`).
  */
 
 /**
@@ -15,7 +15,7 @@ import { z } from 'zod';
 export const hostIdSchema = z.string().min(1);
 export type HostId = z.infer<typeof hostIdSchema>;
 
-/** Автор комментария или PR. Бот-метка — приглушение и чип источника в UI (`docs/product.md §7`, сценарий F4). */
+/** Автор комментария или PR. Бот-метка — приглушение и чип источника в UI (`docs/architecture.md`, сценарий F4). */
 export const reviewUserSchema = z.object({
     login: z.string().min(1),
     /** Человекочитаемое имя источника — для ботов метка вида «Example AI Review (…)». */
@@ -93,7 +93,7 @@ export const prChecksSchema = z.enum(['passed', 'failed', 'pending']);
 export type PrChecks = z.infer<typeof prChecksSchema>;
 
 /**
- * Текущий вердикт ревьюера по PR (`docs/design/SPEC-elements.md §4.5` «someone else ships first»): у Арканума —
+ * Текущий вердикт ревьюера по PR (`docs/architecture.md` «someone else ships first»): у Арканума —
  * `review.reviewers[].action` (`ship` / `sticky_ship` / `waiting_for_changes` → `request_changes`).
  * Времени вердикта хосты не отдают — UI засекает момент, когда вердикт появился в снапшоте.
  * Публикация без вердикта (`comment`) вердиктом ревьюера не считается и сюда не попадает.
@@ -184,7 +184,7 @@ export type FileImage = z.infer<typeof fileImageSchema>;
 
 /**
  * Один файл диффа. Контент — сырой unified diff (`patch`): парсинг в модель строк
- * делает UI в воркере (`docs/architecture.md §1`), сервер и адаптер текст не интерпретируют.
+ * делает UI в воркере (`docs/architecture.md`), сервер и адаптер текст не интерпретируют.
  */
 export const fileDiffSchema = z.object({
     /** Непрозрачный id файла в этой итерации — якорь комментариев и viewed-отметок. */
@@ -223,7 +223,7 @@ export const fileDiffSchema = z.object({
 export type FileDiff = z.infer<typeof fileDiffSchema>;
 
 /**
- * Содержимое файла по обе стороны диффа — топливо «Expand context» (`docs/design/SPEC-elements.md §2.13`):
+ * Содержимое файла по обе стороны диффа — топливо «Expand context» (`docs/architecture.md`):
  * строки за пределами ханков UI достраивает из этого текста сам, протокол ширины
  * контекста хосту не нужен. null-сторона — файла на той стороне нет (add/delete).
  */
@@ -252,7 +252,7 @@ export type PrDiff = z.infer<typeof prDiffSchema>;
 /**
  * Статус итерации. `active` — та, что ревьюируется сейчас (ровно одна); `previous` —
  * хост её ещё перечисляет; `gone` — хост больше не перечисляет (например, после force-push),
- * но сервер помнит её локально сохранённый дифф (`docs/product.md §4a`). `gone` ставит только
+ * но сервер помнит её локально сохранённый дифф (`docs/architecture.md`). `gone` ставит только
  * сервер, сравнивая список хоста со своим хранилищем: адаптер отдаёт лишь то, что видит.
  */
 export const iterationStatusSchema = z.enum(['active', 'previous', 'gone']);
@@ -331,7 +331,7 @@ export const commentSchema: z.ZodType<Comment> = z.object({
 });
 
 /**
- * Пин треда к коммиту, на котором он написан (`docs/design/SPEC-elements.md §4.5` «pinned to 9f3c1ab»): итерация
+ * Пин треда к коммиту, на котором он написан (`docs/architecture.md` «pinned to 9f3c1ab»): итерация
  * исходного якоря по данным хоста (у Арканума — `original_anchor`). UI свой пин не хранит
  * и не вычисляет: `pinnedTo.diffId`, отличный от активной итерации, даёт «view at the
  * old commit», остальное — `outdated` и перепривязанный `anchor`.
@@ -363,7 +363,7 @@ export const threadSchema = z.object({
 export type Thread = z.infer<typeof threadSchema>;
 
 /**
- * Черновик на создание (двухступенчатая модель, `docs/product.md §3`, принцип 6): сохраняется в хост мгновенно,
+ * Черновик на создание (двухступенчатая модель, `docs/architecture.md`, принцип 6): сохраняется в хост мгновенно,
  * публикуется пакетом (`publishBatch`). Либо ответ (`parentId`), либо новый тред (`anchor`;
  * null и там и там — комментарий уровня PR).
  */
@@ -381,7 +381,7 @@ export type CommentDraft = z.infer<typeof commentDraftSchema>;
 
 /**
  * Итог публикации пакета. Частичный провал — вердикт НЕ применяется,
- * ревью не считается завершённым (`docs/design/SPEC-elements.md §4.5`), UI показывает несдавшиеся.
+ * ревью не считается завершённым (`docs/architecture.md`), UI показывает несдавшиеся.
  */
 export const publishResultSchema = z.object({
     publishedCommentIds: z.array(hostIdSchema),
@@ -413,7 +413,7 @@ export const lensZoneSchema = z.object({
 export type LensZone = z.infer<typeof lensZoneSchema>;
 
 /**
- * Линза — именованное множество путей для фильтра файлов (модель фильтров `docs/design/README.md`).
+ * Линза — именованное множество путей для фильтра файлов (модель фильтров `docs/architecture.md`).
  * `available: false` — механизм линзы недоступен (нет зоны у ревьюера, сломалась
  * недокументированная ручка) — UI дизейблит фильтр с объяснением из `note`.
  */

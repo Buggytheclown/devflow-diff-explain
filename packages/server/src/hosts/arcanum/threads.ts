@@ -2,10 +2,10 @@ import type { Comment, FileAnchor, ReviewUser, Thread, ThreadPin } from '@sherpa
 
 import type { ArcComment } from './schemas.js';
 
-/**
+    /**
  * Сборка контрактных тредов из плоских списков комментариев Арканума.
  *
- * Факты разведки API (`docs/research/arcanum-api.md`), на которых стоит эта логика:
+ * Факты разведки API (`docs/architecture.md`), на которых стоит эта логика:
  * - тред — дерево: `reply_to_id` указывает на фактического родителя (глубина до 14, ветвление ~7%);
  * - `outdated` полем не приходит — это разность двух списков: комментарий есть в списке PR,
  *   но не доехал до активной итерации;
@@ -38,9 +38,9 @@ export interface BuildThreadsInput {
     readonly all: readonly ArcComment[];
     /** Комментарии, перепривязанные к активной итерации (`…/diff-sets/{xid}/comments`). */
     readonly active: readonly ArcComment[];
-    /**
+/**
      * Ревьюируемые коммиты итераций по их id — из них берётся пин треда к итерации исходного
-     * якоря (`docs/design/SPEC-elements.md §4.5`). Пустая карта (список итераций не сложился) — пин `null` у всех.
+     * якоря (`docs/spec.md`). Пустая карта (список итераций не сложился) — пин `null` у всех.
      */
     readonly iterationCommits?: ReadonlyMap<string, string>;
 }

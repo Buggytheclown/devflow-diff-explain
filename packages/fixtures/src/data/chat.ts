@@ -10,7 +10,7 @@ export interface ChatFixtures {
     exchanges: ChatExchange[];
     notes: AgentNote[];
     /**
-     * Те же заметки после переезда на вторую итерацию (`docs/design/SPEC-elements.md §2.16`): диапазоны неизменённых
+     * Те же заметки после переезда на вторую итерацию (`docs/architecture.md`): диапазоны неизменённых
      * файлов переехали по интердиффу, заметка на затронутом диапазоне якорь потеряла.
      */
     notesAfterPush: AgentNote[];

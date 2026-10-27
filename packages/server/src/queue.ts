@@ -391,7 +391,7 @@ export class TaskQueue {
 
         const bytes = Buffer.byteLength(result, 'utf8');
         if (bytes > RESULT_MAX_BYTES) {
-            // docs/architecture.md §7.5: превышение лимита — ошибка задачи, а не «попробуй ещё раз».
+            // docs/architecture.md: превышение лимита — ошибка задачи, а не «попробуй ещё раз».
             // Причина в карточке — для ревьюера (русская), текст ошибки — для модели (английский).
             this.closeTask(taskId, 'failed', {
                 failReason:
@@ -432,7 +432,7 @@ export class TaskQueue {
      * Результат не принят: аренда остаётся у модели, попытка не тратится — она правит вывод
      * и зовёт `complete` снова (docs/protocol.md §3). Дно петли — `MAX_RESULT_REJECTIONS` отказов
      * на аренду: дальше задача закрывается ошибкой, а последний сырой вывод остаётся в `result`
-     * (его показывает «Open raw output», docs/design/README.md §12).
+     * (его показывает «Open raw output», docs/spec.md).
      */
     private rejectResult(row: TaskRow, result: string, errors: readonly string[]): TaskCompleteResponse {
         const rejections = row.rejections + 1;

@@ -61,13 +61,13 @@ export interface RouteFixtures {
     rawResultsV2: RouteRawResults | null;
     /** Английский набор выводов; null — у фикстуры его нет. */
     rawResultsEn: RouteRawResultsEn | null;
-    /** Готовый маршрут второго захода (`docs/design/README.md §9`); null — второй итерации у фикстуры нет. */
+    /** Готовый маршрут второго захода (`docs/architecture.md`); null — второй итерации у фикстуры нет. */
     secondPass: UiRouteState | null;
 }
 
 /**
  * Провал валидации у `edge`: якоря уехали вместе с переименованием файла — состояние
- * Generation failed (`docs/design/README.md §12`) на реальном сдвиге якорей, а не на выдуманной ошибке.
+ * Generation failed (`docs/architecture.md`) на реальном сдвиге якорей, а не на выдуманной ошибке.
  */
 function edgeFailedState(): UiRouteState {
     return {

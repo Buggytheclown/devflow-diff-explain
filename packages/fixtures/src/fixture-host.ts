@@ -19,7 +19,7 @@ import { fixtureData } from './data/index.js';
 import { fileContentOf } from './file-content.js';
 import { fixtureBlob } from './patch.js';
 
-/**
+    /**
  * Реализация `ReviewHost` на детерминированных фикстурах. На ней живут
  * разработка UI без настоящего хоста, галерея состояний, контрактные тесты и e2e.
  *
@@ -40,7 +40,7 @@ const PR_LEVEL_DRAFT_ID_BASE = 70_000;
 export interface FixtureHostOptions {
     /**
      * Комментарии, которые `publishBatch` уронит: фикстурный хук для проверки частичного провала
-     * публикации — вердикт тогда не применяется (`docs/design/SPEC-elements.md §4.5`).
+     * публикации — вердикт тогда не применяется (`docs/architecture.md`).
      */
     readonly failPublishFor?: readonly HostId[];
     /**
@@ -491,10 +491,10 @@ export class FixtureHost implements ReviewHost {
         return Promise.resolve();
     }
 
-    /**
+/**
      * Публикует все накопленные черновики. Вердикт вне `publishVerdicts` отклоняется, `comment`
      * без черновиков ничего не меняет. Вердикт применяется, только если опубликовались
-     * все (`docs/design/SPEC-elements.md §4.5`); несдавшиеся остаются черновиками, и ревью не считается завершённым.
+     * все (`docs/architecture.md`); несдавшиеся остаются черновиками, и ревью не считается завершённым.
      */
     publishBatch(verdict: Verdict): Promise<PublishResult> {
         const parsed = verdictSchema.parse(verdict);

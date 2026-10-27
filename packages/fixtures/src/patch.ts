@@ -221,7 +221,7 @@ function renderFileHeader(spec: FileSpec): string[] {
 
 /**
  * Собрать `FileDiff`. Патч — null у binary и у файлов без текстового диффа (пустой файл):
- * так это и приходит из хоста, UI показывает такие файлы однострочными нотисами (`docs/design/SPEC-elements.md §2.14`).
+ * так это и приходит из хоста, UI показывает такие файлы однострочными нотисами (`docs/spec.md`).
  * У смены режима без правки содержимого патч есть, но состоит из одной шапки без ханков.
  */
 export function makeFileDiff(diffId: HostId, spec: FileSpec): FileDiff {

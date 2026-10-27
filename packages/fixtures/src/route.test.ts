@@ -11,7 +11,7 @@ import { buildRouteFixtures, fixtureData, fixtureIteration, routeFixtures } from
 
 const HUNK_HEADER = /^@@ -(\d+),\d+ \+(\d+),\d+ @@/;
 
-/** Целевые доли полосы покрытия из `docs/design/README.md §1` (862 строки: 188 / 348 / 292 + 34 неразмеченных). */
+/** Целевые доли полосы покрытия из `docs/spec.md` (862 строки: 188 / 348 / 292 + 34 неразмеченных). */
 const TIER_TARGETS: Record<'high' | 'medium' | 'low', number> = { high: 188, medium: 348, low: 292 };
 const TIER_TOLERANCE = 25;
 const UNEXPLAINED_LINES = 40;
@@ -24,7 +24,7 @@ interface ChangedFile {
     new: Set<number>;
 }
 
-/** Изменённые строки диффа: то же определение, что у математики покрытия в `docs/design/SPEC-elements.md §2.4` (added + removed). */
+/** Изменённые строки диффа: то же определение, что у математики покрытия в `docs/spec.md` (added + removed). */
 function changedLines(diff: PrDiff): Map<string, ChangedFile> {
     const files = new Map<string, ChangedFile>();
     for (const file of diff.files) {
@@ -269,7 +269,7 @@ describe('маршрут фикстуры medium', () => {
 });
 
 describe('промежуточные состояния маршрута', () => {
-    it('фаза filling — картина `docs/design/README.md §7`: готовы 01, 02 и 05, огоньки не по порядку', () => {
+    it('фаза filling сохраняет частичную готовность: готовы 01, 02 и 05, порядок заполнения произвольный', () => {
         const filling = routeFixtures('medium')?.states.filling;
         const snapshot = filling?.snapshot;
         expect(filling?.phase).toBe('filling');

@@ -7,7 +7,7 @@ export const overviewEn: Record<keyof typeof overviewRu, string> = { sourcesHint
 export const preparationEn: Record<keyof typeof preparationRu, string> = { title: 'Explanation preparation', planning: 'Reading changes, preparing the overview and block order', preparing: 'Preparing explanations', ready: 'Explanation ready', partial: 'Explanation partially ready', failed: 'Preparation failed', cancelled: 'Preparation stopped', idle: 'No explanation yet', legacy: 'Saved explanation · overall progress unavailable', previous: 'Previous explanation', latest: 'Open new explanation', offline: 'Agent disconnected. Ready materials remain available; preparation resumes on connection.', blocks: 'Blocks', files: 'Files', diagram: 'Diagram', description: 'Overview', pending: 'pending', unavailable: 'unavailable', not_applicable: 'not needed', done: 'ready', cancel: 'Stop', stage: 'Overview and diagram first, then file explanations', missing: 'Remaining', units: 'parts', overviewTitle: 'PR overview', overviewPending: 'Preparing the problem and solution overview', diagramTitle: 'Data flow', diagramPending: 'The diagram follows the overview, before file explanations', routeTitle: 'Route through changes', routePending: 'Organizing blocks and files for understanding', diagramNotNeeded: 'Diagram not needed: ', retryDiagram: 'Retry diagram', connectToRetry: 'Connect the agent to retry the diagram.', overviewSources: 'Overview sources', fileCount: 'files' };
 
 /**
- * Английский словарь. Подписи элементов взяты из `docs/design/SPEC-elements.md` там, где он их
+ * Английский словарь. Подписи элементов взяты из `docs/spec.md` там, где он их
  * называет: спека — английский оригинал продукта, а не перевод с русского.
  */
 

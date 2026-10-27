@@ -3,7 +3,7 @@ import type { StopViolation } from '@sherpa/protocol/markdown';
 import { parseStop } from '@sherpa/protocol/markdown';
 
 /**
- * Словарь разметки описания остановки (`docs/design/SPEC-changes-2026-09-20.md §2`) — третье,
+ * Словарь разметки описания остановки (`docs/spec.md`) — третье,
  * урезанное подмножество markdown: абзацы (разделитель — пустая строка), список `- `, `* ` или `1. `
  * до четырёх пунктов без вложенности, инлайн-код, жирный, ссылки. Тем же словарём пишется summary PR,
  * но без бюджета длины.

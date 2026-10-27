@@ -5,23 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { Icon } from './icon.tsx';
+import type { IconName } from './icon.tsx';
 
 const SPRITE = readFileSync(fileURLToPath(new URL('./sprite.svg', import.meta.url)), 'utf8');
 const ICONS_CSS = readFileSync(fileURLToPath(new URL('./icons.css', import.meta.url)), 'utf8');
-const DESIGN = readFileSync(
-    fileURLToPath(new URL('../../../../docs/design/Sherpa Additions.dc.html', import.meta.url)),
-    'utf8',
-);
-/** Иконки-слайдеров в наборе Additions нет: её рисунок живёт в триггере меню настроек прототипа. */
-const PROTOTYPE = readFileSync(
-    fileURLToPath(new URL('../../../../docs/design/Sherpa.dc.html', import.meta.url)),
-    'utf8',
-);
-/** Кружка открытого замечания в наборе Additions тоже нет: он пришёл с итерацией 09-20. */
-const CHANGES = readFileSync(
-    fileURLToPath(new URL('../../../../docs/design/Sherpa Changes 2026-09-20.dc.html', import.meta.url)),
-    'utf8',
-);
 
 const ICON_IDS = [
     'ic-search',
@@ -46,36 +33,21 @@ const ICON_IDS = [
 ] as const;
 
 describe('SVG-иконки', () => {
-    it('19 symbol дословно из Sherpa Additions, дальше — слайдеры и кружок из прототипов', () => {
-        const designSprite = /<svg width="0" height="0" style="position:absolute" aria-hidden="true">[\s\S]*?<\/svg>/u.exec(
-            DESIGN,
-        )?.[0];
-        expect(designSprite).toBeDefined();
-
-        const design = symbols(designSprite ?? '');
-        expect(design.map(([id]) => id)).toEqual(ICON_IDS);
-        // Дословность: каждый symbol набора лежит в спрайте ровно таким, каким его отдал дизайн.
-        for (const [, markup] of design) {
-            expect(SPRITE).toContain(markup);
+    it('спрайт содержит полный набор уникальных непустых символов с общей геометрией', () => {
+        const entries = symbols(SPRITE);
+        expect(entries.map(([id]) => id)).toEqual([...ICON_IDS, 'ic-sliders', 'ic-dot']);
+        for (const [, markup] of entries) {
+            expect(markup).toContain('viewBox="0 0 16 16"');
+            expect(markup).toMatch(/<(?:path|circle|rect|line|polyline)\b/u);
+            expect(markup).toContain('currentColor');
         }
-        expect(symbols(SPRITE).map(([id]) => id)).toEqual([...ICON_IDS, 'ic-sliders', 'ic-dot']);
     });
 
-    it('кружок открытого замечания дословно из прототипа итерации 09-20', () => {
-        const dot = symbols(SPRITE).find(([id]) => id === 'ic-dot')?.[1] ?? '';
-
-        expect(CHANGES).toContain(dot);
-    });
-
-    it('рисунок слайдеров совпадает с триггером меню настроек в прототипе', () => {
-        const prototypeIcon = /title="\{\{ L\.menuTitle \}\}"[\s\S]*?<svg[^>]*>([\s\S]*?)<\/svg>/u.exec(PROTOTYPE)?.[1];
-        expect(prototypeIcon).toBeDefined();
-
-        const sliders = symbols(SPRITE).find(([id]) => id === 'ic-sliders')?.[1] ?? '';
-        expect(sliders).toContain(prototypeIcon);
-        // Та же обводка, что у остального набора: толщина в диапазоне 1.35–1.7 и скруглённые концы.
-        expect(sliders).toContain('stroke="currentColor" stroke-width="1.4"');
-        expect(sliders).toContain('viewBox="0 0 16 16"');
+    it('каждая иконка ссылается на существующий символ встроенного спрайта', () => {
+        for (const [id] of symbols(SPRITE)) {
+            const html = renderToStaticMarkup(<Icon name={id.slice(3) as IconName} size={14} />);
+            expect(html).toContain(`<use href="#${id}"></use>`);
+        }
     });
 
     it('svg несёт собственный viewBox, точный размер и скрыт от дерева доступности', () => {

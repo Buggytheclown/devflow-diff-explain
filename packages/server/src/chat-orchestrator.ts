@@ -52,7 +52,7 @@ export interface ChatOrchestratorOptions {
     readonly registry?: Pick<WorkerRegistry, 'status'> | null;
 }
 
-/**
+    /**
  * Связывает обмен чата с одной текущей задачей очереди. Состояние восстанавливается сверкой,
  * поэтому рестарт между операциями не требует отдельного журнала событий.
  */
@@ -431,8 +431,8 @@ export class ChatOrchestrator {
         return { pr, diff, fileContent, headCommit: diff?.headCommit ?? null };
     }
 
-    /**
-     * Контекст вопроса по прошлой итерации: её патч лежит локально (docs/product.md §4a), а содержимого
+/**
+     * Контекст вопроса по прошлой итерации: её патч лежит локально (docs/spec.md), а содержимого
      * файлов у хоста для неё нет — `getFileContent` знает только активную итерацию.
      */
     private resultErrors(result: string, exchange: ChatExchange): string[] {

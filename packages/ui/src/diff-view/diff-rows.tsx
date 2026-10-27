@@ -16,8 +16,8 @@ import { lineKey, selectedLines } from './selection.js';
 type DiffMode = 'unified' | 'split';
 
 /**
- * Строки диффа: unified (docs/design/README.md §1 «Diff rows (unified)») и side-by-side. Разметка и цвета —
- * дословно из docs/design/README.md §1, поведение — из docs/design/SPEC-elements.md §2.14.
+ * Строки диффа: unified (docs/spec.md «Diff rows (unified)») и side-by-side. Разметка и цвета —
+ * дословно из docs/spec.md поведение — из docs/spec.md
  *
  * События мыши висят на контейнере, а не на строках: у большого файла строк тысячи, и вешать
  * на каждую по паре слушателей дорого. Строка узнаётся по `data-key`.
@@ -74,7 +74,7 @@ export function DiffRows({
     contextAvailable = true,
 }: DiffRowsProps) {
     const t = useT();
-    // Односторонний файл в split занял бы половину карточки пустотой (docs/design/README.md §1).
+    // Односторонний файл в split занял бы половину карточки пустотой (docs/spec.md).
     const oneSided = model.onlyAdditions || model.onlyDeletions;
     const effective: DiffMode = mode === 'split' && !oneSided ? 'split' : 'unified';
     const rows = useMemo(() => buildRows(model, effective), [model, effective]);

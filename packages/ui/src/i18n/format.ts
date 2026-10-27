@@ -13,7 +13,7 @@ const relativeFormats = new Map<Locale, Intl.RelativeTimeFormat>();
 const dateTimeFormats = new Map<Locale, Intl.DateTimeFormat>();
 
 /**
- * Разряды по правилам локали: «2 412» с неразрывным пробелом в русском (docs/design/SPEC-elements.md §2.13),
+ * Разряды по правилам локали: «2 412» с неразрывным пробелом в русском (docs/spec.md),
  * «2,412» в английском. ICU для `ru` отдаёт разделителем то U+00A0, то узкий U+202F —
  * приводим к одному неразрывному пробелу, иначе строка счётчика зависела бы от версии Node.
  */
@@ -118,7 +118,7 @@ export function formatDateTime(iso: string, locale: Locale): string {
     ).format(parsed);
 }
 
-/** Коммит в подписи — 7 hex (docs/design/README.md §13); полный уезжает в `title`. */
+/** Коммит в подписи — 7 hex (docs/spec.md); полный уезжает в `title`. */
 export function shortCommit(commit: string): string {
     return commit.slice(0, 7);
 }

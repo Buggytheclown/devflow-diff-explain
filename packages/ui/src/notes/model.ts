@@ -19,7 +19,7 @@ export function noteAnchorForIteration(note: AgentNote, viewDiffId: string | nul
 
 /**
  * Заметка стоит у кода этой итерации. Потерявшая якорь уходит из кода везде, кроме своей
- * исходной итерации: там строки, к которым её задали, никуда не делись (docs/design/SPEC-elements.md §2.16).
+ * исходной итерации: там строки, к которым её задали, никуда не делись (docs/spec.md).
  */
 export function noteVisibleInIteration(note: AgentNote, viewDiffId: string | null): boolean {
     return !note.lostAnchor || (viewDiffId !== null && viewDiffId === note.origin.anchor.diffId);

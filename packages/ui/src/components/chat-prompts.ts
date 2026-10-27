@@ -1,7 +1,7 @@
 import type { MessageKey, Translate } from '../i18n/index.js';
 
 /**
- * Тексты точек входа в чат (docs/design/README.md §2, §10; docs/design/SPEC-elements.md §2.15,
+ * Тексты точек входа в чат (docs/spec.md §10; docs/spec.md
  * §2.18). Вопрос всегда только подставляется в композер — отправляет его ревьюер, поэтому текст обязан читаться как его
  * собственный, а не как команда, которую он не писал.
  *
@@ -36,7 +36,7 @@ export function placeRangesQuestion(ranges: readonly QuestionRange[], t: Transla
     return t('chat.ask.placeRanges.listed', rest > 0 ? t('chat.ask.rangesRest', listed, rest) : listed);
 }
 
-/** Штрихованная полоса Full diff → вопрос с якорем ровно на этот диапазон (docs/design/README.md §10). */
+/** Штрихованная полоса Full diff → вопрос с якорем ровно на этот диапазон (docs/spec.md). */
 export function placeRangeQuestion(range: QuestionRange, t: Translate): string {
     const single = range.start === range.end;
     const removed = range.side === 'old';
@@ -50,7 +50,7 @@ export function placeRangeQuestion(range: QuestionRange, t: Translate): string {
     return t(key, rangeNumbers(range), range.path);
 }
 
-/** Примеры вопросов в пустом состоянии панели (docs/design/SPEC-elements.md §2.18): клик подставляет их в композер. */
+/** Примеры вопросов в пустом состоянии панели (docs/spec.md): клик подставляет их в композер. */
 export const CHAT_EXAMPLE_QUESTIONS: readonly MessageKey[] = [
     'chat.example.risky',
     'chat.example.manual',
@@ -58,13 +58,13 @@ export const CHAT_EXAMPLE_QUESTIONS: readonly MessageKey[] = [
 ];
 
 /**
- * Подписи «агент отключён» у всех ИИ-точек входа (docs/design/SPEC-elements.md §2.15). Один модуль на все:
+ * Подписи «агент отключён» у всех ИИ-точек входа (docs/spec.md). Один модуль на все:
  * читалка при этом не деградирует нигде, и формулировки не должны разъезжаться.
  */
 export const ASK_SELECTION_DISABLED_TITLE: MessageKey = 'chat.ask.selectionDisabled';
 export const ASK_RANGES_DISABLED_TITLE: MessageKey = 'chat.ask.rangesDisabled';
 
-/** Кнопка «разложить» маршрут не меняет: перегенерация — отдельная механика (docs/design/SPEC-elements.md §4.3). */
+/** Кнопка «разложить» маршрут не меняет: перегенерация — отдельная механика (docs/spec.md). */
 export const ASK_ANSWER_IN_CHAT_NOTE: MessageKey = 'chat.ask.answerInChat';
 
 function rangeLabel(range: QuestionRange, t: Translate): string {

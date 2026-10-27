@@ -3,7 +3,7 @@ import type { FileContent, FileDiff } from '@sherpa/protocol';
 import { contextLineAt } from './content.js';
 
 /**
- * Полный текст файла по обе стороны диффа — топливо «Expand context» (`docs/design/SPEC-elements.md §2.13`).
+ * Полный текст файла по обе стороны диффа — топливо «Expand context» (`docs/spec.md`).
  *
  * Хранить полные файлы в репозитории незачем: строки ханков берутся из патча, а всё, что
  * патч не показал, достраивается генератором из номера строки (`contextLineAt`). Отсюда два

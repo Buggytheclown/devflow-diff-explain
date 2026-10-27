@@ -4,7 +4,7 @@ import { RpcFailure } from '../../errors.js';
 
 import { arcTokenSource, resolveArcToken } from './token.js';
 
-/** Цепочка arc: `$ARC_TOKEN` → `~/.arc/token` → `arc token show --json` (`docs/research/arcanum-api.md` §Токен). */
+/** Цепочка arc: `$ARC_TOKEN` → `~/.arc/token` → `arc token show --json` (`docs/architecture.md` §Токен). */
 
 const FROM_ENV = 'token-from-env';
 const FROM_FILE = 'token-from-file';

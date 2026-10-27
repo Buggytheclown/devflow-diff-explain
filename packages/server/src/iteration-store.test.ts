@@ -9,7 +9,7 @@ import { IterationStore, rememberIterationDiff } from './iteration-store.js';
 import { makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
 /**
- * Локальное хранилище патчей итераций и кэш срезов (docs/product.md §4a): после force-push хост
+ * Локальное хранилище патчей итераций и кэш срезов (docs/spec.md): после force-push хост
  * прошлую итерацию не отдаёт, а старый снапшот обязан остаться читаемым.
  */
 

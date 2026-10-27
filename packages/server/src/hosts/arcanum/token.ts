@@ -7,10 +7,10 @@ import { promisify } from 'node:util';
 import { RpcFailure } from '../../errors.js';
 
 /**
- * Токен Арканума берётся цепочкой arc (`docs/research/arcanum-api.md` §Токен): `$ARC_TOKEN` → `~/.arc/token` →
+ * Токен Арканума берётся цепочкой arc (`docs/architecture.md` §Токен): `$ARC_TOKEN` → `~/.arc/token` →
  * `arc token show --json`. Никакого браузерного OAuth: сервер читает токен ровно так же, как `arc`.
  *
- * Значение токена нигде не логируется и не попадает в тексты ошибок (`docs/architecture.md §6`) — наружу выходит
+ * Значение токена нигде не логируется и не попадает в тексты ошибок (`docs/architecture.md`) — наружу выходит
  * только то, какой источник сработал и почему остальные не подошли.
  */
 

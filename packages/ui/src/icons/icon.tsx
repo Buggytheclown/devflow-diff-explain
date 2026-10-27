@@ -21,9 +21,9 @@ export type IconName =
     | 'codeblock'
     | 'list'
     | 'trash'
-    /** Триггер меню настроек; в наборе Additions его нет — геометрия взята из прототипа. */
+    /** Настройки. */
     | 'sliders'
-    /** Кружок открытого замечания в кнопке Resolve; рисунок — из прототипа итерации 09-20. */
+    /** Круглая метка. */
     | 'dot';
 
 export type IconSize = 9 | 11 | 13 | 14 | 15;
@@ -51,10 +51,7 @@ export function Icon({ name, size, className }: IconProps) {
     );
 }
 
-/**
- * Один встроенный спрайт на документ. Девятнадцать symbol дословно взяты из Sherpa Additions,
- * `ic-sliders` — из прототипа Sherpa.dc.html, `ic-dot` — из прототипа итерации 09-20.
- */
+/** Один встроенный спрайт на документ; Icon ссылается на его символы по id. */
 export function IconSprite() {
     return <div className="icon-sprite" aria-hidden="true" dangerouslySetInnerHTML={{ __html: sprite }} />;
 }

@@ -21,7 +21,7 @@ export interface WorkerRegistryOptions {
 /** Слушатель изменений статуса воркера; его заберёт UI-канал. */
 export type WorkerStatusListener = (status: WorkerStatus) => void;
 
-/**
+    /**
  * Транзакции откатывают всё, что успела сделать операция, поэтому доменные ошибки возвращаются
  * значением и превращаются в исключение уже снаружи транзакции (тот же приём, что в `queue.ts`).
  */
@@ -106,9 +106,9 @@ export class WorkerRegistry {
         this.scheduleDeathCheck();
     }
 
-    /**
+/**
      * Регистрация сессии воркером PR: `devflow-diff-explain worker register` при старте скилла.
-     * Свежая регистрация всегда права (docs/architecture.md §7.7): слот свободен — занимаем,
+     * Свежая регистрация всегда права (docs/architecture.md): слот свободен — занимаем,
      * занят другой сессией (в том числе живой) — перехватываем, тот же workerId — продление.
      * `worker_conflict` отсюда не приходит никогда; вытесненная сессия узнаёт о потере слота из
      * своего следующего вызова (`touch`/`assertOwner`).
@@ -223,7 +223,7 @@ export class WorkerRegistry {
         if (row.worker_id === workerId) {
             // Повторный register той же сессии — продление, а не новая регистрация:
             // `registered_at` держит время начала сессии, по нему UI считает uptime
-            // (docs/design/SPEC-elements.md §2.2).
+            // (docs/spec.md).
             this.db
                 .prepare('UPDATE worker SET harness = ?, model = ?, lang = ?, last_seen_at = ? WHERE id = ?')
                 .run(harness ?? row.harness, model ?? row.model, lang ?? row.lang, nowIso, SLOT_ID);
@@ -416,7 +416,7 @@ export class WorkerRegistry {
  * Слот занят чужой живой сессией: вызов не-владельца (`touch`/`assertOwner`). Регистрация сюда уже
  * не попадает — свежая сессия слот перехватывает, поэтому советовать «подожди N минут» нечего:
  * получателю этой ошибки остаётся остановить свою петлю (терминальную приписку добавит CLI).
- * Две сессии на один PR не поддерживаются (docs/design/SPEC-elements.md §4.4).
+ * Две сессии на один PR не поддерживаются (docs/spec.md).
  */
 function conflict(row: WorkerRow): RpcFailure {
     const owner = row.harness === null ? row.worker_id : `${row.worker_id}, harness ${row.harness}`;

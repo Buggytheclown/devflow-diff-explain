@@ -6,10 +6,10 @@ import { localeSchema } from './locale.js';
 import { rawStoryEvidenceBlockSchema, storyEvidenceBlockSchema } from './story-evidence.js';
 import { hostIdSchema } from './review.js';
 
-/**
+    /**
  * Маршрут: схема снапшота и схемы результатов генеративных задач.
- * Канон — здесь (`docs/architecture.md §5`); JSON-схемы для payload задач генерятся из этих же zod-схем.
- * Принцип 3 продукта (`docs/product.md §3`): UI не потребляет ничего, что не прошло fail-closed
+ * Канон — здесь (`docs/architecture.md`); JSON-схемы для payload задач генерятся из этих же zod-схем.
+ * Принцип 3 продукта (`docs/spec.md`): UI не потребляет ничего, что не прошло fail-closed
  * валидатор, — сырые выводы модели в снапшот не попадают.
  *
  * Снапшот хранит только модельное (заголовки, абзацы, якоря, дайджест);
@@ -19,7 +19,7 @@ import { hostIdSchema } from './review.js';
  */
 
 /**
- * Бюджет видимого текста описания остановки (`docs/design/SPEC-changes-2026-09-20.md §2`), в символах:
+ * Бюджет видимого текста описания остановки (`docs/spec.md`), в символах:
  * не зависит ни от размера текста, ни от ширины окна.
  * Держит его валидатор секции, а не схема: модели нужен текст с советом, что делать.
  */
@@ -56,7 +56,7 @@ export const routeAnchorSchema = z.object({
 export type RouteAnchor = z.infer<typeof routeAnchorSchema>;
 
 /**
- * Утверждение поведенческого дайджеста тестов (`docs/product.md §6`). `weakened` — первосортный
+ * Утверждение поведенческого дайджеста тестов (`docs/spec.md`). `weakened` — первосортный
  * сигнал; `uncovered` — честная инверсия «изменённое поведение без покрытия».
  * Якорь на тест обязателен для new/changed/weakened (иначе валидатор отбрасывает
  * утверждение со счётчиком `droppedClaims`); у `uncovered` якоря на тест нет
@@ -80,7 +80,7 @@ export const routeTestClaimSchema = z.object({
 export type RouteTestClaim = z.infer<typeof routeTestClaimSchema>;
 
 /**
- * Провенанс генерации (`docs/product.md §3`, принцип 7): чем и на каком языке сгенерировано.
+ * Провенанс генерации (`docs/spec.md`, принцип 7): чем и на каком языке сгенерировано.
  * Коммит — на уровне снапшота. `locale` — язык UI в момент запуска генерации;
  * null у снапшотов старого формата — они русские, UI читает null как `ru`.
  */
@@ -92,7 +92,7 @@ export const routeProvenanceSchema = z.object({
 export type RouteProvenance = z.infer<typeof routeProvenanceSchema>;
 
 /**
- * Классификация стопа относительно прошлого снапшота (`docs/design/README.md §1` бейджи `changed`/`new`,
+ * Классификация стопа относительно прошлого снапшота (`docs/spec.md` бейджи `changed`/`new`,
  * блок «why this stop changed»). Считает сервер детерминированно по интердиффу между
  * итерациями снапшотов: `new` — все строки якорей затронуты или файл появился,
  * `changed` — часть; модель классификацию не выбирает, только объясняет (`reason`).
@@ -109,14 +109,14 @@ export type RouteStopChange = z.infer<typeof routeStopChangeSchema>;
 
 /**
  * Остановка маршрута. План (id, planIndex, tier, title) фиксируется скелетом
- * и не меняется заполнением: номера план-фиксированные (`docs/design/SPEC-elements.md §8` п. 4) —
+ * и не меняется заполнением: номера план-фиксированные (`docs/spec.md` п. 4) —
  * фильтры и подъём «Прочего» переупорядочивают рендер, но не номера.
  *
  * Синтетический стоп «Прочее»: `id: 'other'`, `tier: 'other'`, последний
  * `planIndex`; его заголовок задаёт сервер на языке генерации (ревьюер-читаемое),
  * `status: 'ready'` сразу — заполнять нечего, содержимое (непокрытые диапазоны)
  * считает UI. UI прячет его сам, пока маршрут не достроен и при нуле непокрытых строк
- * (`docs/design/SPEC-elements.md §4.3`).
+ * (`docs/spec.md`).
  */
 /** Объяснение привязано к сохранённому файлу; все его ханки показывает UI. */
 export const guidedAnnotationSchema = z.object({
@@ -144,9 +144,9 @@ export const routeStopSchema = z.object({
     tier: routeTierSchema,
     title: z.string().min(1).max(300),
     status: routeStopStatusSchema,
-    /**
+/**
      * Поля заполнения; null до готовности секции. Формула абзаца: «что изменилось → какие следствия».
-     * Разметка — урезанное подмножество markdown (`docs/design/SPEC-changes-2026-09-20.md §2`): абзацы,
+     * Разметка — урезанное подмножество markdown (`docs/spec.md`): абзацы,
      * список до 4 пунктов без вложенности, инлайн-код, жирный, ссылки. Всё прочее валидатор отвергает.
      */
     paragraph: z.string().nullable(),
@@ -162,7 +162,7 @@ export const routeStopSchema = z.object({
     droppedClaims: z.number().int().min(0),
     /** Ревьюер-читаемые пометки валидатора на языке снапшота: «диапазон уехал в стоп 02» и т. п. */
     validationNotes: z.array(z.string()),
-    /** Провенанс секции, если отличается от снапшота (агент сменился по ходу генерации, `docs/design/SPEC-elements.md §4.4`). */
+    /** Провенанс секции, если отличается от снапшота (агент сменился по ходу генерации, `docs/spec.md`). */
     provenance: routeProvenanceSchema.nullable(),
     /** null — стоп не затронут пушем или снапшот первый (сравнивать не с чем). */
     change: routeStopChangeSchema.nullable(),
@@ -178,7 +178,7 @@ export const routeCarriedZeroReasonSchema = z.enum(['no_interdiff', 'no_marks', 
 export type RouteCarriedZeroReason = z.infer<typeof routeCarriedZeroReasonSchema>;
 
 /**
- * Итог переноса отметок просмотра от предыдущего снапшота (баннер второго захода, `docs/design/README.md §9`).
+ * Итог переноса отметок просмотра от предыдущего снапшота (баннер второго захода, `docs/spec.md`).
  * `total` — остановки, которым перенос вообще возможен: с якорями; синтетическое «Прочее» и стопы
  * без якорей в знаменатель не входят, потому что в числитель попасть не могут.
  */

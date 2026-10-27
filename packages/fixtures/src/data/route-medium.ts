@@ -13,7 +13,7 @@ import { hashHex, makeFileId } from '../patch.js';
 import { MEDIUM_BASE_COMMIT, MEDIUM_DIFF_ID, MEDIUM_HEAD_COMMIT } from './medium.js';
 
 /**
- * Маршрут для фикстуры `medium` — тот же PR «Enforce the 30-minute edit window…» (`docs/design/README.md §1–2`).
+ * Маршрут для фикстуры `medium` — тот же PR «Enforce the 30-minute edit window…» (`docs/architecture.md`).
  * Данные детерминированные: галерея состояний, e2e и голден-корпус валидатора обязаны
  * видеть одни и те же числа.
  *
@@ -60,7 +60,7 @@ export const P = {
 
 /**
  * Файла в диффе нет: тест-файлы импортируют из него хелперы, но сам он не менялся.
- * Утверждения дайджеста, заякоренные сюда, валидатор отбрасывает (`docs/design/SPEC-elements.md §4.3`).
+ * Утверждения дайджеста, заякоренные сюда, валидатор отбрасывает (`docs/architecture.md`).
  */
 const FACTORIES_PATH = 'services/orders/src/domain/__tests__/factories.ts';
 
@@ -494,7 +494,7 @@ function readySnapshot(): RouteSnapshot {
 }
 
 /**
- * Частично заполненный маршрут ровно как в `docs/design/README.md §7`: готовы 01, 02 и 05 — «3 of 7 ready»,
+ * Частично заполненный маршрут ровно как в `docs/architecture.md`: готовы 01, 02 и 05 — «3 of 7 ready»,
  * огоньки не слева направо; 06 в работе, 03 и 04 ждут очереди, «Прочее» готово сразу.
  */
 function fillingSnapshot(): RouteSnapshot {
@@ -510,7 +510,7 @@ function fillingSnapshot(): RouteSnapshot {
 
 /**
  * Сырой вывод модели, на котором валидатор остановил генерацию: два стопа ссылаются на файл,
- * которого нет в диффе. Показывается в «Open raw output» (`docs/design/README.md §12`) — это вывод модели,
+ * которого нет в диффе. Показывается в «Open raw output» (`docs/architecture.md`) — это вывод модели,
  * а не отчёт валидатора.
  */
 const FAILED_RAW_OUTPUT = `{

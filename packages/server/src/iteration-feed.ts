@@ -14,7 +14,7 @@ import type { IterationMap } from './iterations/index.js';
 import { affectedStops, buildIterationMap } from './iterations/index.js';
 import type { RouteStore } from './route-store.js';
 
-/**
+    /**
  * Одна подписка сервера на итерации PR: объединённый список хоста и хранилища,
  * активная итерация и признак «маршрут устарел» для UI.
  *
@@ -218,9 +218,9 @@ export class IterationFeed {
         this.notify();
     }
 
-    /**
+/**
      * Патч активной итерации обязан лежать локально: после следующего пуша снапшот,
-     * построенный на ней, читается только по нему (docs/product.md §4a). Берётся из хранилища, а на
+     * построенный на ней, читается только по нему (docs/spec.md). Берётся из хранилища, а на
      * промахе — с хоста и сразу в хранилище; параллельные запросы склеиваются в один.
      */
     private activeDiff(active: Iteration): Promise<PrDiff> {

@@ -3,7 +3,7 @@
  * и по нему же записанный API разбирает запрос в тестах.
  *
  * Полей запрашивается ровно столько, сколько читает адаптер: карта операций и их стоимость —
- * `docs/research/github-api.md`.
+ * `docs/architecture.md`.
  */
 
 /**
@@ -224,7 +224,7 @@ export const UNRESOLVE_THREAD_MUTATION = `mutation SherpaUnresolveReviewThread($
 /**
  * Ленивое заведение pending-ревью: без `event` GitHub оставляет ревью черновиком.
  * Тело обязательно и непусто: ревью, заведённое без тела, GitHub больше не даёт редактировать
- * (`docs/research/github-api.md`), поэтому в него сразу едет заглушка.
+ * (`docs/architecture.md`), поэтому в него сразу едет заглушка.
  */
 export const CREATE_REVIEW_MUTATION = `mutation SherpaCreateReview($pullRequestId: ID!, $commitOID: GitObjectID!, $body: String!) {
     addPullRequestReview(input: { pullRequestId: $pullRequestId, commitOID: $commitOID, body: $body }) {
@@ -320,7 +320,7 @@ export const CODEOWNERS_QUERY = `query SherpaCodeowners($owner: String!, $repo: 
 /**
  * Команды ревьюера в организациях владельцев CODEOWNERS: по одному алиасу на организацию.
  * Требует скоупа `read:org` — без него GitHub отвечает ошибкой, и владение по командам
- * не считается (`docs/research/github-api.md`).
+ * не считается (`docs/architecture.md`).
  */
 export function orgTeamsQuery(aliases: readonly string[]): string {
     const variables = aliases.map((alias) => `$${alias}: String!, $${alias}After: String`).join(', ');

@@ -7,7 +7,7 @@ import { makeFileDiff } from '../patch.js';
 import type { FixtureDataInput } from './types.js';
 
 /**
- * Эдж-кейсы формы PR и краёв дифф-рендера (`docs/design/SPEC-elements.md §4.1, §2.11, §2.14`): переименование,
+ * Эдж-кейсы формы PR и краёв дифф-рендера (`docs/architecture.md §2.11, §2.14`): переименование,
  * удаление, binary, whitespace-only, односторонний файл (только добавления), пустой файл,
  * конфликт, смена режима. Всё, что UI обязан показать нотисом, а не пустой карточкой.
  *
@@ -19,7 +19,7 @@ const PR_ID = '5122';
 const DIFF_ID = '196301';
 const UPDATED_AT = '2026-08-19T13:20:00.000Z';
 
-/** Число из примера `docs/design/SPEC-elements.md §2.13` («2,412 changed lines — open file»). */
+/** Число из примера `docs/architecture.md` («2,412 changed lines — open file»). */
 const HUGE_FILE_LINES = 2412;
 
 const FILES: readonly FileSpec[] = [
@@ -209,7 +209,7 @@ export function makeEdgeFixture(): FixtureDataInput {
             UPDATED_AT,
         ),
         interdiffs: [],
-        // Ревьюер без зоны: линза «мои файлы» выключена с объяснением (`docs/design/SPEC-elements.md §4.2`).
+        // Ревьюер без зоны: линза «мои файлы» выключена с объяснением (`docs/architecture.md`).
         ownership: lens({
             id: 'mine',
             label: 'My files',

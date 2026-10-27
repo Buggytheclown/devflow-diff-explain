@@ -33,7 +33,7 @@ export type RouteListener = (revision: number) => void;
 /** Единственная строка `route_state`: состояние генерации у PR одно, снапшотов много. */
 const SLOT_ID = 1;
 
-/**
+    /**
  * Чем добивается `baseCommit` снапшота старого формата, когда итерации в хранилище ещё нет:
  * сравнивать по нему нечего, но врать чужим коммитом хуже, чем сказать «неизвестно».
  */
@@ -74,7 +74,7 @@ export interface RouteTaskBinding {
     readonly assignment?: SectionAssignment;
 }
 
-/**
+    /**
  * Итог переноса прогресса на снапшот. Считается внутри транзакции его записи, поэтому
  * ревизия прогресса двигается отдельным эффектом — уже после коммита.
  */
@@ -128,13 +128,13 @@ interface RouteTaskRow extends SqlRow {
 // `stale` в хранилище всегда null: его считает `IterationFeed` на границе чтения (`withStale`).
 const EMPTY_STATE: UiRouteState = { phase: 'none', smallPr: false, snapshot: null, failure: null, stale: null };
 
-/**
+    /**
  * Состояние маршрута PR: фаза генерации, снапшот и причина провала — истина для UI.
  *
  * Паттерн `ProgressStore`: ревизия монотонна от старта сервера и растёт только на реальном
  * изменении, подписчики узнают о нём событием `route`, а вкладка перечитывает ручку. Снапшот
  * проходит через `routeSnapshotSchema` на записи и на чтении из БД — невалидное в хранилище
- * не живёт и наружу не выходит (docs/product.md §3, принцип 3).
+ * не живёт и наружу не выходит (docs/spec.md принцип 3).
  *
  * Мутаторы — крупные: оркестратор считает целевое состояние целиком и применяет его одним
  * вызовом, поэтому один шаг автомата даёт ровно одно событие в канал.
@@ -207,9 +207,9 @@ export class RouteStore {
         return this.state.snapshot === null ? null : structuredClone(this.state.snapshot);
     }
 
-    /**
+/**
      * Все снапшоты PR в порядке появления. История не чистится никогда: старый снапшот —
-     * единственный способ прочитать маршрут прошлой итерации (docs/product.md §7, сценарий F3).
+     * единственный способ прочитать маршрут прошлой итерации (docs/spec.md сценарий F3).
      * Повреждённая строка пропускается с предупреждением — остальная история остаётся читаемой.
      */
     listSnapshots(): RouteSnapshot[] {
@@ -300,9 +300,9 @@ export class RouteStore {
         );
     }
 
-    /**
+/**
      * Принятые заполнения секции легли в плановые слоты. Провенанс пишется в стоп, только если
-     * он разошёлся со снапшотным: агент сменился посреди генерации (docs/design/SPEC-elements.md §4.4).
+     * он разошёлся со снапшотным: агент сменился посреди генерации (docs/spec.md).
      */
     applyFillings(fillings: readonly (RouteStopFilling | ExplanationFilling)[], provenance: RouteProvenance): void {
         const snapshot = this.state.snapshot;
@@ -410,8 +410,8 @@ export class RouteStore {
         );
     }
 
-    /**
-     * Провал генерации маршрута (docs/design/README.md §12): скелета нет, читалка не пострадала.
+/**
+     * Провал генерации маршрута (docs/spec.md): скелета нет, читалка не пострадала.
      * Причина — одно русское предложение, сырой вывод модели — для «Open raw output».
      */
     fail(message: string, rawOutput: string | null): void {
@@ -422,7 +422,7 @@ export class RouteStore {
         });
     }
 
-    /** PR ниже порога маршрута (docs/architecture.md §7.6) — считается по диффу, поэтому приезжает отдельно от фазы. */
+    /** PR ниже порога маршрута (docs/architecture.md) — считается по диффу, поэтому приезжает отдельно от фазы. */
     setSmallPr(smallPr: boolean): void {
         this.commit({ ...this.state, smallPr });
     }

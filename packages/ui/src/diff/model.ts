@@ -3,7 +3,7 @@ import type { FileChangeType, FileDiff } from '@sherpa/protocol';
 /**
  * Модель диффа одного файла для рендера: файл → блоки (ханки и пропуски) → строки.
  *
- * Модель уезжает из воркера через structured clone (docs/architecture.md §1), поэтому здесь только plain-данные:
+ * Модель уезжает из воркера через structured clone (docs/architecture.md), поэтому здесь только plain-данные:
  * ни функций, ни классов, ни `Map`. Валидации нет намеренно — патч уже прошёл `fileDiffSchema`
  * на границе сервера, а воркер собирается тем же бандлом.
  */
@@ -41,7 +41,7 @@ export interface DiffLine {
     oldLine: number | null;
     newLine: number | null;
     text: string;
-    /** Изменённые куски внутри пары del/add (docs/design/SPEC-elements.md §2.14); ключа нет — подсвечивать нечего. */
+    /** Изменённые куски внутри пары del/add (docs/spec.md); ключа нет — подсвечивать нечего. */
     words?: CharRange[];
     tokens?: SyntaxToken[];
     /** Строку патча парсер не понял и сохранил как есть (fail-open: UI не падает на кривом диффе). */
@@ -61,7 +61,7 @@ export interface DiffHunk {
     newCount: number;
     /**
      * Изменения ханка сводятся к пробелам и переводам строк
-     * (docs/design/SPEC-elements.md §2.14 — однострочный нотис).
+     * (docs/spec.md — однострочный нотис).
      */
     whitespaceOnly: boolean;
     lines: DiffLine[];
@@ -93,12 +93,12 @@ export type DiffBlock = DiffHunk | DiffGap;
 
 export type DiffFileContent =
     | { kind: 'text'; blocks: DiffBlock[] }
-    /** «binary file not shown» (docs/design/SPEC-elements.md §2.14). */
+    /** Однострочный нотис нетекстового файла. */
     | { kind: 'binary' }
     /** Текстового диффа нет: пустой патч, rename/copy без правок, одна лишь смена режима. */
     | { kind: 'none' };
 
-/**
+    /**
  * Имя языка в реестре highlight.js (`diff/languages.ts`): `typescript`, `python`, `bash`.
  * Строка, а не union: реестр знает полсотни языков, перечислять их в типе незачем.
  */
@@ -116,8 +116,8 @@ export interface DiffFileModel {
     changeType: FileChangeType;
     /** null — языка для этого файла в реестре подсветки нет. */
     language: LanguageId | null;
-    /**
-     * Смена прав из заголовка патча (docs/design/SPEC-elements.md §2.14 — однострочный нотис);
+/**
+     * Смена прав из заголовка патча (docs/spec.md — однострочный нотис);
      * null — прав не меняли.
      */
     modeChange: ModeChange | null;

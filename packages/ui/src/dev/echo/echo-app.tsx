@@ -98,7 +98,7 @@ function workerIdentity(harness: string | undefined, model: string | undefined, 
     return [harness ?? workerId, ...(model === undefined ? [] : [model])].join(' · ');
 }
 
-/** Баннер состояния «агент отключён» (docs/design/SPEC-elements.md §4.4): что случилось, следствие, одно действие. */
+/** Баннер состояния «агент отключён» (docs/spec.md): что случилось, следствие, одно действие. */
 function DisconnectedBanner({ prKey }: { prKey: string }) {
     return (
         <div className="banner banner--offline">

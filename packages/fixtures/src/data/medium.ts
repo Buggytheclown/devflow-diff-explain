@@ -9,7 +9,7 @@ import type { FixtureDataInput, FixtureInterdiff, FixtureIteration } from './typ
 
 /**
  * Основная фикстура: PR из дизайн-хендоффа — «Enforce the 30-minute edit window for scheduled
- * deliveries», 18 файлов, `+806 −56` (`docs/design/README.md §1`) плюс три картинки: добавленная svg
+ * deliveries», 18 файлов, `+806 −56` (`docs/architecture.md`) плюс три картинки: добавленная svg
  * приносит 6 строк, поэтому заявлено `+812 −56`. Пропорции экрана держатся ровно на этих числах,
  * поэтому итог сверяется тестом, а лок-файл добирает остаток до цели (см. `lockfile`).
  */
@@ -37,7 +37,7 @@ export const MEDIUM_TOTALS = { files: 21, additions: 812, deletions: 56 } as con
 export { BASE_COMMIT as MEDIUM_BASE_COMMIT, DIFF_ID as MEDIUM_DIFF_ID, HEAD_COMMIT as MEDIUM_HEAD_COMMIT };
 
 /**
- * Вторая итерация — обычный пуш поверх первой (`docs/design/README.md §9`: «the PR is now on a71d4e2»);
+ * Вторая итерация — обычный пуш поверх первой (`docs/architecture.md`: «the PR is now on a71d4e2»);
  * третья — force-push поверх второй, из-за которого хост перестаёт перечислять вторую.
  * База не двигается: перебазирования в этом сценарии нет.
  */
@@ -53,7 +53,7 @@ const CREATED_AT_V1 = '2026-08-19T16:42:00.000Z';
 const CREATED_AT_V2 = '2026-08-21T11:05:00.000Z';
 const CREATED_AT_V3 = '2026-08-21T15:20:00.000Z';
 
-/** Пин тредов первой итерации: он не переезжает вместе с якорем (`docs/design/SPEC-elements.md §4.5` «pinned to 9f3c1ab»). */
+/** Пин тредов первой итерации: он не переезжает вместе с якорем (`docs/architecture.md` «pinned to 9f3c1ab»). */
 const V1_PIN: ThreadPin = { diffId: DIFF_ID, commit: HEAD_COMMIT };
 
 /** Файл, который ушёл из PR со вторым пушем: платёжную часть автор вынес в отдельный PR. */
@@ -92,7 +92,7 @@ const ROLLOUT_CHECKS = [
     'flag cleanup filed',
 ] as const;
 
-/** 63 строки доводят ownership-часть фикстуры до 570 строк из `docs/design/README.md §6`. */
+/** 63 строки доводят ownership-часть фикстуры до 570 строк из `docs/architecture.md`. */
 function rolloutChecklistLines(): string[] {
     return [
         '+',
@@ -1157,7 +1157,7 @@ function files(): FileDiff[] {
 }
 
 /*
- * Второй пуш (`docs/design/README.md §9`). Затронуты файлы трёх стопов маршрута v1: `edit-policy.ts` (стоп 02),
+ * Второй пуш (`docs/architecture.md`). Затронуты файлы трёх стопов маршрута v1: `edit-policy.ts` (стоп 02),
  * `handlers.ts` вместе с новым `rejection-status.ts` и ушедшим `card-token.ts` (стоп 03) и
  * пересобранный лок (стоп 06 — от прежнего блока не осталось ни строки, отсюда `new`).
  * Каждая правка отвечает на замечание из тредов первой итерации.
@@ -1772,7 +1772,7 @@ function threads(diffId: HostId, second = false): Thread[] {
         }),
         thread({
             // Файл ушёл из PR со вторым пушем, поэтому якорь остаётся на файле первой итерации:
-            // такие треды UI собирает в группу «на файлах, которых больше нет» (`docs/design/SPEC-elements.md §2.17`).
+            // такие треды UI собирает в группу «на файлах, которых больше нет» (`docs/architecture.md`).
             anchor: anchor(DIFF_ID, 'services/orders/src/payments/card-token.ts', { side: 'new', line: 45 }),
             outdated: second,
             pinnedTo: V1_PIN,

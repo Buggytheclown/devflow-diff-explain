@@ -1,5 +1,5 @@
 /*
- * Дизайн-токены: геометрия и движение — docs/design/README.md, раздел «Design tokens»;
+ * Дизайн-токены: геометрия и движение — docs/design/theme.md, раздел «Design tokens»;
  * шрифтовая шкала — docs/design/theme.md, раздел «Типографика»; цвета четырёх палитр — там же.
  * Единственное место, где в UI живут hex, тени, штриховки и шкалы: в компонентных стилях
  * значения запрещены, только эти переменные. Соответствие таблице хендоффа проверяется
@@ -39,26 +39,26 @@ html[data-textsize='l'] {
     --surface-raised: #212429;
     --surface-popover: #262b34;
     --surface-selected: #2d323b;
-    /* docs/design/README.md §11 и §6: специальные поверхности баннера, команды и ownership-чипа. */
+    /* docs/design/theme.md и §6: специальные поверхности баннера, команды и ownership-чипа. */
     --surface-offline-banner: #1b1c20;
     --surface-command: #0f1012;
     --ownership-mine-surface: #182e20;
-    /* docs/design/README.md §2: футерная строка `uncovered` в дайджесте тестов. */
+    /* docs/design/theme.md: футерная строка `uncovered` в дайджесте тестов. */
     --surface-digest-footer: #1b171b;
-    /* docs/design/README.md §14: затемнение под командной палитрой. */
+    /* docs/design/theme.md: затемнение под командной палитрой. */
     --overlay-dialog: rgba(7, 8, 9, 0.66);
-    /* docs/design/README.md §1: липкий тулбар маршрута — фон приложения с прозрачностью под blur(8px). */
+    /* docs/design/theme.md: липкий тулбар маршрута — фон приложения с прозрачностью под blur(8px). */
     --surface-toolbar: rgba(13, 14, 16, 0.92);
-    /* docs/design/SPEC-additions-2026-08-26.md §1c/§1d: состояния комментариев и правки черновика. */
+    /* docs/design/theme.md: состояния комментариев и правки черновика. */
     --pr-comments-overlay: rgba(8, 9, 10, 0.55);
     --pr-comments-draft-surface: #181510;
     --comment-edit-surface: #161926;
     --pr-comments-published-chip-surface: #23252f;
     --comment-edit-chip-surface: #262e4a;
     --pr-comments-delete-surface: #1f100e;
-    /* docs/design/SPEC-additions-2026-08-26.md §1e: блок кода внутри карточки треда «вне диффа». */
+    /* docs/design/theme.md: блок кода внутри карточки треда «вне диффа». */
     --surface-code-inset: #090a0c;
-    /* docs/design/SPEC-changes-2026-09-20.md §2: подложка инлайн-кода в тексте — и в описании
+    /* docs/design/theme.md: подложка инлайн-кода в тексте — и в описании
        остановки, и в теле комментария; рамку ему даёт `--border-control`. */
     --surface-code-inline: #23272d;
 
@@ -69,7 +69,7 @@ html[data-textsize='l'] {
     --border-standard: #333741;
     --border-control: #363b44;
     --border-chip: #3a404a;
-    /* docs/design/README.md §1: разделитель контролов в тулбаре, 1×18px. */
+    /* docs/design/theme.md: разделитель контролов в тулбаре, 1×18px. */
     --border-divider: #3a3f48;
     --border-strong: #434954;
     --border-strong-lifted: #4a515c;
@@ -103,7 +103,7 @@ html[data-textsize='l'] {
     --chat-body-text: #ffffff;
     --pr-comments-note-icon: #9c8760;
 
-    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/SPEC-elements.md §1.2) --- */
+    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/theme.md) --- */
     --accent: #7f8cff;
     --accent-hover: #8f9bff;
     --accent-hover-strong: #b3bcff;
@@ -113,14 +113,14 @@ html[data-textsize='l'] {
     --accent-text: #aeb6ff;
     --accent-text-soft: #c9cdf0;
     --accent-text-bright: #dfe2ff;
-    /* docs/design/README.md §7: пункт плана в очереди — текст на акцентной поверхности карточки генерации. */
+    /* docs/design/theme.md: пункт плана в очереди — текст на акцентной поверхности карточки генерации. */
     --accent-text-queued: #7d83ad;
     --accent-surface: #131424;
     --accent-surface-alt: #1a1b2d;
     --accent-border: #262a45;
     --accent-selection: rgba(127, 140, 255, 0.13);
     --accent-text-selection: rgba(127, 140, 255, 0.28);
-    /* docs/design/SPEC-changes-2026-09-20.md §3: строка кода, под которой раскрыт тред. */
+    /* docs/design/theme.md: строка кода, под которой раскрыт тред. */
     --surface-thread-line: rgba(127, 140, 255, 0.07);
 
     /* --- Внимание: высокий тир, протухший маршрут, черновики, аудит --- */
@@ -133,22 +133,22 @@ html[data-textsize='l'] {
     --attention-border: #4a4230;
     --attention-border-alt: #3d3524;
     --attention-border-strong: #6b5b39;
-    /* docs/design/SPEC-theming-2026-09-12.md §1: янтарная primary-кнопка баннеров — своя пара, светлое
+    /* docs/design/theme.md: янтарная primary-кнопка баннеров — своя пара, светлое
        значение заливки темнее общего `--attention` (оранжевый с чёрным текстом на кремовом читался грязно). */
     --attention-button: #e2954c;
     --attention-button-ink: #1b1508;
     --attention-button-hover: #eaa15c;
     --attention-button-pressed: #d1873f;
-    /* docs/design/README.md §1 п.4: блок «почему изменилась остановка» — лейбл и тело. */
+    /* docs/design/theme.md п.4: блок «почему изменилась остановка» — лейбл и тело. */
     --attention-label: #9c8760;
     --attention-body: #d8c9ad;
-    /* docs/design/SPEC-additions-2026-08-26.md §1d: закрытое поле с черновиком и подтверждённый автосейв. */
+    /* docs/design/theme.md: закрытое поле с черновиком и подтверждённый автосейв. */
     --draft-field-surface: #1a1510;
     --draft-saved: #5e8a6d;
-    /* docs/design/README.md §10: тег `pci` в строке дерева — рамка отдельного оттенка. */
+    /* docs/design/theme.md: тег `pci` в строке дерева — рамка отдельного оттенка. */
     --tag-pci-border: #3d3a2c;
 
-    /* --- Онбординг (docs/design/README.md §16): карточка тура и пунктир под «Пропустить» --- */
+    /* --- Онбординг (docs/design/theme.md): карточка тура и пунктир под «Пропустить» --- */
     --surface-tour-card: #1f242b;
     --tour-skip-underline: #5e6673;
 
@@ -164,16 +164,16 @@ html[data-textsize='l'] {
     --diff-add-gutter-bg: rgba(0, 0, 0, 0);
     --diff-del-gutter-bg: rgba(0, 0, 0, 0);
     --read-fill: #3a8f66;
-    /* docs/design/README.md §1: отметка остановки в положении «viewed» — своя поверхность и рамка. */
+    /* docs/design/theme.md: отметка остановки в положении «viewed» — своя поверхность и рамка. */
     --viewed-surface: #1d3022;
     --viewed-border: #25422f;
-    /* docs/design/SPEC-theming-2026-09-12.md §4: наведение на отметку — зелёная подложка, а не серая. */
+    /* docs/design/theme.md: наведение на отметку — зелёная подложка, а не серая. */
     --viewed-hover-surface: #25422f;
     --viewed-hover-border: #3a8f66;
-    /* docs/design/README.md §13: круг успешного завершения ревью. */
+    /* docs/design/theme.md: круг успешного завершения ревью. */
     --success-surface: #1f3d2c;
     --success-text: #86d9a8;
-    /* docs/design/SPEC-elements.md §2.10, наведение на «просмотрено»: коробка заливается зелёным на четверть. */
+    /* docs/design/theme.md наведение на «просмотрено»: коробка заливается зелёным на четверть. */
     --read-fill-hover: rgba(58, 143, 102, 0.25);
     --read-border: #3f7a5a;
     --error: #e0736c;
@@ -182,7 +182,7 @@ html[data-textsize='l'] {
     --error-border: #3d2a2c;
 
     /* --- Дифф-рендер: строки, подсветка, чекбоксы
-       (docs/design/README.md §1, docs/design/SPEC-elements.md §2.12, §2.14) --- */
+       (docs/design/theme.md docs/design/theme.md §2.14) --- */
     --code-text: #ffffff;
     --code-text-del: #d5c0be;
     --surface-diff-empty: #0b0c0e;
@@ -194,18 +194,18 @@ html[data-textsize='l'] {
     --row-hover: rgba(255, 255, 255, 0.04);
     --checkbox-border: #5e6673;
     --read-box-border: #515a65;
-    /* Метка остановки у левого края строки дерева (docs/design/SPEC-theming-2026-09-12.md §6a). */
+    /* Метка остановки у левого края строки дерева (docs/design/theme.md). */
     --stop-mark-text: #7b8390;
     --stop-mark-border: #2c3038;
-    /* docs/design/SPEC-theming-2026-09-12.md §4: прозрачная кнопка «раскрыть строки» — обводка вместо заливки,
+    /* docs/design/theme.md: прозрачная кнопка «раскрыть строки» — обводка вместо заливки,
        серая заливка читалась как disabled. */
     --border-button-outline: #7b8390;
     --border-button-outline-hover: #dae4f3;
 
-    /* --- Подсветка синтаксиса (docs/design/README.md §1) --- */
+    /* --- Подсветка синтаксиса (docs/design/theme.md) --- */
     --syntax-keyword: #9aa6ff;
     --syntax-string: #d3b183;
-    /* Отступление от §2 (`#dae4f3`): комментарий обязан быть заметно тише кода — docs/decisions.md, 2026-09-12. */
+    /* Отступление от §2 (`#dae4f3`): комментарий обязан быть заметно тише кода — docs/design/theme.md, 2026-09-12. */
     --syntax-comment: #8a919c;
     --syntax-decorator: #d99a5c;
     --syntax-property: #d3b183;
@@ -225,11 +225,11 @@ html[data-textsize='l'] {
     --hatch-sidebar: repeating-linear-gradient(115deg, #414851 0 3px, #262b30 3px 6px);
     --hatch-footer: repeating-linear-gradient(115deg, #23272d 0 3px, #1a1b1e 3px 6px);
 
-    /* --- Состояния контролов (docs/design/SPEC-elements.md §1.1) --- */
+    /* --- Состояния контролов (docs/design/theme.md) --- */
     /* В таблице токенов хендоффа их нет, но стейт-матрикс обязателен для каждого контрола:
        шаг подсветки, кольцо фокуса и прозрачность disabled живут здесь же. */
     --hover-selected: #3e444f;
-    /* docs/design/SPEC-changes-2026-09-20.md §5: лестница серых поверхностей — ховер сдвигает фон
+    /* docs/design/theme.md: лестница серых поверхностей — ховер сдвигает фон
        на ступень, нажатие на вторую. Оттенки совпадают с поверхностями и рамками выше, но роль
        другая: перекрасить состояния контролов нельзя, не тронув попоувер и рамки. */
     --surface-hover: #262b34;
@@ -252,7 +252,7 @@ html[data-textsize='l'] {
     /* Рамка выключенной дорожки свитчера (§5): темнее рамок контролов — иначе дорожка
        в покое сливается с фоном. */
     --border-switch-track: #343941;
-    /* Активный сегмент таб-контрола (docs/design/README.md §0, docs/design/SPEC-theming-2026-09-12.md §1):
+    /* Активный сегмент таб-контрола (docs/design/theme.md docs/design/theme.md):
        в светлой это приподнятая белая «таблетка», поэтому у него есть и текст, и тень. */
     --surface-segment-active: #434954;
     --text-on-segment-active: #ffffff;
@@ -267,7 +267,7 @@ html[data-textsize='l'] {
     --focus-ring-color: #7f8cff;
     --text-on-selected: #ffffff;
     --disabled-opacity: 0.45;
-    /* Разделитель брендкрамба (docs/design/README.md §0). */
+    /* Разделитель брендкрамба (docs/design/theme.md). */
     --text-separator: #7b8390;
 
     /* --- Типографика --- */
@@ -297,7 +297,7 @@ html[data-textsize='l'] {
     --font-size-gutter: 0.6875rem;
     --font-size-badge: 0.6875rem;
     --font-size-scope: 0.6875rem;
-    /* docs/design/README.md §10: тег `pci` в дереве. */
+    /* docs/design/theme.md: тег `pci` в дереве. */
     --font-size-tag: 0.6875rem;
     /* Единственный текст ниже пола: метка остановки 17×13 в строке дерева (SPEC-theming §5, §6a). */
     --font-size-stop-mark: 0.625rem;
@@ -308,7 +308,7 @@ html[data-textsize='l'] {
     --font-size-code: 0.75rem;
 
     --line-height-body: 1.62;
-    /* docs/design/SPEC-theming-2026-09-12.md §5: плотность строк кода не зависит от размера текста. */
+    /* docs/design/theme.md: плотность строк кода не зависит от размера текста. */
     --line-height-code: 20px;
 
     /* --- Дерево файлов --- */
@@ -387,14 +387,14 @@ html[data-textsize='l'] {
     --diff-max: 1280px;
 
     /* --- Тени --- */
-    /* docs/design/SPEC-additions-2026-08-26.md §1d: кнопка комментария в гаттере. */
+    /* docs/design/theme.md: кнопка комментария в гаттере. */
     --shadow-line-comment: 0 1px 4px rgba(0, 0, 0, 0.45);
     --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
     --shadow-menu: 0 16px 40px rgba(0, 0, 0, 0.6);
     --shadow-floating: 0 16px 44px rgba(0, 0, 0, 0.6);
     --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.65);
     --shadow-pr-comments: 0 18px 50px rgba(0, 0, 0, 0.55);
-    /* docs/design/README.md §16: карточка тура и свечение кольца вокруг подсвеченного элемента. */
+    /* docs/design/theme.md: карточка тура и свечение кольца вокруг подсвеченного элемента. */
     --shadow-tour-card: 0 20px 52px rgba(0, 0, 0, 0.62);
     --shadow-tour-ring: 0 0 0 3px rgba(127, 140, 255, 0.13), 0 0 26px rgba(127, 140, 255, 0.16);
     --pr-comments-list-fade: linear-gradient(180deg, rgba(17, 18, 20, 0) 0%, #111214 92%);
@@ -482,7 +482,7 @@ html[data-textsize='l'] {
     --chat-body-text: #000000;
     --pr-comments-note-icon: #7f6c3e;
 
-    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/SPEC-elements.md §1.2) --- */
+    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/theme.md) --- */
     --accent: #5a68e8;
     --accent-hover: #4c5ae0;
     --accent-hover-strong: #3a47bd;
@@ -519,7 +519,7 @@ html[data-textsize='l'] {
     --draft-saved: #268f52;
     --tag-pci-border: #e9dfc3;
 
-    /* --- Онбординг (docs/design/README.md §16): карточка тура и пунктир под «Пропустить» --- */
+    /* --- Онбординг (docs/design/theme.md): карточка тура и пунктир под «Пропустить» --- */
     --surface-tour-card: #ffffff;
     --tour-skip-underline: #a1a7b3;
 
@@ -549,7 +549,7 @@ html[data-textsize='l'] {
     --error-border: #f0d2d0;
 
     /* --- Дифф-рендер: строки, подсветка, чекбоксы
-       (docs/design/README.md §1, docs/design/SPEC-elements.md §2.12, §2.14) --- */
+       (docs/design/theme.md docs/design/theme.md §2.14) --- */
     --code-text: #000000;
     --code-text-del: #87332e;
     --surface-diff-empty: #f3f4f6;
@@ -565,7 +565,7 @@ html[data-textsize='l'] {
     --border-button-outline: #828894;
     --border-button-outline-hover: #28303b;
 
-    /* --- Подсветка синтаксиса (docs/design/README.md §1) --- */
+    /* --- Подсветка синтаксиса (docs/design/theme.md) --- */
     --syntax-keyword: #5462e3;
     --syntax-string: #8a5f1c;
     --syntax-comment: #646b76;
@@ -587,7 +587,7 @@ html[data-textsize='l'] {
     --hatch-sidebar: repeating-linear-gradient(115deg, #c5cad2 0 3px, #e9ecef 3px 6px);
     --hatch-footer: repeating-linear-gradient(115deg, #e8eaee 0 3px, #f2f3f6 3px 6px);
 
-    /* --- Состояния контролов (docs/design/SPEC-elements.md §1.1) --- */
+    /* --- Состояния контролов (docs/design/theme.md) --- */
     --hover-selected: #dadee4;
     --surface-hover: #e2e5ea;
     --surface-pressed: #dadee4;
@@ -736,7 +736,7 @@ html[data-textsize='l'] {
     --motion-flash: 900ms;
 }
 
-/* Тёмная палитра Arcanum: источники и адаптации в docs/design/arcanum.md.
+/* Тёмная палитра Arcanum: источники и адаптации в docs/design/theme.md.
  * Полный набор токенов изолирует вложенные темы галереи.
  */
 :root[data-theme='arcanum-dark'],
@@ -807,7 +807,7 @@ html[data-textsize='l'] {
     --chat-body-text: #e0e0e1;
     --pr-comments-note-icon: #b3a17e;
 
-    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/SPEC-elements.md §1.2) --- */
+    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/theme.md) --- */
     --accent: #5282ff;
     --accent-hover: #7098ff;
     --accent-hover-strong: #8eadff;
@@ -844,7 +844,7 @@ html[data-textsize='l'] {
     --draft-saved: #8bbe9d;
     --tag-pci-border: rgba(255, 203, 0, 0.3);
 
-    /* --- Онбординг (docs/design/README.md §16): карточка тура и пунктир под «Пропустить» --- */
+    /* --- Онбординг (docs/design/theme.md): карточка тура и пунктир под «Пропустить» --- */
     --surface-tour-card: #35343b;
     --tour-skip-underline: #5e6673;
 
@@ -874,7 +874,7 @@ html[data-textsize='l'] {
     --error-border: #653539;
 
     /* --- Дифф-рендер: строки, подсветка, чекбоксы
-       (docs/design/README.md §1, docs/design/SPEC-elements.md §2.12, §2.14) --- */
+       (docs/design/theme.md docs/design/theme.md §2.14) --- */
     --code-text: #e0e0e1;
     --code-text-del: #e0e0e1;
     --surface-diff-empty: #2d2c33;
@@ -890,7 +890,7 @@ html[data-textsize='l'] {
     --border-button-outline: #7b8390;
     --border-button-outline-hover: #dae4f3;
 
-    /* --- Подсветка синтаксиса (docs/design/README.md §1) --- */
+    /* --- Подсветка синтаксиса (docs/design/theme.md) --- */
     --syntax-keyword: #c586c0;
     --syntax-string: #ce9178;
     --syntax-comment: #8a9b83;
@@ -912,7 +912,7 @@ html[data-textsize='l'] {
     --hatch-sidebar: repeating-linear-gradient(115deg, #414851 0 3px, #262b30 3px 6px);
     --hatch-footer: repeating-linear-gradient(115deg, #23272d 0 3px, #1a1b1e 3px 6px);
 
-    /* --- Состояния контролов (docs/design/SPEC-elements.md §1.1) --- */
+    /* --- Состояния контролов (docs/design/theme.md) --- */
     --hover-selected: #68676d;
     --surface-hover: #424248;
     --surface-pressed: #57565c;
@@ -1061,7 +1061,7 @@ html[data-textsize='l'] {
     --motion-flash: 900ms;
 }
 
-/* Светлая палитра Arcanum: источники и адаптации в docs/design/arcanum.md.
+/* Светлая палитра Arcanum: источники и адаптации в docs/design/theme.md.
  * Полный набор токенов изолирует вложенные темы галереи.
  */
 :root[data-theme='arcanum-light'],
@@ -1132,7 +1132,7 @@ html[data-textsize='l'] {
     --chat-body-text: #262626;
     --pr-comments-note-icon: #6c603b;
 
-    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/SPEC-elements.md §1.2) --- */
+    /* --- Акцент: «здесь можно действовать» и слой ИИ (docs/design/theme.md) --- */
     --accent: #4768c2;
     --accent-hover: #3f5799;
     --accent-hover-strong: #384670;
@@ -1169,7 +1169,7 @@ html[data-textsize='l'] {
     --draft-saved: #347b34;
     --tag-pci-border: rgba(255, 219, 77, 0.5);
 
-    /* --- Онбординг (docs/design/README.md §16): карточка тура и пунктир под «Пропустить» --- */
+    /* --- Онбординг (docs/design/theme.md): карточка тура и пунктир под «Пропустить» --- */
     --surface-tour-card: #ffffff;
     --tour-skip-underline: #999999;
 
@@ -1199,7 +1199,7 @@ html[data-textsize='l'] {
     --error-border: #ffb4b3;
 
     /* --- Дифф-рендер: строки, подсветка, чекбоксы
-       (docs/design/README.md §1, docs/design/SPEC-elements.md §2.12, §2.14) --- */
+       (docs/design/theme.md docs/design/theme.md §2.14) --- */
     --code-text: #000000;
     --code-text-del: #000000;
     --surface-diff-empty: #ffffff;
@@ -1215,7 +1215,7 @@ html[data-textsize='l'] {
     --border-button-outline: #999999;
     --border-button-outline-hover: #404040;
 
-    /* --- Подсветка синтаксиса (docs/design/README.md §1) --- */
+    /* --- Подсветка синтаксиса (docs/design/theme.md) --- */
     --syntax-keyword: #af00db;
     --syntax-string: #a31515;
     --syntax-comment: #008000;
@@ -1237,7 +1237,7 @@ html[data-textsize='l'] {
     --hatch-sidebar: repeating-linear-gradient(115deg, #cccccc 0 3px, #f2f2f2 3px 6px);
     --hatch-footer: repeating-linear-gradient(115deg, #e5e5e5 0 3px, #fafafa 3px 6px);
 
-    /* --- Состояния контролов (docs/design/SPEC-elements.md §1.1) --- */
+    /* --- Состояния контролов (docs/design/theme.md) --- */
     --hover-selected: #e5e5e5;
     --surface-hover: #f2f2f2;
     --surface-pressed: #e5e5e5;

@@ -11,7 +11,7 @@ import type { TokenSource } from './token.js';
  *
  * Транспорт инжектируется — тесты гоняют адаптер на записанных ответах без сети.
  * Токен живёт только в заголовке запроса: ни в логах, ни в текстах ошибок его нет
- * (`docs/architecture.md §6`).
+ * (`docs/architecture.md`).
  */
 
 export const ARCANUM_API_BASE = 'https://arcanum.yandex.net/api';
@@ -275,7 +275,7 @@ function jsonInit(method: string, body: unknown): RequestInit {
     return { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
 }
 
-/** 429 и 5xx лечатся повтором, остальные 4xx — нет (`docs/research/arcanum-api.md` §Лимиты). */
+/** 429 и 5xx лечатся повтором, остальные 4xx — нет (`docs/architecture.md` §Лимиты). */
 function retriable(status: number): boolean {
     return status === 429 || status >= 500;
 }

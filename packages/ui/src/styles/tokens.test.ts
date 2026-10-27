@@ -4,17 +4,16 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Механическая сверка дизайн-токенов с хендоффом.
+ * Механическая сверка общих дизайн-токенов и действующих таблиц оформления.
  *
- * Геометрия, шрифты, прозрачность disabled и движение сверяются с `EXPECTED` — таблицей,
- * перенесённой из `docs/design/README.md`, раздел «Design tokens»;
- * цвета четырёх палитр — с `docs/design/theme.md`. Компонентные токены живут только в CSS:
- * проверяем полноту набора каждой темы, не дублируя значения в документации.
+ * `EXPECTED` фиксирует контракт геометрии, шрифтов, disabled и движения общих компонентов.
+ * Цвета четырёх палитр и две шрифтовые шкалы сверяются с docs/design/theme.md.
+ * Раскладка экранов задаётся CSS компонентов; наличие общего токена не добавляет экран.
  */
 
-/** Нецветовой токен → значение из хендоффа. Комментарий над группой — заголовок его раздела. */
+/** Нецветовой токен → значение контракта общих компонентов. */
 const EXPECTED: Record<string, string> = {
-    // docs/design/SPEC-elements.md §1.1: disabled opacity .45.
+    // docs/design/theme.md: disabled opacity .45.
     '--disabled-opacity': '.45',
 
     // Type — IBM Plex Sans 400/450/500/600 for UI, IBM Plex Mono 400/500 for code, paths, numbers,
@@ -49,7 +48,7 @@ const EXPECTED: Record<string, string> = {
 
     // Radius — 2–3px (rules, tier marks) · 4–5px (badges, small chips) · 6px (buttons, rows) ·
     // 7px (inputs, chips, primary buttons) · 8–9px (cards, popovers) · 10–12px (panels, dialogs).
-    // Диапазоны разложены на конкретные роли по размерам из docs/design/README.md §0–§5 и §14.
+    // Диапазоны разложены на конкретные роли по размерам из docs/design/theme.md§5 и §14.
     '--radius-rule': '2px',
     '--radius-mark': '3px',
     '--radius-key': '4px',
@@ -58,7 +57,7 @@ const EXPECTED: Record<string, string> = {
     '--radius-input': '7px',
     '--radius-popover': '8px',
     '--radius-card': '9px',
-    // docs/design/README.md §5: плавающая панель использует отдельный радиус 11px.
+    // docs/design/theme.md: плавающая панель использует отдельный радиус 11px.
     '--radius-floating': '11px',
     '--radius-panel': '12px',
 
@@ -70,18 +69,17 @@ const EXPECTED: Record<string, string> = {
     '--space-control': '14px',
     '--space-inner': '10px',
     '--space-inner-tight': '8px',
-    // Прототип: Sherpa.dc.html:217 — нижний резерв Маршрута 180px; для читальных вью унифицирован.
+    // Резерв под закреплённую панель общих компонентов.
     '--space-bar-reserve': '180px',
 
-    // Widths — docs/design/README.md §4 (agent panel `clamp(392px, 26vw, 560px)`), §10 (file tree
-    // `clamp(320px, 22vw, 560px)`) и «Spacing» (`--diff-max` 1280px unified / 1920px side by side).
+    // Общие ширины панелей и предельные ширины диффа; раскладка приложения задаётся отдельно.
     '--width-agent-panel': 'clamp(392px, 26vw, 560px)',
     '--width-file-tree': 'clamp(320px, 22vw, 560px)',
     '--diff-max': '1280px',
 
     // Motion — spinner `spin .8s linear infinite` · skeleton/streaming `shimmer 1.6s ease-in-out
     // infinite` · caret `caret 1s step-end infinite` · jump scroll ~320ms ease-in-out cubic ·
-    // jump flash ~900ms. Плюс docs/design/SPEC-elements.md §1.1: hover 90ms ease-out.
+    // jump flash ~900ms. Плюс docs/design/theme.md: hover 90ms ease-out.
     // «ease-in-out cubic» записан кривой easeInOutCubic — в CSS такого ключевого слова нет.
     '--motion-hover': '90ms',
     '--motion-hover-ease': 'ease-out',
@@ -93,7 +91,7 @@ const EXPECTED: Record<string, string> = {
     '--motion-flash': '900ms',
 };
 
-/** Отличия геометрии и шрифтов самостоятельной темы Arcanum (docs/design/arcanum.md). */
+/** Отличия геометрии и шрифтов самостоятельной темы Arcanum (docs/design/theme.md). */
 const ARCANUM_EXPECTED: Record<string, string> = {
     ...EXPECTED,
     '--font-sans': "'YS Text', 'Helvetica Neue', Arial, Helvetica, sans-serif",
@@ -163,7 +161,7 @@ function parseThemeDoc(markdown: string): Record<Theme, Map<string, string>> {
         dark: new Map(), light: new Map(), 'arcanum-dark': new Map(), 'arcanum-light': new Map(),
     };
     for (const [, name, darkValue, lightValue, arcanumDarkValue, arcanumLightValue] of markdown.matchAll(
-        /^\| `(--[a-z0-9-]+)` \| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \| [^|]+\|$/gm,
+        /^\| `(--[a-z0-9-]+)` \| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|$/gm,
     )) {
         if (name === undefined || darkValue === undefined || lightValue === undefined
             || arcanumDarkValue === undefined || arcanumLightValue === undefined) {
@@ -231,13 +229,13 @@ const documentedScale = parseTypographyDoc(THEME_MD.split('## Типографи
 const documentedArcanumScale = parseTypographyDoc(THEME_MD.split('## Типографика Arcanum')[1] ?? '');
 
 describe('дизайн-токены', () => {
-    it('в :root объявлены все токены хендоффа из README.md и theme.md', () => {
+    it('в :root объявлены все общие и документированные токены', () => {
         expect([...darkPalette.keys()]).toEqual(
             expect.arrayContaining([...Object.keys(EXPECTED), ...documented.dark.keys()]),
         );
     });
 
-    it('в нецветовой таблице хендоффа нет цветов', () => {
+    it('в нецветовом контракте нет цветов', () => {
         expect(Object.entries(EXPECTED).filter(([, value]) => /#|rgba?\(/.test(value))).toEqual([]);
     });
 
@@ -256,7 +254,7 @@ describe('дизайн-токены', () => {
 });
 
 /**
- * Шрифтовая шкала: docs/design/SPEC-theming-2026-09-12.md §5. Всё в rem от базы `html`, пол
+ * Шрифтовая шкала: docs/design/theme.md Всё в rem от базы `html`, пол
  * 11px (0.6875rem), ниже пола — только декоративные глифы, у которых нет своего текста.
  */
 describe('шрифтовая шкала', () => {
@@ -389,7 +387,7 @@ describe('палитры тем', () => {
  * полупрозрачной заливкой строки диффа контраст считается по результату наложения.
  *
  * `low` перечисляет темы, в которых дизайнерская пара не дотягивает до 4.5:1. Значения не
- * подгоняются под норму — они из `docs/design/SPEC-theming-2026-09-12.md` §2, решение о подъёме
+ * подгоняются под норму — они из `docs/design/theme.md` §2, решение о подъёме
  * за дизайном. Замеры (:1): тёмная — номера строк на карточке 4.03 и на схлопнутой строке 3.93,
  * гаттер удаления 4.12; светлая — номера строк 2.91 (на схлопнутой строке 2.62), знаки и гаттеры строк диффа 3.63 / 4.14 /
  * 4.06 / 4.46, счётчики в шапке карточки 3.69 / 4.22, галочка на зелёном hover 3.88, пункт плана
@@ -448,12 +446,12 @@ const TEXT_PAIRS: readonly TextPair[] = [
     { text: '--code-text', on: ['--diff-add-bg', '--surface-diff-card'] },
     { text: '--code-text-del', on: ['--diff-del-bg', '--surface-diff-card'] },
     { text: '--diff-add-text', on: ['--diff-add-bg', '--surface-diff-card'], low: ['light'] },
-    // Arcanum: референсный красный маркер, 3.96:1 (docs/design/arcanum.md).
+    // Arcanum: референсный красный маркер, 3.96:1 (docs/design/theme.md).
     { text: '--diff-del-text', on: ['--diff-del-bg', '--surface-diff-card'], low: ['light', 'arcanum-dark'] },
     { text: '--diff-add-gutter', on: ['--diff-add-gutter-bg', '--diff-add-bg', '--surface-diff-card'], low: ['light'] },
     { text: '--diff-del-gutter', on: ['--diff-del-gutter-bg', '--diff-del-bg', '--surface-diff-card'], low: ['dark', 'light'] },
     { text: '--diff-add-text', on: ['--surface-card-header'], low: ['light'] },
-    // Тот же маркер в шапке: 3.55:1 (docs/design/arcanum.md).
+    // Тот же маркер в шапке: 3.55:1 (docs/design/theme.md).
     { text: '--diff-del-text', on: ['--surface-card-header'], low: ['light', 'arcanum-dark'] },
     { text: '--syntax-keyword', on: ['--surface-diff-card'] },
     { text: '--syntax-string', on: ['--surface-diff-card'] },

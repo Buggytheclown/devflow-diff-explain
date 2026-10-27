@@ -6,11 +6,11 @@ import type { TokenSource } from './token.js';
 
 /**
  * HTTP-клиент GitHub: GraphQL — основной API, REST — три ручки, которых в GraphQL нет
- * (`docs/research/github-api.md`). Каждый ответ проходит zod fail-closed: GraphQL отдаёт
+ * (`docs/architecture.md`). Каждый ответ проходит zod fail-closed: GraphQL отдаёт
  * `null` вместо отсутствующего узла, и без схемы вместо ошибки приезжала бы дырка.
  *
  * Транспорт инжектируется — тесты гоняют адаптер на записанном API без сети. Токен живёт только
- * в заголовке запроса: ни в логах, ни в текстах ошибок его нет (`docs/architecture.md §6`).
+ * в заголовке запроса: ни в логах, ни в текстах ошибок его нет (`docs/architecture.md`).
  */
 
 export const GITHUB_API_BASE = 'https://api.github.com';

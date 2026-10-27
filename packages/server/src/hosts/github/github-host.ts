@@ -122,11 +122,11 @@ import {
     userOf,
 } from './threads.js';
 
-/**
+    /**
  * Хост-адаптер github.com: чтение и запись PR через GraphQL, три REST-ручки на то, чего в
- * GraphQL нет (`docs/research/github-api.md`).
+ * GraphQL нет (`docs/architecture.md`).
  *
- * Опорные решения (`docs/decisions.md`, «Хост-адаптеры»):
+ * Опорные решения (`docs/architecture.md`, «Хост-адаптеры»):
  * - итерация одна: у GitHub нет понятия диффсета, ревьюится текущая голова ветки против
  *   merge-base, поэтому `capabilities.iterations: false` и срезов хост не строит;
  * - черновики живут в pending-ревью GitHub — комментарии строк заводятся прямо в нём, а
@@ -147,13 +147,13 @@ const WEB_BASE_URL = 'https://github.com';
 /** Больше этого числа файлов GitHub в списке не отдаёт — дифф был бы молча обрезан. */
 const MAX_PR_FILES = 3000;
 
-/**
+    /**
  * Потолок содержимого для «Expand context»: на файлах такого размера расширение бессмысленно —
  * UI и так сворачивает дифф длиннее 2000 строк.
  */
 const MAX_CONTENT_BYTES = 2_000_000;
 
-/** Три места, где GitHub ищет CODEOWNERS; побеждает первый найденный (`docs/research/github-api.md`). */
+/** Три места, где GitHub ищет CODEOWNERS; побеждает первый найденный (`docs/architecture.md`). */
 const CODEOWNERS_PATHS = {
     githubDir: '.github/CODEOWNERS',
     root: 'CODEOWNERS',
@@ -416,8 +416,8 @@ export class GithubHost implements ReviewHost {
         });
     }
 
-    /**
-     * Черновик уходит в pending-ревью GitHub сразу (двухступенчатая модель, `docs/product.md §3`).
+/**
+     * Черновик уходит в pending-ревью GitHub сразу (двухступенчатая модель, `docs/spec.md`).
      * Три случая контракта: якорь — новый тред в pending-ревью, `parentId` — ответ в чужой тред,
      * ни того ни другого — абзац в тело ревью.
      *
@@ -661,8 +661,8 @@ export class GithubHost implements ReviewHost {
         await this.rememberViewed(meta.headRefOid, fileId, viewed);
     }
 
-    /**
-     * Содержимое файла по обе стороны — топливо «Expand context» (`docs/design/SPEC-elements.md §2.13`).
+/**
+     * Содержимое файла по обе стороны — топливо «Expand context» (`docs/spec.md`).
      * Обе стороны читаются одним запросом по адресу `<коммит>:<путь>`: старая на merge-base,
      * новая на голове ветки.
      *

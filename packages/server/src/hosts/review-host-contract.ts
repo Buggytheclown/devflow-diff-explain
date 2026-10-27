@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
  * Проверяется то, что обещает интерфейс, а не то, как это устроено внутри: формы ответов
  * (fail-closed через схемы протокола), обещание `watchThreads` про начальный снапшот и снапшот
  * после каждого изменения, двухступенчатая модель черновиков и семантика вердикта
- * (`docs/design/SPEC-elements.md §4.5`).
+ * (`docs/spec.md`).
  */
 
 export interface ReviewHostContractOptions<H extends ReviewHost> {

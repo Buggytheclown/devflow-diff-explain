@@ -4,11 +4,11 @@ import { promisify } from 'node:util';
 import { RpcFailure } from '../../errors.js';
 
 /**
- * Токен GitHub берётся цепочкой `gh` (`docs/research/github-api.md` §Токен): `$GITHUB_TOKEN` →
+ * Токен GitHub берётся цепочкой `gh` (`docs/architecture.md` §Токен): `$GITHUB_TOKEN` →
  * `$GH_TOKEN` → `gh auth token`. Своего входа в OAuth у Шерпы нет: она читает токен ровно там,
  * где его держит официальный CLI.
  *
- * Значение токена нигде не логируется и не попадает в тексты ошибок (`docs/architecture.md §6`) —
+ * Значение токена нигде не логируется и не попадает в тексты ошибок (`docs/architecture.md`) —
  * наружу выходит только то, какой источник сработал и почему остальные не подошли.
  */
 

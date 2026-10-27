@@ -12,8 +12,8 @@ import type {
     Verdict,
 } from './review.js';
 
-/**
- * Интерфейс хост-адаптера (`docs/architecture.md §5`, `docs/product.md §4a`). Одна
+    /**
+ * Интерфейс хост-адаптера (`docs/architecture.md`, `docs/architecture.md`). Одна
  * абстракция, четыре реализации: Арканум, GitHub, локальный чекаут (бэкенды arc и git)
  * и фикстурный хост для UI и тестов. Всё хост-специфичное — за этой границей; ядро (маршрут, очередь, прогресс,
  * снапшоты) хоста не знает. Контрактные тесты (`docs/testing.md §3`) гоняются на всех реализациях одним набором.
@@ -68,10 +68,10 @@ export interface ReviewHost extends ReviewSource {
     updateComment?(commentId: HostId, body: string, issue?: boolean): Promise<void>;
     deleteComment?(commentId: HostId): Promise<void>;
 
-    /**
+/**
      * Опубликовать свои черновики пакетом и применить вердикт.
      * Вердикт вне `capabilities.publishVerdicts` хост отклоняет, ничего не публикуя.
-     * Вердикт применяется только если опубликовались все (`docs/design/SPEC-elements.md §4.5`);
+     * Вердикт применяется только если опубликовались все (`docs/architecture.md`);
      * у `comment` применять нечего — `verdictApplied` значит «опубликовались все». `comment` без
      * черновиков ничего не делает: `{ publishedCommentIds: [], failed: [], verdictApplied: true }`.
      * Итоговое состояние PR результат не несёт — перечитывается через `getPr`.

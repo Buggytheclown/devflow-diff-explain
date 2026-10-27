@@ -230,7 +230,7 @@ async function diffOfIteration(
     const active = options.iterationFeed?.active() ?? null;
     if (diffId === undefined || active === null || active.diffId === diffId) {
         const diff = await call(() => host.getDiff());
-        // Патч активной итерации оседает в хранилище (docs/product.md §4a); ответ ручки этого не ждёт.
+        // Патч активной итерации оседает в хранилище (docs/spec.md); ответ ручки этого не ждёт.
         const iterations = options.iterations;
         if (iterations != null) {
             void rememberIterationDiff(iterations, host, diff);

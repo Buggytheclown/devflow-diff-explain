@@ -33,7 +33,7 @@ import type { SettingsStore } from './settings-store.js';
 import type { SharedPayloadStore } from './shared-payload.js';
 import type { WorkerRegistry } from './worker-registry.js';
 
-/**
+    /**
  * Сколько раз в рамках одной генерации сервер ставит задачу на план. Обычно хватает одной:
  * счётчик страхует от петли «результат принят, но применить его не вышло» — иначе сорванная
  * запись снапшота гоняла бы агента по полной генерации бесконечно.
@@ -788,10 +788,10 @@ export class RouteOrchestrator {
         this.store.fail(this.lostDiffMessage(diffId), null);
     }
 
-    /**
+/**
      * Свежий дифф активной итерации вместе с шапкой PR и списком итераций. Патч кладётся в
      * хранилище синхронно после ответа: снапшот, построенный на этой итерации, обязан остаться
-     * читаемым после следующего пуша (docs/product.md §4a), а генерация не может стартовать раньше записи.
+     * читаемым после следующего пуша (docs/spec.md), а генерация не может стартовать раньше записи.
      *
      * На процесс не кэшируется — итерацию генерации держит `generationDiff`; параллельные
      * вызовы делят один запрос, чтобы прогрев и ручка `generate` не ходили в хост дважды.
@@ -915,7 +915,7 @@ function stopStatusOf(task: TaskRecord, strings: RouteStrings): RouteStopStatusU
 }
 
 /**
- * Причина провала генерации для красной карточки (docs/design/README.md §12) — одно предложение
+ * Причина провала генерации для красной карточки (docs/spec.md) — одно предложение
  * на языке маршрута.
  */
 function skeletonFailureMessage(task: TaskRecord, strings: RouteStrings): string {

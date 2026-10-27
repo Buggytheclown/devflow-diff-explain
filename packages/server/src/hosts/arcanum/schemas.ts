@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
 /**
- * Схемы ответов Арканума — хост-специфика, наружу за адаптер не выходит (`docs/product.md §4a`),
+ * Схемы ответов Арканума — хост-специфика, наружу за адаптер не выходит (`docs/spec.md`),
  * в `@sherpa/protocol` не выносится. Формы выверены живьём на PR 15138703 / 13614071
- * (`docs/research/arcanum-api.md`).
+ * (`docs/architecture.md`).
  *
  * Строгость разная по назначению поля: структурные (id, entry_id, path, commit_ids) обязательны —
  * без них адаптер соврал бы; косметические (заголовок, ветки, имя бота) необязательны, потому что
@@ -43,7 +43,7 @@ export const prRefSchema = z.object({
  * ревьюеров Арканум отдаёт без неё.
  *
  * Имя в `fields=review(reviewers(name,action))` приезжает вложенным — `user.name` (живая
- * проверка, `docs/research/arcanum-api.md` §Вердикты); плоское `name` принимаем на случай, если
+ * проверка, `docs/architecture.md` §Вердикты); плоское `name` принимаем на случай, если
  * форма зависит от набора полей.
  */
 const reviewerSchema = z.object({
@@ -76,7 +76,7 @@ export const reviewRequestSchema = z.object({
 export type ArcReviewRequest = z.infer<typeof reviewRequestSchema>;
 
 /**
- * Дешёвая ручка поллинга: 90 байт на тик (`docs/research/arcanum-api.md` §Реактивность).
+ * Дешёвая ручка поллинга: 90 байт на тик (`docs/architecture.md` §Реактивность).
  * `common_status` — чтобы заметить чужой шип, не перечитывая мету на каждый тик.
  */
 export const POLL_FIELDS = 'updated_at,common_status,active_diff_set(id)';
@@ -102,7 +102,7 @@ export const activeDiffSchema = z.object({
 
 /**
  * Список итераций PR: `GET /pull-requests/{id}/diffs`. Поля плоские — обёртка `diffs(…)` молча
- * отдаёт `[{}]` (`docs/research/arcanum-api.md` §Дифф). Группа `commit_ids` живьём на этой ручке
+ * отдаёт `[{}]` (`docs/architecture.md` §Дифф). Группа `commit_ids` живьём на этой ручке
  * **не проверена**: её отсутствие не должно ронять разбор, поэтому все поля, кроме `id`, необязательны —
  * диффсет без коммитов адаптер честно не перечисляет.
  */

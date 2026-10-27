@@ -6,7 +6,7 @@ import { modulePathOf, synthesizeFiles } from './synthetic.js';
 import type { FixtureDataInput } from './types.js';
 
 /**
- * Большой PR для виртуализации (`docs/design/SPEC-elements.md §8` п. 8: 60+ файлов при 60fps) и перф-прогона.
+ * Большой PR для виртуализации (`docs/architecture.md` п. 8: 60+ файлов при 60fps) и перф-прогона.
  * Собран общим генератором `synthesizeFiles`: содержимое считается из индекса файла —
  * мегабайтов в репозитории нет, но результат байт-в-байт одинаков между запусками.
  */

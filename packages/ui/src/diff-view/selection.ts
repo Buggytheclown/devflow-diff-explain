@@ -1,7 +1,7 @@
 import type { DiffFileModel, DiffLine } from '../diff/model.js';
 
 /**
- * Выделение диапазона строк (docs/design/SPEC-elements.md §2.14): click-drag и shift-click,
+ * Выделение диапазона строк (docs/spec.md): click-drag и shift-click,
  * одинаково в unified и split.
  *
  * Строка адресуется своими номерами в файле, а не местом в модели: раскрытие контекста

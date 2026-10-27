@@ -1,8 +1,8 @@
 @import '../diff/syntax.css';
 
 /*
- * Дифф-рендер: карточка файла и строки диффа. Все размеры и цвета — из docs/design/README.md §1
- * («Right column: one card per hunk…») и docs/design/SPEC-elements.md §2.13–2.14; значения только через токены.
+ * Дифф-рендер: карточка файла и строки диффа. Все размеры и цвета — из docs/design/theme.md
+ * («Right column: one card per hunk…») и docs/design/theme.md; значения только через токены.
  */
 
 /*
@@ -40,7 +40,7 @@
     padding-left: 14px;
 }
 
-/* Машинные файлы приглушены (docs/design/README.md §10: generated → dim). */
+/* Машинные файлы приглушены (docs/design/theme.md: generated → dim). */
 
 /*
  * Маркер выступает за рамку на полосу отпущенного клипа, и шапка внутри рамки его там не закрывает.
@@ -48,7 +48,7 @@
  */
 
 /*
- * Обрезка шапки (docs/design/SPEC-elements.md §1.2) — как в дереве файлов (`tree/file-tree.css`):
+ * Обрезка шапки (docs/design/theme.md) — как в дереве файлов (`tree/file-tree.css`):
  * цепочка каталогов ужимается первой и режется слева (`…/api/v3`), имя файла уступает место
  * только себе самому и режется с конца.
  * `bdi` изолирует направление — иначе левая обрезка (`direction: rtl`) утащила бы слэш на другой край.
@@ -67,24 +67,24 @@
 
 /* Имя уступает место только себе самому. */
 
-/* Бейдж конфликта в шапке карточки (docs/design/SPEC-elements.md §2.14): моно-чип в предупреждающей группе токенов. */
+/* Бейдж конфликта в шапке карточки (docs/design/theme.md): моно-чип в предупреждающей группе токенов. */
 
-/* Действия при наведении (docs/design/README.md §1): в покое их не видно, но клавиатуре они доступны. */
+/* Действия при наведении (docs/design/theme.md): в покое их не видно, но клавиатуре они доступны. */
 
 /* Открытое меню живёт в портале — карточка теряет :hover, а кнопка-источник должна остаться на месте. */
 
 /* Действия в шапке — плотный Ghost из `styles/controls.css`; текстовые «повторить» — ссылки. */
 
-/* Тогл «просмотрено» в шапке файла (docs/design/README.md §1) — чекбокс из `styles/controls.css`. */
+/* Тогл «просмотрено» в шапке файла (docs/design/theme.md) — чекбокс из `styles/controls.css`. */
 
 /* --- Нотисы и служебные состояния --- */
 
-/* Карточка осталась на экране вопреки фильтру (docs/design/SPEC-elements.md §2.7). */
+/* Карточка осталась на экране вопреки фильтру (docs/design/theme.md). */
 
 /* Скелетон занимает место, оценённое списком: текст держится у верхней кромки —
    в середине карточки высотой в несколько экранов его никто бы не нашёл.
 
-   Первые 200 мс слот пуст (docs/design/SPEC-elements.md §3): высота строки резервируется здесь, иначе появление
+   Первые 200 мс слот пуст (docs/design/theme.md): высота строки резервируется здесь, иначе появление
    текста двигало бы карточки, которым список не передал оценку высоты. */
 
 /* --- Строки диффа --- */
@@ -214,12 +214,12 @@
 .diff-row {
     position: relative;
     display: grid;
-    /* docs/design/README.md §1: unified — старый гуттер, новый гуттер, знак, код. */
+    /* docs/design/theme.md: unified — старый гуттер, новый гуттер, знак, код. */
     grid-template-columns: var(--gutter-col) var(--gutter-col) 16px minmax(0, 1fr);
 }
 
 .diff-rows--split .diff-row {
-    /* docs/design/README.md §1: side-by-side — гуттер, знак и код на каждую сторону. */
+    /* docs/design/theme.md: side-by-side — гуттер, знак и код на каждую сторону. */
     grid-template-columns: var(--gutter-col) 14px minmax(0, 1fr) var(--gutter-col) 14px minmax(0, 1fr);
 }
 
@@ -305,14 +305,14 @@
     color: var(--code-text-del);
 }
 
-/* Пустая сторона пары в split (docs/design/README.md §1). */
+/* Пустая сторона пары в split (docs/design/theme.md). */
 .diff-row__gutter--empty,
 .diff-row__sign--empty,
 .diff-row__code--empty {
     background: var(--surface-diff-empty);
 }
 
-/* Выделенный диапазон одинаков в обоих режимах (docs/design/README.md §1, docs/design/SPEC-elements.md §2.14). */
+/* Выделенный диапазон одинаков в обоих режимах (docs/design/theme.md docs/design/theme.md). */
 .diff-row.is-selected,
 .diff-side.is-selected {
     background: var(--accent-selection);

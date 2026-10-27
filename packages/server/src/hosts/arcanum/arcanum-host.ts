@@ -75,10 +75,10 @@ import type { TokenSource } from './token.js';
 import { arcTokenSource } from './token.js';
 import { arcanumUser, buildThreads, isBotLogin, isoTime, toSingleComment } from './threads.js';
 
-/**
+    /**
  * Хост-адаптер Арканума: чтение и запись.
  *
- * Опорные решения (`docs/research/arcanum-api.md`, `docs/decisions.md`):
+ * Опорные решения (`docs/architecture.md`, `docs/architecture.md`):
  * - реактивности нет — общий поллер дёргает дешёвую ручку и будит подписки: `watchThreads`
  *   перечитывает треды, `watchIterations` — список итераций;
  * - Арканум отдаёт только метаданные: мету PR, итерации, changelist, треды, правила, линзы;
@@ -103,7 +103,7 @@ const WEB_BASE_URL = 'https://a.yandex-team.ru';
 /** Единственный тенант Арканума со скоупом PCI DSS (`allow_pci_dss` репо-дескриптора). */
 const PCI_TENANT = 'arcadia';
 
-/**
+    /**
  * Потолок содержимого для «Expand context»: на файлах такого размера расширение бессмысленно —
  * UI и так сворачивает дифф длиннее 2000 строк. Размер известен из changelist до запроса.
  */
@@ -149,7 +149,7 @@ interface PollSnapshot {
     readonly commonStatus: string | null;
 }
 
-/**
+    /**
  * Подписчик общего поллера. `poll` — `null`, если ручка не ответила на этом тике;
  * `alive` — «подписка ещё жива» (её могли снять, пока обработчик ходил в сеть).
  */
@@ -463,8 +463,8 @@ export class ArcanumHost implements ReviewHost {
         });
     }
 
-    /**
-     * Черновик уходит в Арканум сразу (двухступенчатая модель, `docs/product.md §3`, принцип 6).
+/**
+     * Черновик уходит в Арканум сразу (двухступенчатая модель, `docs/spec.md`, принцип 6).
      * Две ручки на три случая контракта `CommentDraft`: `parentId` — ответ в тред отдельной
      * ручкой (якорь не передаётся, тред принадлежит корню); иначе общая ручка комментариев, где
      * `anchor` даёт инлайн в активной итерации, а `anchor: null` — комментарий уровня PR
@@ -545,9 +545,9 @@ export class ArcanumHost implements ReviewHost {
         return this.client.sendVoid('DELETE', commentPath(commentId));
     }
 
-    /**
+/**
      * Публикация пакетом: свои черновики → выборочная публикация → вердикт. Вердикт применяется,
-     * только если опубликовались все (`docs/design/SPEC-elements.md §4.5`): частичный провал оставляет ревью незавершённым,
+     * только если опубликовались все (`docs/spec.md`): частичный провал оставляет ревью незавершённым,
      * а несдавшиеся черновики — черновиками. `comment` вердикта не применяет вовсе.
      */
     async publishBatch(verdict: Verdict): Promise<PublishResult> {
@@ -586,8 +586,8 @@ export class ArcanumHost implements ReviewHost {
         await this.rememberViewed(fileId, viewed);
     }
 
-    /**
-     * Содержимое файла по обе стороны — топливо «Expand context» (`docs/design/SPEC-elements.md §2.13`). Хэши блобов
+/**
+     * Содержимое файла по обе стороны — топливо «Expand context» (`docs/spec.md`). Хэши блобов
      * живут в changelist, поэтому сначала гарантируем дифф итерации, потом читаем стороны из
      * локального `arc`. Гейты (бинарник, размер, отсутствующая сторона) считаются из changelist
      * до всякого чтения.
@@ -1792,7 +1792,7 @@ function lens(
     note: string | null,
     zones: readonly LensZone[] | null = null,
 ): Lens {
-    // Пустая линза приходит выключенной с объяснением — так же, как в фикстурах (`docs/design/SPEC-elements.md §4.2`).
+    // Пустая линза приходит выключенной с объяснением — так же, как в фикстурах (`docs/spec.md`).
     return {
         id,
         label,

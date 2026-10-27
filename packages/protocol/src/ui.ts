@@ -62,7 +62,7 @@ export type UiTask = z.infer<typeof uiTaskSchema>;
 /**
  * Доступность канала фидбека. Зависит только от токена Трекера
  * в окружении ревьюера — ни ревью-хост, ни живой воркер не нужны. Едет
- * в снапшоте, чтобы форма объясняла деградацию до отправки (`docs/design/SPEC-elements.md §1.1`).
+ * в снапшоте, чтобы форма объясняла деградацию до отправки (`docs/spec.md`).
  */
 export const uiFeedbackAvailabilitySchema = z.object({
     available: z.boolean(),
@@ -100,7 +100,7 @@ export const uiUpdateSchema = z.object({
 export type UiUpdate = z.infer<typeof uiUpdateSchema>;
 
 /**
- * Кап генерации (`docs/design/SPEC-elements.md §4.1`): бюджет payload урезал контекст скелета. Считает сервер
+ * Кап генерации (`docs/spec.md`): бюджет payload урезал контекст скелета. Считает сервер
  * при постановке `route.skeleton` (`payload-budget.ts`); UI пишет в шапке маршрута «план
  * покрывает N файлов из M, K машинных — одной остановкой» и поднимает баннер, если под
  * обрезку попали не-машинные файлы.
@@ -185,7 +185,7 @@ export type UiCancelResponse = z.infer<typeof uiCancelResponseSchema>;
  */
 /**
  * Выбор диффа. Без параметров — активная итерация хоста; `diffId` — сохранённая
- * итерация (и `gone` тоже: патч лежит локально, `docs/product.md §4a`); `base`+`head` — срез между
+ * итерация (и `gone` тоже: патч лежит локально, `docs/spec.md`); `base`+`head` — срез между
  * двумя итерациями («что нового» в читалке). Какую итерацию смотрит вкладка, знает
  * только UI (выбор в URL-фрагменте): сервер про «текущий вид» не спрашивают.
  */
@@ -249,11 +249,11 @@ export type UiReviewLensesResponse = z.infer<typeof uiReviewLensesResponseSchema
 /**
  * Состояние маршрута для UI. Фазы: `none` — генерация не запускалась и не нужна
  * (нет снапшота; вместе с `smallPr` различает «приглашение запустить скилл» и «малый PR —
- * маршрут не нужен»); `reading` — скелет в работе (`docs/design/README.md §6`, фаза A); `filling` —
+ * маршрут не нужен»); `reading` — скелет в работе (`docs/spec.md`, фаза A); `filling` —
  * план принят, секции достраиваются (§7–8); `ready`; `failed` — скелет не прошёл
  * валидацию/попытки исчерпаны (§12). Провал отдельной секции — не фаза, а
  * `status: 'failed'` её стопа. «Агент умер посреди генерации» отдельной фазой не является:
- * UI сочетает `filling` со статусом воркера (`docs/design/SPEC-elements.md §4.4`).
+ * UI сочетает `filling` со статусом воркера (`docs/spec.md`).
  */
 export const uiRoutePhaseSchema = z.enum(['none', 'reading', 'filling', 'ready', 'failed']);
 export type UiRoutePhase = z.infer<typeof uiRoutePhaseSchema>;
@@ -267,7 +267,7 @@ export const uiRouteFailureSchema = z.object({
 export type UiRouteFailure = z.infer<typeof uiRouteFailureSchema>;
 
 /**
- * «Маршрут устарел» (`docs/product.md §9`, `docs/design/README.md §9`): активная итерация хоста ушла вперёд от итерации
+ * «Маршрут устарел» (`docs/spec.md`, `docs/spec.md`): активная итерация хоста ушла вперёд от итерации
  * текущего снапшота. UI остаётся на итерации снапшота (якоря не дрейфуют), stale-баннер
  * предлагает перестроить маршрут или открыть новый дифф без него; авторегенерации нет.
  */
@@ -286,7 +286,7 @@ export type UiRouteStale = z.infer<typeof uiRouteStaleSchema>;
 export const uiRouteStateSchema = z.object({
     generation: generationSchema.optional(),
     phase: uiRoutePhaseSchema,
-    /** PR ниже порога маршрута (`docs/architecture.md §7.6`): генерация не ставится, UI открывается на полном диффе с пометкой. */
+    /** PR ниже порога маршрута (`docs/architecture.md`): генерация не ставится, UI открывается на полном диффе с пометкой. */
     smallPr: z.boolean(),
     /**
      * Текущий снапшот; есть с момента принятого скелета, в `filling` — частичный
@@ -316,7 +316,7 @@ export const uiReviewRouteResponseSchema = z.object({
 export type UiReviewRouteResponse = z.infer<typeof uiReviewRouteResponseSchema>;
 
 /**
- * Список снапшотов PR (пикер снапшотов в индикаторе, карточка «Snapshots» на Обзоре, `docs/design/README.md §6`).
+ * Список снапшотов PR (пикер снапшотов в индикаторе, карточка «Snapshots» на Обзоре, `docs/spec.md`).
  * `current` — текущий (ровно один, если снапшоты есть); `stale` — прошлый, его итерация
  * ещё в PR; `gone` — итерация снапшота ушла из PR (force-push), снапшот читаем по
  * локально сохранённому диффу. Прошлые снапшоты — только чтение.
@@ -346,7 +346,7 @@ export type UiReviewSnapshotsResponse = z.infer<typeof uiReviewSnapshotsResponse
  * живёт до приёмки нового скелета). Ставит `route.skeleton` даже без живого
  * воркера — задача ждёт в очереди, деградацию показывает индикатор агента.
  * `already_running` — только про `reading`/`filling` (генерация уже идёт).
- * `small_pr` — отказ: порог ручкой не обходится (`docs/architecture.md §7.6`).
+ * `small_pr` — отказ: порог ручкой не обходится (`docs/architecture.md`).
  */
 export const uiRouteGenerateRequestSchema = z.object({
     /**
@@ -365,7 +365,7 @@ export type UiRouteGenerateResponse = z.infer<typeof uiRouteGenerateResponseSche
 
 /**
  * Точечное дозаполнение одного незаполненного стопа: кнопка у слота
- * «не заполнена — агент остановился раньше» (`docs/design/SPEC-elements.md §4.3`). Стоп уходит в `queued`,
+ * «не заполнена — агент остановился раньше» (`docs/spec.md`). Стоп уходит в `queued`,
  * фаза — в `filling`, дальше работает штатная сверка; полная перегенерация на это
  * время отвечает `already_running`. `snapshotId` — против гонки со сменой снапшота:
  * id стопов между снапшотами не устойчивы. `stale_snapshot` — снапшот сменился;
@@ -416,7 +416,7 @@ export const uiChatAskResponseSchema = z.object({ exchange: chatExchangeSchema }
 export type UiChatAskResponse = z.infer<typeof uiChatAskResponseSchema>;
 
 /**
- * Остановка обмена («Stop», `docs/design/SPEC-elements.md §2.18`). `cancelled` — и для ждущего в очереди,
+ * Остановка обмена («Stop», `docs/spec.md`). `cancelled` — и для ждущего в очереди,
  * и для взятого в аренду: формальная отмена, воркер узнаёт при следующем вызове CLI
  * (`docs/protocol.md §5`). `noop` — обмен уже терминален.
  */
@@ -427,7 +427,7 @@ export const uiChatCancelResponseSchema = z.object({ outcome: z.enum(['cancelled
 export type UiChatCancelResponse = z.infer<typeof uiChatCancelResponseSchema>;
 
 /**
- * Повтор вопроса из `failed` или `cancelled` (`docs/design/SPEC-elements.md §2.18`: вопрос сохранён): тот же
+ * Повтор вопроса из `failed` или `cancelled` (`docs/spec.md`: вопрос сохранён): тот же
  * обмен возвращается в `queued`, ставится новая задача с тем же текстом и якорем.
  * `noop` — обмен не в терминальном провальном состоянии (`done` не повторяется).
  */
@@ -437,7 +437,7 @@ export type UiChatRetryRequest = z.infer<typeof uiChatRetryRequestSchema>;
 export const uiChatRetryResponseSchema = z.object({ outcome: z.enum(['retried', 'noop']) });
 export type UiChatRetryResponse = z.infer<typeof uiChatRetryResponseSchema>;
 
-/** Удаление заметки (`docs/design/SPEC-elements.md §2.16`). Историю чата не трогает; повторное удаление — no-op, тоже ack. */
+/** Удаление заметки (`docs/spec.md`). Историю чата не трогает; повторное удаление — no-op, тоже ack. */
 export const uiChatNoteDeleteRequestSchema = z.object({ noteId: agentNoteIdSchema });
 export type UiChatNoteDeleteRequest = z.infer<typeof uiChatNoteDeleteRequestSchema>;
 
@@ -494,7 +494,7 @@ export type UiDevUpdateAvailableRequest = z.infer<typeof uiDevUpdateAvailableReq
 
 /**
  * Глобальные настройки UI: один пользователь — одни настройки на все PR
- * (`docs/design/SPEC-elements.md §2.8`, `docs/design/README.md` «Diff mode is global»).
+ * (`docs/spec.md`, `docs/spec.md` «Diff mode is global»).
  * Живут на сервере в `~/.sherpa/settings.json`, не в браузере:
  * сервер каждого PR слушает случайный порт, origin новый — `localStorage` пуст.
  * Дефолты на каждом поле: отсутствующий или битый файл деградирует в дефолты, не в ошибку.
@@ -511,7 +511,7 @@ const uiSettingsFields = {
     theme: z.enum(['auto', 'dark', 'light']),
     /** Оформление Arcanum независимо от светлой, тёмной или системной темы. */
     arcanum: z.boolean(),
-    /** Размер текста интерфейса: `l` — та же шкала крупнее (`docs/design/SPEC-theming-2026-09-12.md §5`). */
+    /** Размер текста интерфейса: `l` — та же шкала крупнее (`docs/design/theme.md`). */
     textSize: z.enum(['m', 'l']),
     /**
      * Тур первого захода: `completedAt` — пройден или пропущен
@@ -581,7 +581,7 @@ export const uiPrStatePatchSchema = z.object(uiPrStateFields).partial();
 export type UiPrStatePatch = z.infer<typeof uiPrStatePatchSchema>;
 
 /**
- * Прогресс чтения (`docs/architecture.md §7.1`): только ручные отметки, никакого трекинга
+ * Прогресс чтения (`docs/architecture.md`): только ручные отметки, никакого трекинга
  * вьюпорта. `viewed` трёхзначен: `true` — ручная отметка, пинит `read`
  * навсегда; `false` — явное снятие (un-pin generated-дефолта или отмена своей
  * отметки); `null` — решения ревьюера нет, запись существует только ради
@@ -609,7 +609,7 @@ export const uiFileProgressSchema = z.object({
 });
 export type UiFileProgress = z.infer<typeof uiFileProgressSchema>;
 
-/** Отметка «просмотрено» остановки маршрута — персистится per PR (docs/design/README.md §State model). */
+/** Отметка «просмотрено» остановки маршрута — персистится per PR (docs/spec.md §State model). */
 export const uiStopProgressSchema = z.object({
     stopId: z.string().min(1),
     viewed: z.boolean(),
@@ -654,12 +654,12 @@ export const uiSetFileViewedResponseSchema = z.object({
 export type UiSetFileViewedResponse = z.infer<typeof uiSetFileViewedResponseSchema>;
 
 /**
- * Отметка «просмотрено» остановки маршрута (`docs/architecture.md §7.1`). Пишет отметку стопа
+ * Отметка «просмотрено» остановки маршрута (`docs/architecture.md`). Пишет отметку стопа
  * и seen-диапазоны его файлов одной транзакцией. Диапазоны считает UI от своей модели
  * диффа (якоря, обрезанные до реального диффа; для «Прочего» — непокрытые строки,
  * серверу без модели диффа их не вычислить) — сервер хранит их, привязав к стопу,
  * и не интерпретирует. Снятие отметки удаляет диапазоны только этого стопа и не
- * трогает ни диапазоны других стопов, ни ручные отметки файлов (`docs/design/SPEC-elements.md §2.10`).
+ * трогает ни диапазоны других стопов, ни ручные отметки файлов (`docs/spec.md`).
  * Запрос несёт `snapshotId`: опоздавшая запись прежнего маршрута не должна попасть
  * в новый стоп с тем же детерминированным id. Поле опционально для старых UI-бандлов.
  * Сама запись стопа в хост не зеркалится — переходы файлов в «прочитано» от покрытия
@@ -684,7 +684,7 @@ export const uiSetStopViewedResponseSchema = z.object({
 export type UiSetStopViewedResponse = z.infer<typeof uiSetStopViewedResponseSchema>;
 
 /**
- * Отметка «просмотрено» файла внутри остановки (`docs/design/SPEC-elements.md §2.10`): пишет
+ * Отметка «просмотрено» файла внутри остановки (`docs/spec.md`): пишет
  * seen-диапазоны карточки с привязкой к стопу и файлу, пин файлу не ставит и отметку стопа не
  * трогает — стоп отмечает UI, когда покрыты все его карточки. Снятие удаляет диапазоны этого
  * стопа по этому файлу и снимает отметку стопа: он больше не покрыт. Снапшот и зеркало в хост —
@@ -723,7 +723,7 @@ export const uiViewedMirrorRequestSchema = z.object({
 export type UiViewedMirrorRequest = z.infer<typeof uiViewedMirrorRequestSchema>;
 
 /**
- * Запись комментариев (двухступенчатая модель, `docs/product.md §3`, принцип 6): черновик
+ * Запись комментариев (двухступенчатая модель, `docs/spec.md`, принцип 6): черновик
  * сохраняется в хост немедленно, публикация пакетом — вердиктом. Успешная запись бампает
  * `threadsRevision` — истина приезжает перечитыванием ручки тредов по SSE-событию
  * `review`; до неё UI живёт оптимистичным состоянием. `saveDraft` возвращает
@@ -742,7 +742,7 @@ export type UiSaveDraftRequest = z.infer<typeof uiSaveDraftRequestSchema>;
 
 /**
  * Итог записи черновика: `saved` — хост принял, `buffered` — хост не ответил или
- * отказал, текст лежит в буфере сервера и будет повторён (`docs/design/SPEC-elements.md §4.5`
+ * отказал, текст лежит в буфере сервера и будет повторён (`docs/spec.md`
  * «сохраним, когда
  * связь вернётся»). Сетевые и валидационные ошибки самой ручки — по-прежнему HTTP-ошибки:
  * буферизуется только провал шага «сервер → хост».
@@ -816,7 +816,7 @@ export type UiDeleteCommentRequest = z.infer<typeof uiDeleteCommentRequestSchema
 /**
  * Публикация накопленного пакета в одном из режимов `capabilities.publishVerdicts`: один вызов
  * `publishBatch` хоста. Ответ — итог как есть: `verdictApplied: false` при любом провале
- * (`docs/design/SPEC-elements.md §4.5` — ревью НЕ считается завершённым, UI показывает
+ * (`docs/spec.md` — ревью НЕ считается завершённым, UI показывает
  * несдавшиеся из `failed`). Ретрай — новый вызов той же ручки: адаптер сам не хоронит
  * уже опубликованное (`publishedSilently`). Успех бампает `threadsRevision`
  * (черновики стали опубликованными) — истина приезжает ручкой тредов;

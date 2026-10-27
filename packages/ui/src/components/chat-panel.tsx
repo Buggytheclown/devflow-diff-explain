@@ -28,7 +28,7 @@ export interface ChatPanelProps {
     readonly anchor: UiChatAskAnchor | null;
     readonly focusRequest: number;
     /**
-     * Подставить текст в композер (docs/design/README.md §2, §10): вопрос не уходит — его читает, правит и
+     * Подставить текст в композер (docs/spec.md §10): вопрос не уходит — его читает, правит и
      * отправляет ревьюер. Запрос с новым `id` срабатывает и на том же тексте.
      */
     readonly prefillRequest?: { readonly id: number; readonly text: string } | null;
@@ -606,7 +606,7 @@ function ChatExchangeView({
 }
 
 /**
- * Пустое состояние (docs/design/SPEC-elements.md §2.18). Примеры кликабельны: клик подставляет вопрос в композер и
+ * Пустое состояние (docs/spec.md). Примеры кликабельны: клик подставляет вопрос в композер и
  * ничего не отправляет. Состояние `empty` бывает только у подключённого агента, поэтому
  * кликабельного обещания при отключённом агенте здесь не возникает.
  */

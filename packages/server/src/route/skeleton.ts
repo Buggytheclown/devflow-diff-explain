@@ -86,7 +86,7 @@ export function validateSkeleton(rawText: string, locale: Locale = 'ru'): RouteV
 /**
  * «Прочее»: заполнять нечего — статус `ready` сразу, якорей нет, содержимое (непокрытые
  * диапазоны) считает UI. UI прячет стоп сам, пока маршрут не достроен и при нуле
- * непокрытых строк (`docs/design/SPEC-elements.md §4.3`).
+ * непокрытых строк (`docs/spec.md`).
  */
 function otherStop(planIndex: number, locale: Locale): RouteStop {
     return {

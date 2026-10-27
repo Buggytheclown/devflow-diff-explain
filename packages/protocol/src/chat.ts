@@ -5,12 +5,12 @@ import { hostIdSchema } from './review.js';
 import { taskIdSchema } from './task.js';
 import { storyExplanationEvidenceSchema } from './story-evidence.js';
 
-/**
- * Чат с агентом и ИИ-заметки (`docs/product.md §7`, сценарий F2). Доменные схемы; ручки и SSE — в `ui.ts`.
+    /**
+ * Чат с агентом и ИИ-заметки (`docs/spec.md`, сценарий F2). Доменные схемы; ручки и SSE — в `ui.ts`.
  *
  * Модель данных — обмен (вопрос + ответ одной записью), а не лента реплик: статус
  * живёт в одном месте, «ответ без вопроса» непредставим, cancel/retry адресуют одну
- * сущность. В ленту из двух реплик (you/agent, `docs/design/README.md §4`) обмен
+ * сущность. В ленту из двух реплик (you/agent, `docs/spec.md`) обмен
  * разворачивает UI.
  */
 
@@ -36,9 +36,9 @@ export type ChatAnchor = z.infer<typeof chatAnchorSchema>;
 
 /**
  * Жизненный цикл обмена. `queued` — задача ждёт воркера (в том числе пока
- * генерируется маршрут — очередь честная, `docs/design/SPEC-elements.md §2.18`); `running` — воркер взял
+ * генерируется маршрут — очередь честная, `docs/spec.md`); `running` — воркер взял
  * задачу. Терминальные: `done` — ответ принят; `failed` — ошибка или исчерпаны
- * попытки, вопрос сохранён (`docs/design/SPEC-elements.md §3`), `retry` ставит новую задачу; `cancelled` —
+ * попытки, вопрос сохранён (`docs/spec.md`), `retry` ставит новую задачу; `cancelled` —
  * остановлен ревьюером (воркер, занятый отменённой задачей, узнаёт об отмене при
  * следующем вызове CLI — `docs/protocol.md §5`, UI честно показывает «агент ещё занят»).
  */
@@ -86,7 +86,7 @@ export const chatExchangeSchema = z.object({
 export type ChatExchange = z.infer<typeof chatExchangeSchema>;
 
 /**
- * ИИ-заметка у кода (`docs/design/SPEC-elements.md §2.16`): принятый ответ на вопрос с якорем сервер
+ * ИИ-заметка у кода (`docs/spec.md`): принятый ответ на вопрос с якорем сервер
  * закрепляет заметкой в той же транзакции. Локальна — в бекенд ревью не уходит
  * никогда. `text` — копия ответа: заметка самодостаточна, живёт и удаляется
  * независимо от истории чата. Отметку «закреплено заметкой» у обмена UI выводит
@@ -113,8 +113,8 @@ export const agentNoteSchema = z.object({
     anchor: chatAnchorSchema,
     /** Markdown — копия принятого ответа. */
     text: z.string().min(1),
-    /**
-     * Диапазон заметки затронут пушем и якорь перенести не удалось (`docs/design/SPEC-elements.md §2.16`): заметка
+/**
+     * Диапазон заметки затронут пушем и якорь перенести не удалось (`docs/spec.md`): заметка
      * уходит из кода, остаётся в чате с пометкой; `anchor` при этом — последний удачный.
      */
     lostAnchor: z.boolean(),
