@@ -3,7 +3,7 @@ import type {
     HostId,
     Iteration,
     PrDiff,
-    ReviewHost,
+    ReviewSource,
     RouteSnapshot,
     UiRouteStale,
     UiRouteState,
@@ -50,7 +50,7 @@ type CarryRefusal = 'permanent' | 'temporary';
 
 export interface IterationFeedOptions {
     /** null — у PR нет хост-адаптера: итераций не будет никогда. */
-    readonly host: ReviewHost | null;
+    readonly host: ReviewSource | null;
     readonly iterations: IterationStore;
     /**
      * Текущий снапшот: от него считается `stale`, его смена пересчитывает затронутые стопы.
@@ -74,7 +74,7 @@ export type ProgressCarrier = Pick<
 >;
 
 export class IterationFeed {
-    private readonly host: ReviewHost | null;
+    private readonly host: ReviewSource | null;
     private readonly store: IterationStore;
     private readonly route: Pick<RouteStore, 'current' | 'subscribe' | 'listSnapshots'>;
     private readonly notes: NoteCarrier | null;
@@ -400,7 +400,7 @@ export class IterationFeed {
      * назначен: соврать «якорь потерян» из-за сетевой ошибки нельзя, это необратимо.
      */
     private async noteCarry(
-        host: ReviewHost,
+        host: ReviewSource,
         from: HostId,
         active: Iteration,
     ): Promise<{ map: IterationMap; refusal: string | null } | null> {
@@ -454,7 +454,7 @@ export class IterationFeed {
      * Карта переноса строк для заметок. Наружу отдаёт только отказ хоста на срезе: по нему и
      * решается, повторять перенос или хоронить якоря.
      */
-    private async noteMap(host: ReviewHost, from: HostId, active: Iteration): Promise<IterationMap> {
+    private async noteMap(host: ReviewSource, from: HostId, active: Iteration): Promise<IterationMap> {
         const fromIteration =
             this.list.find((iteration) => iteration.diffId === from) ?? this.store.get(from)?.iteration ?? null;
         if (fromIteration === null) {
@@ -474,7 +474,7 @@ export class IterationFeed {
      * Затронутые остановки и перенос якорей заметок стартуют после пуша одновременно, и до
      * первого ответа кэш хранилища ещё пуст — второй такой же запрос ждёт первого.
      */
-    private interdiff(host: ReviewHost, base: HostId, head: HostId): Promise<PrDiff> {
+    private interdiff(host: ReviewSource, base: HostId, head: HostId): Promise<PrDiff> {
         const pair = `${base} ${head}`;
         const inflight = this.interdiffs.get(pair);
         if (inflight !== undefined) {
@@ -490,7 +490,7 @@ export class IterationFeed {
         return loading;
     }
 
-    private hostCapabilities(host: ReviewHost): Promise<HostCapabilities> {
+    private hostCapabilities(host: ReviewSource): Promise<HostCapabilities> {
         this.capabilities ??= host
             .getPr()
             .then((pr) => pr.capabilities)
@@ -611,7 +611,7 @@ export class IterationFeed {
      * Есть ли чем переносить прогресс. Хост без срезов отвергнет любую пару, и перебирать
      * источники незачем; неудачный опрос возможностей — про хост, а не про источник: повтор.
      */
-    private async progressSlices(host: ReviewHost, active: Iteration): Promise<boolean> {
+    private async progressSlices(host: ReviewSource, active: Iteration): Promise<boolean> {
         try {
             const { iterations } = await this.hostCapabilities(host);
             if (!iterations) {
@@ -768,7 +768,7 @@ export class IterationFeed {
      * Арканума стоит 2.8–3.7 с, а пересчёт списка на каждую сданную секцию обязан быть дешёвым.
      * Пара живёт до следующего пуша, поэтому слот один, а не кэш.
      */
-    private iterationMap(host: ReviewHost, snapshot: RouteSnapshot, active: Iteration): Promise<IterationMap> {
+    private iterationMap(host: ReviewSource, snapshot: RouteSnapshot, active: Iteration): Promise<IterationMap> {
         const pair = `${snapshot.diffId} ${active.diffId}`;
         if (this.map?.pair !== pair) {
             this.map = {

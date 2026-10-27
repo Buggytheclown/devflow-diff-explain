@@ -21,3 +21,5 @@ export * from './ui.js';
 export * from './version.js';
 
 export * from './flow-diagram.js';
+
+export * from './explanation.js';

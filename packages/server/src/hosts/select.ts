@@ -1,6 +1,6 @@
 import type { FixtureName } from '@sherpa/fixtures';
 import { FIXTURE_NAMES, makeFixtureHost } from '@sherpa/fixtures';
-import type { AnchorPosition, Iteration, ReviewHost, ReviewUser, Verdict } from '@sherpa/protocol';
+import type { AnchorPosition, Iteration, ReviewHost, ReviewSource, ReviewUser, Verdict } from '@sherpa/protocol';
 import {
     ARCANUM_PR_KEY_PREFIX,
     GITHUB_PR_KEY_PREFIX,
@@ -95,6 +95,19 @@ export interface FeedbackHost {
         result: { readonly replies: readonly FeedbackReply[]; readonly summary: string },
         author: ReviewUser,
     ): Promise<void>;
+}
+
+/** Выбранный источник для объяснения не предоставляет возможностей записи ревью. */
+export interface SelectedSource {
+    readonly name: string;
+    readonly host: ReviewSource;
+    readonly advanceIteration?: () => Iteration;
+}
+export type ReviewSourceFactory = (prKey: string, options: SelectHostOptions) => SelectedSource | null;
+export function selectReviewSource(prKey: string, options: SelectHostOptions = {}): SelectedSource | null {
+    const selected = selectReviewHost(prKey, options);
+    return selected === null ? null : { name: selected.name, host: selected.host,
+        ...(selected.advanceIteration === undefined ? {} : { advanceIteration: selected.advanceIteration }) };
 }
 
 export interface SelectedHost {

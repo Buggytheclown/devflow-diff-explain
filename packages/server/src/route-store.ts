@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type {
+    ExplanationSnapshot,
     FlowState,
     HostId,
     Locale,
@@ -14,6 +15,9 @@ import type {
     UiRouteState,
 } from '@sherpa/protocol';
 import { localeSchema, routeSnapshotSchema, uiGenerationCapSchema, uiRouteStateSchema } from '@sherpa/protocol';
+
+import type { AcceptedExplanation, ExplanationFilling } from './story.js';
+import { reviewProjection, storedSnapshot, restoreSnapshot } from './explanation-compat.js';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
 import { transaction } from './db.js';
@@ -85,7 +89,7 @@ interface TransactionStep {
 }
 
 export interface AcceptedSkeletonInput {
-    readonly skeleton: AcceptedSkeleton;
+    readonly skeleton: AcceptedSkeleton | AcceptedExplanation;
     readonly presentation?: 'legacy' | 'story';
     /** Дифф, по которому строился маршрут: из него снапшот берёт коммит и итерацию. */
     readonly diff: PrDiff;
@@ -230,7 +234,8 @@ export class RouteStore {
         });
     }
 
-    generationStoryVersion(): number {
+    /** Эпоха формата задания; прежний ключ meta сохранён для рестарта незавершённых задач. */
+    generationTaskEpoch(): number {
         return this.db.prepare("SELECT value FROM meta WHERE key='generation_story_contract_version'").get()?.value === '2' ? 2 : 1;
     }
 
@@ -255,7 +260,7 @@ export class RouteStore {
             summary: input.skeleton.summary,
             ...(input.skeleton.storyContractVersion === undefined ? {} : { storyContractVersion: input.skeleton.storyContractVersion }),
             ...(input.skeleton.summaryEvidence === undefined ? {} : { summaryEvidence: input.skeleton.summaryEvidence }),
-            stops: input.skeleton.stops,
+            stops: input.skeleton.stops.map((stop) => 'tier' in stop ? stop : reviewProjection(stop)),
             tourOrder: input.skeleton.tourOrder,
             contentHash: null,
         };
@@ -270,7 +275,7 @@ export class RouteStore {
      * Принятые заполнения секции легли в плановые слоты. Провенанс пишется в стоп, только если
      * он разошёлся со снапшотным: агент сменился посреди генерации (docs/design/SPEC-elements.md §4.4).
      */
-    applyFillings(fillings: readonly RouteStopFilling[], provenance: RouteProvenance): void {
+    applyFillings(fillings: readonly (RouteStopFilling | ExplanationFilling)[], provenance: RouteProvenance): void {
         const snapshot = this.state.snapshot;
         if (snapshot === null) {
             return;
@@ -576,7 +581,7 @@ export class RouteStore {
                     snapshot.diffId,
                     snapshot.createdAt,
                     snapshot.previousSnapshotId,
-                    JSON.stringify(snapshot),
+                    JSON.stringify(storedSnapshot(snapshot)),
                     snapshot.contentHash,
                 );
         }
@@ -615,7 +620,7 @@ export class RouteStore {
     private parseSnapshotRow(row: RouteSnapshotRow): RouteSnapshot | null {
         try {
             return routeSnapshotSchema.parse(
-                withSnapshotDefaults(JSON.parse(row.snapshot_json) as unknown, (diffId) =>
+                withSnapshotDefaults(restoreSnapshot(JSON.parse(row.snapshot_json) as unknown), (diffId) =>
                     this.baseCommitOf(diffId),
                 ),
             );
@@ -685,6 +690,11 @@ export class RouteStore {
  * в объектах хранилища он зависеть не должен.
  */
 export function contentHashOf(snapshot: RouteSnapshot): string {
+    if (snapshot.presentation === 'story' && snapshot.storyContractVersion !== undefined) {
+        const saved = storedSnapshot(snapshot) as ExplanationSnapshot;
+        const { snapshotId: _id, commit: _commit, baseCommit: _base, diffId: _diff, createdAt: _created, provenance: _provenance, previousSnapshotId: _previous, contentHash: _hash, ...content } = saved;
+        return createHash('sha256').update(JSON.stringify({ ...content, stops: content.stops.map(({ provenance: _sectionProvenance, ...block }) => block) })).digest('hex').slice(0, CONTENT_HASH_LENGTH);
+    }
     const payload = JSON.stringify({
         summary: snapshot.summary,
         ...(snapshot.storyContractVersion !== undefined ? { storyContractVersion: snapshot.storyContractVersion, summaryEvidence: snapshot.summaryEvidence } : {}),

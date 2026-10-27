@@ -10,7 +10,7 @@ import type {
     Locale,
     PrDiff,
     PrMeta,
-    ReviewHost,
+    ReviewSource,
     UiChatAskAnchor,
     UiChatCancelResponse,
     UiChatRetryResponse,
@@ -38,7 +38,7 @@ export interface ChatOrchestratorOptions {
     readonly store: ChatStore;
     readonly route: RouteStore;
     readonly queue: TaskQueue;
-    readonly host: ReviewHost | null;
+    readonly host: ReviewSource | null;
     readonly payloadDir: string;
     /** Локальное хранилище патчей итераций; `null` — сохранять дифф некуда (тесты без БД). */
     readonly iterations?: IterationStore | null;
@@ -60,7 +60,7 @@ export class ChatOrchestrator {
     private readonly store: ChatStore;
     private readonly route: RouteStore;
     private readonly queue: TaskQueue;
-    private readonly host: ReviewHost | null;
+    private readonly host: ReviewSource | null;
     private readonly payloadDir: string;
     private readonly iterations: IterationStore | null;
     private readonly iterationFeed: IterationFeed | null;
@@ -441,7 +441,7 @@ export class ChatOrchestrator {
         return [...chatResultErrors(result, localeOf(exchange)), ...chatCodeLinkErrors(result, diff, exchange.anchor)];
     }
 
-    private async loadPinnedContext(host: ReviewHost, diffId: string, meta?: PrMeta | null): Promise<PrContext> {
+    private async loadPinnedContext(host: ReviewSource, diffId: string, meta?: PrMeta | null): Promise<PrContext> {
         const stored = this.iterations?.get(diffId) ?? null;
         if (stored === null) {
             throw new RpcFailure(

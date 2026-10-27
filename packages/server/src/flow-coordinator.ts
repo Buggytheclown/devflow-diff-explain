@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { FlowContext, FlowDiagram, FlowState, PrDiff, ReviewHost, RouteSnapshot } from '@sherpa/protocol';
+import type { FlowContext, FlowDiagram, FlowState, PrDiff, ReviewSource, RouteSnapshot } from '@sherpa/protocol';
 import { flowDiagramResultSchema, generateJsonSchemas } from '@sherpa/protocol';
 import type { TaskQueue, TaskRecord, TaskResultAcceptance } from './queue.js';
 import type { RouteStore } from './route-store.js';
@@ -11,7 +11,7 @@ import type { SharedPayloadStore } from './shared-payload.js';
 import { diffKeyOf } from './shared-payload.js';
 
 interface Options {
-    store: RouteStore; queue: TaskQueue; host: ReviewHost | null; dir: string; shared: SharedPayloadStore;
+    store: RouteStore; queue: TaskQueue; host: ReviewSource | null; dir: string; shared: SharedPayloadStore;
     loadDiff: (id: string) => Promise<PrDiff>;
 }
 

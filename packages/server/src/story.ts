@@ -1,59 +1,65 @@
 import { z } from 'zod';
-import type { ReadableExample, GuidedFile, Locale, PrDiff, RouteStop } from '@sherpa/protocol';
+import type { ExplanationBlock, ReadableExample, GuidedFile, Locale, PrDiff, StoryEvidenceBlock } from '@sherpa/protocol';
 import { readableSkeletonResultSchema, readableSectionResultSchema, guidedSkeletonResultSchema, guidedSectionResultSchema, storySkeletonResultSchema, storySectionResultSchema } from '@sherpa/protocol';
 
 import { walkPatch } from './route/diff-index.js';
 import { storyEvidenceResolver } from './story-evidence.js';
 import { explanationRules } from './explanation-rules.js';
-import { paragraphMarkupErrors } from './route/paragraph-markup.js';
+import { markupErrors, paragraphMarkupErrors } from './route/paragraph-markup.js';
 import { parseResult } from './route/raw-result.js';
-import { validateSkeleton } from './route/skeleton.js';
-import type { AcceptedSkeleton, RouteStopFilling, RouteValidation } from './route/types.js';
+import type { RouteValidation } from './route/types.js';
 import { voiceErrors } from './route/voice.js';
 
-/** Совместимая форма хранения; важность и покрытие не являются частью рассказа. */
-export function validateStorySkeleton(raw: string, diff: PrDiff, locale: Locale): RouteValidation<AcceptedSkeleton> {
+/** Принятый план и заполнение не зависят от модели ревью. */
+export interface AcceptedExplanation {
+    summary: string; storyContractVersion: 2 | 3 | 4; summaryEvidence: StoryEvidenceBlock;
+    stops: ExplanationBlock[]; tourOrder: string[]; intents: Map<number, string>;
+}
+export interface ExplanationFilling {
+    planIndex: number; paragraph: string; storyEvidence?: StoryEvidenceBlock;
+    guidedFiles?: GuidedFile[]; example?: ReadableExample | null;
+}
+
+export function validateStorySkeleton(raw: string, diff: PrDiff, locale: Locale): RouteValidation<AcceptedExplanation> {
     const parsed = parseResult(raw, z.union([readableSkeletonResultSchema, guidedSkeletonResultSchema, storySkeletonResultSchema]), 'story outline');
     if (!parsed.ok) return parsed;
     const evidence = storyEvidenceResolver(diff)(parsed.value.evidence, parsed.value.summary);
     if (!evidence.ok) return evidence;
-    const adapted = validateSkeleton(JSON.stringify({
-        summary: parsed.value.summary,
-        stops: parsed.value.stops.map((stop) => ({ title: stop.title, intent: stop.intent, tier: 'medium' })),
-        tourOrder: parsed.value.stops.map((_, index) => index + 1),
-    }), locale);
-    if (!adapted.ok) return adapted;
     const outline = parsed.value;
-    const errors: string[] = [];
+    const errors = [
+        ...voiceErrors('skeleton.summary', outline.summary, locale),
+        ...markupErrors('skeleton.summary', 'summary', outline.summary),
+        ...outline.stops.flatMap((stop, index) => voiceErrors(`skeleton.stops[${String(index)}].title`, stop.title, locale)),
+    ];
     const owners = new Set<string>();
-    const stops = adapted.value.stops.filter((stop) => stop.tier !== 'other').map((stop, index) => {
-        if (outline.contractVersion === 2) return stop;
-        const planned = outline.stops[index];
+    const stops: ExplanationBlock[] = outline.stops.map((planned, index) => {
+        const stop: ExplanationBlock = { id: `s${String(index + 1).padStart(2, '0')}`, planIndex: index + 1, title: planned.title, status: 'queued', paragraph: null, validationNotes: [], provenance: null };
+        if (!('files' in planned)) return stop;
         const resolveFile = (filePath: string) => {
             const file = diff.files.find((entry) => entry.path === filePath);
             if (file === undefined) errors.push(`Unknown canonical changed-file path: ${filePath}.`);
             return file === undefined ? [] : [{ fileId: file.fileId, path: file.path }];
         };
-        const files = (planned?.files ?? []).flatMap(resolveFile);
+        const files = planned.files.flatMap(resolveFile);
         for (const file of files) {
             if (owners.has(file.fileId)) errors.push(`Assign ${file.path} to exactly one block; use relatedFiles for cross-links.`);
             owners.add(file.fileId);
         }
         return { ...stop, guidedFiles: files.map((file) => ({ ...file, explanation: null, annotations: [] })),
-            relatedFiles: (planned?.relatedFiles ?? []).flatMap(resolveFile) };
+            relatedFiles: planned.relatedFiles.flatMap(resolveFile) };
     });
     if (outline.contractVersion !== 2) for (const file of diff.files) {
         if (!owners.has(file.fileId)) errors.push(`Assign every changed file, including ${file.path}, to a primary block.`);
     }
     if (errors.length > 0) return { ok: false, errors };
-    return { ok: true, value: { ...adapted.value, storyContractVersion: outline.contractVersion, summaryEvidence: evidence.value,
-        stops, tourOrder: adapted.value.tourOrder.filter((id) => id !== 'other'),
+    return { ok: true, value: { summary: outline.summary, storyContractVersion: outline.contractVersion, summaryEvidence: evidence.value,
+        stops, tourOrder: stops.map((stop) => stop.id), intents: new Map(outline.stops.map((stop, index) => [index + 1, stop.intent])),
     } };
 }
 
 export function validateStorySection(
-    raw: string, targets: readonly number[], diff: PrDiff, locale: Locale, plannedStops?: readonly RouteStop[], expectedVersion?: number,
-): RouteValidation<RouteStopFilling[]> {
+    raw: string, targets: readonly number[], diff: PrDiff, locale: Locale, plannedStops?: readonly ExplanationBlock[], expectedVersion?: number,
+): RouteValidation<ExplanationFilling[]> {
     const parsed = parseResult(raw, z.union([readableSectionResultSchema, guidedSectionResultSchema, storySectionResultSchema]), 'story');
     if (!parsed.ok) return parsed;
     const errors: string[] = [];
@@ -74,7 +80,7 @@ export function validateStorySection(
         if (!checked.ok) { errors.push(...checked.errors); return undefined; }
         return { text: value.text, evidence: checked.value };
     };
-    const fillings = parsed.value.stops.map((stop): RouteStopFilling => {
+    const fillings = parsed.value.stops.map((stop): ExplanationFilling => {
         const at = `story.stops[${String(stop.planIndex)}]`;
         errors.push(...paragraphMarkupErrors(`${at}.paragraph`, stop.planIndex, stop.paragraph),
             ...voiceErrors(`${at}.paragraph`, stop.paragraph, locale));
@@ -100,9 +106,9 @@ export function validateStorySection(
                 return [{ path: file.path, explanation: file.explanation, annotations: file.annotations, fileId: source.fileId, ...(sample === undefined ? {} : { example: sample }) }];
             });
         }
-        return { ...('example' in stop ? { example: example(stop.example) ?? null } : {}), ...(guidedFiles === undefined ? {} : { guidedFiles }), planIndex: stop.planIndex, paragraph: stop.paragraph, bridge: null, anchors: [],
+        return { ...('example' in stop ? { example: example(stop.example) ?? null } : {}), ...(guidedFiles === undefined ? {} : { guidedFiles }), planIndex: stop.planIndex, paragraph: stop.paragraph,
             ...(evidence.ok ? { storyEvidence: evidence.value } : {}),
-            tests: [], droppedClaims: 0, validationNotes: [], change: null };
+        };
     });
     return errors.length === 0 ? { ok: true, value: fillings } : { ok: false, errors };
 }

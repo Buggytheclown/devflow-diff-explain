@@ -457,6 +457,8 @@ describe('адаптер Арканума: чтение', () => {
     });
 
     it('при идущем опросе active-diff читается один раз на все методы итерации', async () => {
+        // Проверяем один интервал кэша: нагрузка машины не должна сдвигать время между вызовами.
+        vi.useFakeTimers();
         const calls = new Map<string, number>();
         const host = makeHost({ calls });
         const stop = host.watchThreads(() => undefined);
@@ -469,6 +471,7 @@ describe('адаптер Арканума: чтение', () => {
             expect(calls.get('active-diff')).toBe(1);
         } finally {
             stop();
+            vi.useRealTimers();
         }
     });
 

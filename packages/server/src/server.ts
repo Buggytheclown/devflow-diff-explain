@@ -18,8 +18,8 @@ import { FeedbackOrchestrator } from './feedback-orchestrator.js';
 import type { FeedbackIntegrationOptions } from './feedback-routes.js';
 import { createFeedbackRoutes, feedbackAvailability } from './feedback-routes.js';
 import { FeedbackStore } from './feedback-store.js';
-import type { ReviewHostFactory } from './hosts/select.js';
-import { selectReviewHost } from './hosts/select.js';
+import type { ReviewHostFactory, ReviewSourceFactory } from './hosts/select.js';
+import { selectReviewHost, selectReviewSource } from './hosts/select.js';
 import type { RequestListenerOptions, Route } from './http.js';
 import { createRequestListener } from './http.js';
 import { DEFAULT_IDLE_SECONDS, IdleWatch } from './idle.js';
@@ -116,6 +116,8 @@ export interface StartServerOptions {
      * которым живой Арканум не нужен (`() => null` — сервер без ревью-ручек).
      */
     reviewHostFactory?: ReviewHostFactory;
+    /** Источник кода для объяснения; методов записи и чтения тредов не требует. */
+    reviewSourceFactory?: ReviewSourceFactory;
     /**
      * Каталог проекта локального ревью (`--repo`), база сравнения (`--base`) и ветка, на которой
      * CLI построил ключ (`--branch`): нужны только локальным ключам `local-*`. Без них локальный хост
@@ -272,18 +274,17 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             iterations: iterationStore,
             ...(options.now === undefined ? {} : { now: options.now }),
         });
-        const reviewHost = (options.reviewHostFactory ?? selectReviewHost)(prKey, {
-            sherpaDir,
-            repo: options.repo ?? null,
-            base: options.base ?? null,
-            branch: options.branch ?? null,
-            verdicts: options.verdicts ?? null,
-        });
-        const advanceIteration = reviewHost?.advanceIteration;
+        const hostOptions = { sherpaDir, repo: options.repo ?? null, base: options.base ?? null,
+            branch: options.branch ?? null, verdicts: options.verdicts ?? null };
+        const reviewHost = options.presentation === 'story' ? null : (options.reviewHostFactory ?? selectReviewHost)(prKey, hostOptions);
+        // Полная фабрика остаётся совместимым входом для прежних интеграций и фикстур.
+        const source = options.presentation === 'story'
+            ? (options.reviewSourceFactory ?? options.reviewHostFactory ?? selectReviewSource)(prKey, hostOptions) : reviewHost;
+        const advanceIteration = source?.advanceIteration;
         // Без хоста ревью-событий не бывает вовсе — SSE-канал остаётся каналом состояния.
         // Смена статуса ревью (чужой шип) перечитывает мету: вердикты уедут в снапшот UI.
         const reviewFeed =
-            reviewHost === null || options.presentation === 'story'
+            reviewHost === null
                 ? null
                 : new ReviewFeed(reviewHost.host, {
                       ...(reviewHost.watchStatus === undefined ? {} : { watchStatus: reviewHost.watchStatus }),
@@ -292,7 +293,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                       },
                   });
         // Мета PR едет в снапшоте, а `buildState` синхронна: сетевой `getPr()` живёт в кеше.
-        const prMeta = new PrMetaCache({ host: reviewHost?.host ?? null });
+        const prMeta = new PrMetaCache({ host: source?.host ?? null });
         // Буфер черновиков: текст, который хост ещё не принял, переживает и падение
         // хоста, и перезагрузку вкладки, и перезапуск сервера.
         const draftBuffer = options.presentation === 'story' ? null : new DraftBufferWriter({
@@ -326,10 +327,10 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         const chatStore = new ChatStore({ db, createNotes: options.presentation !== 'story', ...(options.now === undefined ? {} : { now: options.now }) });
         // Итерации PR: один вотчер на сервер — из него растут `uiState.iterations` и `stale`.
         const iterationFeed =
-            reviewHost === null
+            source === null
                 ? null
                 : new IterationFeed({
-                      host: reviewHost.host,
+                      host: source.host,
                       iterations: iterationStore,
                       route: routeStore,
                       notes: options.presentation === 'story' ? null : chatStore,
@@ -346,7 +347,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             store: routeStore,
             queue,
             registry: workerRegistry,
-            host: reviewHost?.host ?? null,
+            host: source?.host ?? null,
             payloadDir: routePayloadDirOf(sherpaDir, prKey),
             shared: sharedPayload,
             progress: options.presentation === 'story' ? null : progress,
@@ -359,7 +360,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             store: chatStore,
             route: routeStore,
             queue,
-            host: reviewHost?.host ?? null,
+            host: source?.host ?? null,
             payloadDir: chatPayloadDirOf(sherpaDir, prKey),
             iterations: iterationStore,
             iterationFeed,
@@ -416,12 +417,12 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 prKey,
                 queue,
                 registry: workerRegistry,
-                reviewHost: reviewHost?.name ?? null,
+                reviewHost: source?.name ?? null,
                 reviewFeed,
                 iterationFeed,
                 prMeta,
                 update: updateChecker,
-                development: options.development ?? reviewHost?.name === 'fixture',
+                development: options.development ?? source?.name === 'fixture',
                 feedback: feedbackAvailability(options.feedback),
                 progress,
                 route: routeStore,
@@ -430,7 +431,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 shutdownSignal: shutdownController.signal,
             }),
             ...(draftBuffer === null || progress === null ? createReadRoutes({
-                host: reviewHost?.host ?? null, prMeta, iterations: iterationStore, iterationFeed,
+                host: source?.host ?? null, prMeta, iterations: iterationStore, iterationFeed,
                 blobs: new BlobCache(sherpaDir, blobsDirOf(sherpaDir, prKey)),
             }) : createReviewRoutes({
                 host: reviewHost?.host ?? null, reviewFeed, progress, route: routeStore, prMeta,
@@ -451,9 +452,9 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 },
             }),
             // Состояние UI этого PR (свёртки, история палитры) — локальное, ревью-хост ему не нужен.
-            ...createPrStateRoutes({
+            ...(options.presentation === 'story' ? [] : createPrStateRoutes({
                 prState: new PrStateStore(options.now === undefined ? { db } : { db, now: options.now }),
-            }),
+            })),
             ...createRouteRoutes({ store: routeStore, orchestrator: routeOrchestrator, iterationFeed }),
             ...createChatRoutes({ store: chatStore, orchestrator: chatOrchestrator }),
             // Дев-ручки есть только у фикстурного хоста; у остальных этих маршрутов не существует.

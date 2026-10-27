@@ -1,4 +1,4 @@
-import type { PrMeta, ReviewHost } from '@sherpa/protocol';
+import type { PrMeta, ReviewSource } from '@sherpa/protocol';
 import { prMetaSchema } from '@sherpa/protocol';
 
 /** Через столько повторяем первую загрузку меты, пока хост не ответил ни разу. */
@@ -6,7 +6,7 @@ const RETRY_INTERVAL_MS = 30_000;
 
 export interface PrMetaCacheOptions {
     /** null — у PR нет хост-адаптера: мета останется null навсегда. */
-    readonly host: ReviewHost | null;
+    readonly host: ReviewSource | null;
     readonly retryIntervalMs?: number;
 }
 
@@ -17,7 +17,7 @@ export interface PrMetaCacheOptions {
  * рисует заглушки. Каждое обновление будит подписчиков — снапшот с новой метой уезжает по SSE.
  */
 export class PrMetaCache {
-    private readonly host: ReviewHost | null;
+    private readonly host: ReviewSource | null;
     private readonly retryIntervalMs: number;
     private readonly listeners = new Set<() => void>();
     private meta: PrMeta | null = null;

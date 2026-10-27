@@ -1,3 +1,4 @@
+import { reviewProjection } from './explanation-compat.js';
 import { describe, expect, it } from 'vitest';
 import { explanationText, routeSnapshotSchema } from '@sherpa/protocol';
 import { mediumDiff, mediumReadySnapshot } from './route/fixture-support.js';
@@ -15,7 +16,7 @@ const outline = { contractVersion: 3, summary, evidence: evidence(summary), stop
 function accepted() {
     const result = validateStorySkeleton(JSON.stringify(outline), diff, 'ru');
     if (!result.ok) throw new Error(result.errors.join('\n'));
-    return result.value;
+    return { ...result.value, stops: result.value.stops.map(reviewProjection) };
 }
 function section() { return { contractVersion: 3, stops: accepted().stops.map((stop) => ({ planIndex: stop.planIndex,
     paragraph: 'Обработчик использует обновлённый контракт.', evidence: evidence('Обработчик использует обновлённый контракт.'),

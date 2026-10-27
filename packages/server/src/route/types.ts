@@ -1,3 +1,4 @@
+import type { ExplanationFilling } from '../story.js';
 import type { ReadableExample, GuidedFile, RouteAnchor, RouteStop, RouteStopChange, RouteTestClaim, StoryEvidenceBlock } from '@sherpa/protocol';
 
 /**
@@ -45,19 +46,6 @@ export interface RouteStopFilling {
 }
 
 /** Плановый слот + заполнение = готовый стоп снапшота. */
-export function applyFilling(stop: RouteStop, filling: RouteStopFilling): RouteStop {
-    return {
-        ...stop,
-        status: 'ready',
-        paragraph: filling.paragraph,
-        bridge: filling.bridge,
-        anchors: filling.anchors,
-        ...(filling.storyEvidence === undefined ? {} : { storyEvidence: filling.storyEvidence }),
-        ...(filling.guidedFiles === undefined ? {} : { guidedFiles: filling.guidedFiles }),
-        ...(filling.example === undefined ? {} : { example: filling.example }),
-        tests: filling.tests,
-        droppedClaims: filling.droppedClaims,
-        validationNotes: filling.validationNotes,
-        change: filling.change,
-    };
+export function applyFilling(stop: RouteStop, filling: RouteStopFilling | ExplanationFilling): RouteStop {
+    return { ...stop, ...filling, status: 'ready' };
 }

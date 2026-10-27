@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { FileDiff, Locale, PrDiff, PrMeta, RouteStop, StoryEvidenceBlock, UiGenerationCap } from '@sherpa/protocol';
+import type { ExplanationBlock, FileDiff, Locale, PrDiff, PrMeta, RouteStop, StoryEvidenceBlock, UiGenerationCap } from '@sherpa/protocol';
 import { generateJsonSchemas } from '@sherpa/protocol';
 
 import { storyGuide } from './story.js';
@@ -170,7 +170,9 @@ export class RoutePayloadWriter {
     ): EnqueueInput {
         const locale = context.locale;
         const name = `section-${planIndexes.map(pad2).join('-')}-plan.md`;
-        const plan = this.writeFile(name, sectionPlanContext(planIndexes, stops, intents, locale) + (context.presentation === 'story' ? `\n## Accepted ordered file assignments\n\n${JSON.stringify(stops.filter((stop) => planIndexes.includes(stop.planIndex)).map((stop) => ({ planIndex: stop.planIndex, files: stop.guidedFiles, relatedFiles: stop.relatedFiles })))}\n\n## Already shown introduction\n\n${context.introduction ?? ''}\n\n## Accepted introduction evidence\n\n${JSON.stringify(context.introductionEvidence ?? null)}\n` : ''));
+        const plan = this.writeFile(name, context.presentation === 'story'
+            ? explanationPlanContext(planIndexes, stops, intents, context)
+            : sectionPlanContext(planIndexes, stops, intents, locale));
         const prDiff = this.prDiff(context);
         const regeneration = this.regenerationFiles(context);
         return {
@@ -384,6 +386,22 @@ export function sectionPlanContext(
     locale: Locale = 'ru',
 ): string {
     return `${planBlock(planIndexes, stops, intents, locale)}\n`;
+}
+
+/** План объяснения не включает триаж, покрытие тестами или поля прежнего ревью. */
+function explanationPlanContext(
+    planIndexes: readonly number[], stops: readonly ExplanationBlock[],
+    intents: ReadonlyMap<number, string>, context: RouteTaskContext,
+): string {
+    const blocks = stops.filter((stop) => planIndexes.includes(stop.planIndex)).map((stop) => ({
+        planIndex: stop.planIndex, title: stop.title, intent: intents.get(stop.planIndex),
+        files: stop.guidedFiles, relatedFiles: stop.relatedFiles,
+    }));
+    return [
+        '## Accepted blocks and ordered file assignments', JSON.stringify(blocks),
+        '## Already shown introduction', context.introduction ?? '',
+        '## Accepted introduction evidence', JSON.stringify(context.introductionEvidence ?? null), '',
+    ].join('\n\n');
 }
 
 /**

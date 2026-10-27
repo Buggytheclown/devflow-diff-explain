@@ -8,6 +8,7 @@ import type {
     PrDiff,
     PrMeta,
     ReviewHost,
+    ReviewSource,
     RouteCarriedZeroReason,
     RouteProvenance,
     RouteSnapshot,
@@ -107,7 +108,9 @@ export interface RouteOrchestratorOptions {
     readonly queue: TaskQueue;
     readonly registry: WorkerRegistry;
     /** Ревью-хост PR; `null` — маршрут этому серверу негде взять. */
-    readonly host: ReviewHost | null;
+    readonly host: ReviewSource | null;
+    /** Прежний режим ревью может добавить контекст тредов отдельно. */
+    readonly threads?: Pick<ReviewHost, 'getThreads'> | null;
     /** Каталог, которым единолично владеет `RoutePayloadWriter` (`routePayloadDirOf`). */
     readonly payloadDir: string;
     /** Общий контекст PR: методичка и дифф едут по стабильному пути, а не копией на задачу. */
@@ -135,7 +138,8 @@ export class RouteOrchestrator {
     private readonly store: RouteStore;
     private readonly queue: TaskQueue;
     private readonly registry: WorkerRegistry;
-    private readonly host: ReviewHost | null;
+    private readonly host: ReviewSource | null;
+    private readonly threads: Pick<ReviewHost, 'getThreads'> | null;
     private readonly payload: RoutePayloadWriter;
     private readonly progress: StopProgressCarry | null;
     private readonly iterations: IterationStore | null;
@@ -175,6 +179,8 @@ export class RouteOrchestrator {
         this.queue = options.queue;
         this.registry = options.registry;
         this.host = options.host;
+        // Старые тесты/клиенты передают полный адаптер; объяснение никогда не берёт его треды.
+        this.threads = this.presentation === 'story' ? null : options.threads ?? (options.host !== null && 'getThreads' in options.host ? options.host as ReviewSource & Pick<ReviewHost, 'getThreads'> : null);
         this.payload = new RoutePayloadWriter({ payloadDir: options.payloadDir, shared: options.shared });
         this.progress = options.progress ?? null;
         this.iterations = options.iterations ?? null;
@@ -186,7 +192,7 @@ export class RouteOrchestrator {
     /** Подписки автомата и разовый прогрев. Зовётся один раз при сборке сервера. */
     start(): void {
         this.flow.start();
-        if (this.presentation === 'story' && this.store.generationPresentation() === 'story' && this.store.generationStoryVersion() !== 2) {
+        if (this.presentation === 'story' && this.store.generationPresentation() === 'story' && this.store.generationTaskEpoch() !== 2) {
             const phase = this.store.read().phase;
             if (phase === 'reading' || phase === 'filling' || this.hasOpenRouteTask()) {
                 this.cancelOpenRouteTasks();
@@ -325,7 +331,7 @@ export class RouteOrchestrator {
         }
 
         const state = this.store.read();
-        if (state.phase !== 'ready' && !(state.phase === 'failed' && state.snapshot?.storyContractVersion === 3)) {
+        if (state.phase !== 'ready' && !(state.phase === 'failed' && state.snapshot?.presentation === 'story')) {
             return 'already_running';
         }
         if (state.snapshot?.snapshotId !== snapshotId) {
@@ -756,7 +762,7 @@ export class RouteOrchestrator {
 
     /** Треды PR для контекста перегенерации; отказ хоста генерацию не рушит — файла просто не будет. */
     private async loadThreads(): Promise<Thread[] | null> {
-        const host = this.host;
+        const host = this.threads;
         if (host === null) {
             return null;
         }

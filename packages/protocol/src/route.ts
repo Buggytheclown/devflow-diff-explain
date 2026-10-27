@@ -194,7 +194,7 @@ export type RouteCarried = z.infer<typeof routeCarriedSchema>;
  * (`contentHash` считается тогда же). Снапшотов у PR много — по одному на
  * каждую (пере)генерацию; сервер хранит все, текущий — один.
  */
-export const routeSnapshotSchema = z.object({
+const routeSnapshotBase = z.object({
     presentation: z.enum(['legacy', 'story']).optional(),
     storyContractVersion: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
     summaryEvidence: storyEvidenceBlockSchema.optional(),
@@ -221,7 +221,17 @@ export const routeSnapshotSchema = z.object({
     tourOrder: z.array(z.string().min(1)),
     /** Контент-хеш готового снапшота; null, пока фаза не `ready`. */
     contentHash: z.string().nullable(),
-}).superRefine((snapshot, ctx) => {
+});
+
+/** Общие инварианты объяснения для собственного хранения и совместимой HTTP-проекции. */
+export function checkExplanationSnapshot(snapshot: {
+    storyContractVersion?: 2 | 3 | 4 | undefined;
+    presentation?: 'story' | 'legacy' | undefined;
+    summaryEvidence?: z.infer<typeof storyEvidenceBlockSchema> | undefined;
+    flow?: z.infer<typeof flowStateSchema> | undefined;
+    commit: string;
+    stops: readonly Pick<RouteStop, 'status' | 'storyEvidence' | 'guidedFiles'>[];
+}, ctx: z.RefinementCtx): void {
     if (snapshot.storyContractVersion === undefined) return;
     if (snapshot.presentation !== 'story' || snapshot.summaryEvidence === undefined) {
         ctx.addIssue({ code: 'custom', message: 'Story needs its introduction evidence.' });
@@ -251,7 +261,8 @@ export const routeSnapshotSchema = z.object({
             owners.add(file.fileId);
         }
     });
-});
+}
+export const routeSnapshotSchema = routeSnapshotBase.superRefine(checkExplanationSnapshot);
 export type RouteSnapshot = z.infer<typeof routeSnapshotSchema>;
 
 /**

@@ -1,6 +1,6 @@
 import type { ChatExplanation, CodeLocation, PrDiff, UiChatAskAnchor, UiChatResponse, UiRouteState } from '@sherpa/protocol';
 import { explanationText } from '@sherpa/protocol';
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useEffectEvent, useRef, useReducer, useState, useSyncExternalStore } from 'react';
 
 import { askReviewChat, cancelReviewChat, cancelTask, fillRouteStop, fetchReviewChat, fetchReviewRoute, generateReviewRoute, retryReviewChat } from '../api.js';
 import type { Store } from '../store.js';
@@ -17,9 +17,11 @@ import { ReadFile } from './read-file.tsx';
 import { GuidedDocument } from './guided-document.tsx';
 import { StoryDocument } from './story-document.tsx';
 import { useReadingSession } from './use-reading-session.js';
+import { initialNavigation, visitReader } from './navigation.js';
+import './story.css';
+
 export { SelectionBar } from './selection-bar.tsx';
 export { StoryDocument } from './story-document.tsx';
-import './story.css';
 
 const EMPTY_CHAT: UiChatResponse = { exchanges: [], notes: [], chatRevision: 0 };
 const noop = (): void => undefined;
@@ -36,27 +38,24 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const [chat, setChat] = useState<UiChatResponse>(EMPTY_CHAT);
     const [error, setError] = useState<string | null>(null);
     const [chatError, setChatError] = useState<string | null>(null);
-    const [fileId, setFileId] = useState<string | null>(null);
-    const [diffVersion, setDiffVersion] = useState<string | null>(null);
+    const [reader, visit] = useReducer(visitReader, initialNavigation);
+    const { guide: guidePosition, returnTo: guideReturn, resume: guideResume, location: navigation, epoch: navigationEpoch } = reader;
+    const diffVersion = diff?.diffId ?? null;
     const showDiff = ui.view === 'diff';
-    const [guideReturn, setGuideReturn] = useState<{ snapshotId: string; page: string } | null>(null);
-    const [guidePosition, setGuidePosition] = useState<{ snapshotId: string; page: string } | null>(null);
     const [query, setQuery] = useState('');
     const [draft, setDraft] = useState('');
     const [contextTitle, setContextTitle] = useState('');
-    const [navigationEpoch, setNavigationEpoch] = useState(0);
-    const [navigation, setNavigation] = useState<(CodeLocation & { diffId: string }) | null>(null);
     const [filesOpen, setFilesOpen] = useState(false);
     const [anchor, setAnchor] = useState<UiChatAskAnchor | null>(null);
     const [explanation, setExplanation] = useState<ChatExplanation | undefined>();
     const [focus, setFocus] = useState(0);
     const [data] = useState(() => createStoryData(token));
+    const fileId = reader.address?.kind === 'diff' ? reader.address.fileId : diff === null ? null : data.view(diff.diffId).fileId;
     const snapshot = route?.snapshot?.presentation === 'story' ? route.snapshot : null;
     const guidePage = guidePosition !== null && guidePosition.snapshotId === snapshot?.snapshotId ? guidePosition.page : 'intro';
     const guided = snapshot !== null && (snapshot.storyContractVersion ?? 0) >= 3;
     const gt = guidedCopy[locale];
     const intro = !showDiff && guided && guidePage === 'intro';
-    const guideResume = useRef<{ snapshotId: string; page: string } | null>(null);
     const guideFileId = !showDiff && guided && guidePage.startsWith('file:') ? guidePage.slice(5) : null;
     const guideScope = storyScope(snapshot?.snapshotId, stream.state?.prKey ?? '', guided ? guidePage : 'intro');
     const active = stream.state?.iterations.find((iteration) => iteration.status === 'active')?.diffId;
@@ -85,7 +84,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
         if (diffVersion !== null) return;
         let alive = true;
         void data.diff(active ?? null).then((value) => {
-            if (alive) { setDiff(value); setDiffVersion(value.diffId); setError(null); }
+            if (alive) { setDiff(value); setError(null); }
         }, (reason: unknown) => { if (alive) setError(String(reason)); });
         return () => { alive = false; };
     }, [data, diffVersion, active]);
@@ -130,10 +129,8 @@ export function App({ store, session, token }: { store: Store; session: StorySes
                 page = `file:${file.fileId}`;
                 data.updateFile(value.diffId, file.fileId, { selected: { ...location, diffId: value.diffId, fileId: file.fileId } });
             }
-            if (page !== 'intro') guideResume.current = { snapshotId: snapshot.snapshotId, page };
-            setGuideReturn(remember ? { snapshotId: snapshot.snapshotId, page: guidePage } : null);
-            setDiff(value); setDiffVersion(value.diffId); setGuidePosition({ snapshotId: snapshot.snapshotId, page }); setFilesOpen(false); setError(null);
-            setNavigation(location === undefined ? null : { ...location, diffId: value.diffId }); setNavigationEpoch(epoch);
+            setDiff(value); setFilesOpen(false); setError(null);
+            visit({ kind: 'guide', address: { kind: 'guide', snapshotId: snapshot.snapshotId, page }, remember, epoch, location: location === undefined ? null : { ...location, diffId: value.diffId } });
             session.setView('route'); closeOverlay();
             const target = storyScope(snapshot.snapshotId, stream.state?.prKey ?? '', page) ?? 'empty';
             if (location === undefined) reading.restore(target, epoch, 'guide-heading'); else reading.code(target, epoch, location);
@@ -151,8 +148,8 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             if (file === undefined) throw new Error(t.unavailable);
             if (location !== undefined) data.updateFile(value.diffId, file.fileId, { selected: { ...location, diffId: value.diffId, fileId: file.fileId } });
             data.updateView(value.diffId, { fileId: file.fileId });
-            setDiff(value); setDiffVersion(value.diffId); setFileId(file.fileId); setQuery(memory.query); setNavigation(location === undefined ? null : { ...location, diffId: value.diffId });
-            setFilesOpen(false); setError(null); setNavigationEpoch(epoch); closeOverlay(); session.setView('diff');
+            setDiff(value); setQuery(memory.query); visit({ kind: 'diff', address: { kind: 'diff', diffId: value.diffId, fileId: file.fileId }, epoch, location: location === undefined ? null : { ...location, diffId: value.diffId } });
+            setFilesOpen(false); setError(null); closeOverlay(); session.setView('diff');
             const target = `diff:${value.diffId}:${file.fileId}`;
             if (location === undefined) reading.restore(target, epoch);
             else reading.code(target, epoch, location);
@@ -162,6 +159,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const backToStory = (): void => {
         const epoch = reading.begin();
         const point = reading.origin;
+        visit({ kind: 'return', epoch });
         session.setView('route'); closeOverlay(); setFilesOpen(false);
         if (guideScope !== null) reading.restore(guideScope, epoch, point?.storyKey === storyKey ? point.focus : null);
         reading.setOrigin(null);
@@ -177,7 +175,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             <span className="story-pr-key">{stream.state?.prKey ?? ''}</span>
             <nav aria-label={t.contents}>
                 {guided ? <><button className="ctl" aria-current={intro ? 'page' : undefined} onClick={() => { void goGuide('intro'); }}>{gt.description}</button>
-                    <button className="ctl" aria-current={!showDiff && !intro ? 'page' : undefined} onClick={() => { void goGuide(guideResume.current?.snapshotId === snapshot.snapshotId ? guideResume.current.page : snapshot.tourOrder[0] ?? 'intro'); }}>{gt.blocks}</button></>
+                    <button className="ctl" aria-current={!showDiff && !intro ? 'page' : undefined} onClick={() => { void goGuide(guideResume?.snapshotId === snapshot.snapshotId ? guideResume.page : snapshot.tourOrder[0] ?? 'intro'); }}>{gt.blocks}</button></>
                     : <button className="ctl" aria-current={!showDiff ? 'page' : undefined} onClick={backToStory}>{showDiff && reading.origin !== null ? t.returnTo : t.story}</button>}
                 <button className="ctl" aria-current={showDiff ? 'page' : undefined} onClick={() => { void goDiff(diffVersion ?? snapshot?.diffId ?? active ?? null); }}>{guided ? gt.allChanges : t.diff}</button>
             {showDiff || guided ? <button className="ctl story-files-toggle" aria-expanded={filesOpen} onClick={() => { setFilesOpen((value) => !value); }}>{filesOpen ? t.closeFiles : t.files}</button> : null}

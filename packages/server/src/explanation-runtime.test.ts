@@ -27,6 +27,7 @@ describe('сервер объяснения подключает только н
         }
         expect((await get(server.port, UI_ENDPOINTS.reviewThreads, server.token)).status).toBe(404);
         expect((await get(server.port, UI_ENDPOINTS.reviewProgress, server.token)).status).toBe(404);
+        expect((await get(server.port, UI_ENDPOINTS.prState, server.token)).status).toBe(404);
         expect((await get(server.port, UI_ENDPOINTS.reviewDiff, server.token)).status).toBe(200);
         expect((await postJson(server.port, UI_ENDPOINTS.updateCheck, {}, server.token)).status).toBe(404);
         expect(updateFetch).not.toHaveBeenCalled();
