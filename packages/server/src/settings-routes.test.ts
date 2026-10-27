@@ -31,8 +31,7 @@ describe('ручка глобальных настроек UI', () => {
             prKey,
             sherpaDir,
             longPollSeconds: 0.3,
-            reviewHostFactory: () => null,
-            feedback: { env: {} },
+            reviewSourceFactory: () => null,
         });
         servers.push(server);
         return server;

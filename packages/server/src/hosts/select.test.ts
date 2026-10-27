@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { selectReviewHost } from './select.js';
+import { selectReviewHost, selectReviewSource } from './select.js';
 
 /**
  * Выбор адаптера по префиксу ключа. Хосты тут только создаются: ни сети, ни диска
@@ -14,6 +14,20 @@ import { selectReviewHost } from './select.js';
 const SHERPA_DIR = path.join(os.tmpdir(), 'sherpa-select-test');
 
 describe('выбор хост-адаптера', () => {
+    it('рантайм объяснения получает только операции чтения с привязанным экземпляром', async () => {
+        const source = selectReviewSource('fixture-medium');
+        if (source === null) throw new Error('No fixture source');
+        for (const method of ['publishBatch', 'saveDraft', 'getThreads', 'watchThreads', 'setFileViewed']) {
+            expect(method in source.host).toBe(false);
+        }
+        // Намеренно вызываем без объекта: фасад обязан сам привязать методы к адаптеру.
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        const { getDiff, listIterations } = source.host;
+        const before = await getDiff();
+        source.advanceIteration?.();
+        expect((await getDiff()).diffId).not.toBe(before.diffId);
+        expect((await listIterations()).find((iteration) => iteration.status === 'active')?.diffId).not.toBe(before.diffId);
+    });
     it('ключ GitHub поднимает GitHub-хост со своим whoami и подпиской на статус', () => {
         const selected = selectReviewHost('github-acme--ui--kit--42', { sherpaDir: SHERPA_DIR });
 

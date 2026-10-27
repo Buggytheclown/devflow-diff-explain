@@ -42,11 +42,6 @@ export interface WorkerRoutesOptions {
      * что и захват слота: только так порядок записей совпадает с порядком регистраций.
      */
     readonly publishWorkerId: (workerId: string) => void;
-    /**
-     * Поручение на исход ревью из регистрации `up --local` (`localVerdicts`; null — режим снять).
-     * Есть только у локального хоста; без него поле запроса ничего не меняет.
-     */
-    readonly setLocalVerdicts?: (instruction: string | null) => void;
 }
 
 /**
@@ -105,18 +100,11 @@ export function createWorkerRoutes(options: WorkerRoutesOptions): Route[] {
                 // Ровно за захватом слота, без единого await между ними: файл идентичности обязан
                 // меняться в том же порядке, что и владелец слота.
                 options.publishWorkerId(request.workerId);
-                let applied: string | null | undefined;
-                if (request.localVerdicts !== undefined && options.setLocalVerdicts !== undefined) {
-                    options.setLocalVerdicts(request.localVerdicts);
-                    applied = request.localVerdicts;
-                }
                 const body: WorkerRegisterResponse = {
                     kind: 'registered',
                     message:
                         'This session is registered as the worker of this PR. Run `devflow-diff-explain worker next` ' +
                         'and follow the instructions in its output.',
-                    // CLI сверяет поручение с эхом: сервер старой сборки поле запроса молча отбрасывает.
-                    ...(applied === undefined ? {} : { localVerdicts: applied }),
                 };
                 return { status: 200, body };
             }),

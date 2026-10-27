@@ -78,7 +78,7 @@ describe('ручки чата', () => {
         return rpcErrorSchema.parse(await response.json()).error;
     }
 
-    it('объявляет все пять ручек чата на путях контракта', () => {
+    it('объявляет четыре ручки вопросов и истории', () => {
         const routes = createChatRoutes({
             store: { read, deleteNote } as unknown as ChatStore,
             orchestrator: { ask, cancel, retry } as unknown as ChatOrchestrator,
@@ -89,7 +89,6 @@ describe('ручки чата', () => {
             `POST ${UI_ENDPOINTS.reviewChatAsk}`,
             `POST ${UI_ENDPOINTS.reviewChatCancel}`,
             `POST ${UI_ENDPOINTS.reviewChatRetry}`,
-            `POST ${UI_ENDPOINTS.reviewChatNoteDelete}`,
         ]);
     });
 
@@ -174,19 +173,11 @@ describe('ручки чата', () => {
         expect(retry).toHaveBeenCalledWith(5);
     });
 
-    it('удаление заметки подтверждается и зовёт стор ровно раз', async () => {
+    it('ручка заметок удалена и не вызывает запись в стор', async () => {
         const response = await postJson(port, UI_ENDPOINTS.reviewChatNoteDelete, { noteId: 3 }, TOKEN);
 
-        expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ acknowledged: true });
-        expect(deleteNote.mock.calls).toEqual([[3]]);
-    });
-
-    it('битый noteId до стора не доходит', async () => {
-        const response = await postJson(port, UI_ENDPOINTS.reviewChatNoteDelete, { noteId: 0 }, TOKEN);
-
-        expect(response.status).toBe(400);
-        expect((await errorOf(response)).details?.[0]).toContain('noteId: ');
+        expect(response.status).toBe(404);
         expect(deleteNote).not.toHaveBeenCalled();
     });
+
 });

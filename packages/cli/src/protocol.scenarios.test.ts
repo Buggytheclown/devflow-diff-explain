@@ -45,7 +45,7 @@ describe('сценарии сессии-воркера', () => {
             now: () => new Date(nowMs),
             // Живой Арканум в тестах запрещён, да и маршрутных задач сценариям не надо:
             // без хоста автопостановка не сработает и очередь остаётся такой, какой её ставит тест.
-            reviewHostFactory: () => null,
+            reviewSourceFactory: () => null,
         });
         worker = new FakeWorker({ bundlePath, sherpaDir, prKey: PR_KEY, workDir });
     });

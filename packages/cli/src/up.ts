@@ -43,7 +43,7 @@ export interface EnsureServerOptions {
     readonly sherpaDir: string;
     /**
      * Путь к файлу запущенного CLI (`process.argv[1]`): его же `up` спавнит демоном `devflow-diff-explain server`. Рядом
-     * лежит модуль сервера, а на каталог выше — корень дистрибутива, который уезжает серверу в `--install-dir`.
+     * лежит модуль сервера.
      */
     readonly entry: string | undefined;
     /** Явный путь к модулю сервера из `SHERPA_SERVER_BIN` — для дев-сценариев. */
@@ -213,8 +213,6 @@ function isProcessAlive(pid: number): boolean {
  * родитель. stdio уходит в лог-файл — его никто не читает в рантайме, зато он остаётся человеку,
  * когда сервер не поднялся. Токена в логе нет: ссылку с токеном строит CLI, прочитав манифест.
  *
- * `--install-dir` — каталог дистрибутива (родитель `bin/`): откуда скилл установлен, знает только
- * CLI, а серверу это нужно для проверки новой версии в trunk.
  */
 async function spawnDaemon(
     entry: string,
@@ -222,7 +220,6 @@ async function spawnDaemon(
     options: EnsureServerOptions,
     logPath: string,
 ): Promise<Daemon> {
-    const installDir = path.dirname(path.dirname(await fs.realpath(serverBin)));
     const args = [
         ...supportedNodeFlags(options.nodeFlags ?? []),
         entry,
@@ -231,8 +228,6 @@ async function spawnDaemon(
         options.prKey,
         '--sherpa-dir',
         options.sherpaDir,
-        '--install-dir',
-        installDir,
         ...(options.repo === undefined ? [] : ['--repo', options.repo]),
         ...(options.base === undefined ? [] : ['--base', options.base]),
         ...(options.branch === undefined ? [] : ['--branch', options.branch]),

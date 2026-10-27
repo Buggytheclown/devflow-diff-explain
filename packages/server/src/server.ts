@@ -12,14 +12,9 @@ import { ChatStore } from './chat-store.js';
 import type { SherpaDatabase } from './db.js';
 import { openDatabase } from './db.js';
 import { createDevRoutes } from './dev-routes.js';
-import { DraftBufferStore, DraftBufferWriter } from './draft-buffer.js';
 import { ServerAlreadyRunningError } from './errors.js';
-import { FeedbackOrchestrator } from './feedback-orchestrator.js';
-import type { FeedbackIntegrationOptions } from './feedback-routes.js';
-import { createFeedbackRoutes, feedbackAvailability } from './feedback-routes.js';
-import { FeedbackStore } from './feedback-store.js';
-import type { ReviewHostFactory, ReviewSourceFactory } from './hosts/select.js';
-import { selectReviewHost, selectReviewSource } from './hosts/select.js';
+import type { ReviewSourceFactory } from './hosts/select.js';
+import { selectReviewSource } from './hosts/select.js';
 import type { RequestListenerOptions, Route } from './http.js';
 import { createRequestListener } from './http.js';
 import { DEFAULT_IDLE_SECONDS, IdleWatch } from './idle.js';
@@ -41,7 +36,6 @@ import {
     databasePathFor,
     DEFAULT_SHERPA_DIR,
     ensurePrivateDir,
-    feedbackPayloadDirOf,
     manifestPathFor,
     prStateDirOf,
     routePayloadDirOf,
@@ -50,14 +44,8 @@ import {
     workerIdPathFor,
 } from './paths.js';
 import { PrMetaCache } from './pr-meta.js';
-import { createPrStateRoutes } from './pr-state-routes.js';
-import { PrStateStore } from './pr-state-store.js';
-import { ProgressStore } from './progress-store.js';
 import { TaskQueue } from './queue.js';
-import { ReviewFeed } from './review-feed.js';
 import { createReadRoutes } from './read-routes.js';
-import { createReviewRoutes } from './review-routes.js';
-import type { RouteConfig } from './route-orchestrator.js';
 import { RouteOrchestrator } from './route-orchestrator.js';
 import { createRouteRoutes } from './route-routes.js';
 import { RouteStore } from './route-store.js';
@@ -68,18 +56,15 @@ import type { StaticAssets } from './static.js';
 import { withDocumentSettings } from './ui-document.js';
 import { UiPresence } from './ui-presence.js';
 import { createUiRoutes } from './ui-routes.js';
-import type { UpdateCheckOptions } from './update-check.js';
-import { UpdateChecker } from './update-check.js';
 import { SERVER_VERSION } from './version.js';
 import { writeWorkerIdFile } from './worker-id-file.js';
 import { WorkerRegistry } from './worker-registry.js';
 import { createWorkerRoutes } from './worker-routes.js';
 
 export interface StartServerOptions {
-    /** Ключ PR вида `<host>-<pr>`: имя манифеста и каталога стейта. */
-    presentation?: 'legacy' | 'story';
     /** Служебные задачи для локальной разработки; на фикстурах включены автоматически. */
     development?: boolean;
+    /** Ключ PR вида `<host>-<pr>`: имя манифеста и каталога стейта. */
     prKey: string;
     /** Корень стейта; по умолчанию `~/.sherpa`. */
     sherpaDir?: string;
@@ -111,11 +96,6 @@ export interface StartServerOptions {
     workerGapGraceSeconds?: number;
     /** Грейс ухода UI; контрактный дефолт меняется только в серверных тестах. */
     uiGoneGraceSeconds?: number;
-    /**
-     * Выбор хост-адаптера по ключу PR; по умолчанию `selectReviewHost`. Точка инжекции для тестов,
-     * которым живой Арканум не нужен (`() => null` — сервер без ревью-ручек).
-     */
-    reviewHostFactory?: ReviewHostFactory;
     /** Источник кода для объяснения; методов записи и чтения тредов не требует. */
     reviewSourceFactory?: ReviewSourceFactory;
     /**
@@ -126,23 +106,6 @@ export interface StartServerOptions {
     repo?: string;
     base?: string;
     branch?: string;
-    /**
-     * Поручение на исход локального ревью (`--verdicts`): с ним ревью завершается Ship или Request
-     * changes. Как и база, учитывается только вместе с `repo`.
-     */
-    verdicts?: string;
-    /** Транспорт и окружение канала фидбека; тесты подменяют fetch и токен без живого Трекера. */
-    feedback?: FeedbackIntegrationOptions;
-    /**
-     * Пороги маршрута и укрупнение секций (`DEFAULT_ROUTE_CONFIG`). Внутренняя политика сервера:
-     * ни UI, ни CLI о ней не знают, а замер латентности крутит батч секций именно здесь.
-     */
-    route?: Partial<RouteConfig>;
-    /**
-     * Точка инжекции проверки обновлений: транспорт, часы, кэш и путь дистрибутива
-     * подменяются в тестах.
-     */
-    updateCheck?: UpdateCheckOptions;
 }
 
 export interface SherpaServer {
@@ -193,8 +156,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
     await cleanStaleManifests(serversDir);
 
     const token = createToken();
-    // Настройки глобальные: их читает ручка настроек, проверка обновления (`dismissedVersion`)
-    // и раздача `index.html` — первый кадр должен прийти в сохранённой теме.
+    // Настройки общие для PR; index.html сразу получает сохранённую тему.
     const settingsStore = new SettingsStore(sherpaDir);
     // Воркерские ручки появляются в этом же массиве после открытия БД: до заявки на манифест
     // сервер обязан отвечать только на `/healthz` — им конкурент проверяет нашу живость.
@@ -267,51 +229,14 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         });
         // Локальные патчи итераций и кэш срезов: наполняется отовсюду, где грузится дифф.
         const iterationStore = new IterationStore(options.now === undefined ? { db } : { db, now: options.now });
-        // Прогресс чтения локальный: он есть у любого сервера, в том числе без ревью-хоста.
-        // Патчи итераций нужны ему, чтобы переносить отметки с итерации на итерацию по путям файлов.
-        const progress = options.presentation === 'story' ? null : new ProgressStore({
-            db,
-            iterations: iterationStore,
-            ...(options.now === undefined ? {} : { now: options.now }),
+        const source = (options.reviewSourceFactory ?? selectReviewSource)(prKey, {
+            sherpaDir, repo: options.repo ?? null, base: options.base ?? null, branch: options.branch ?? null,
         });
-        const hostOptions = { sherpaDir, repo: options.repo ?? null, base: options.base ?? null,
-            branch: options.branch ?? null, verdicts: options.verdicts ?? null };
-        const reviewHost = options.presentation === 'story' ? null : (options.reviewHostFactory ?? selectReviewHost)(prKey, hostOptions);
-        // Полная фабрика остаётся совместимым входом для прежних интеграций и фикстур.
-        const source = options.presentation === 'story'
-            ? (options.reviewSourceFactory ?? options.reviewHostFactory ?? selectReviewSource)(prKey, hostOptions) : reviewHost;
         const advanceIteration = source?.advanceIteration;
-        // Без хоста ревью-событий не бывает вовсе — SSE-канал остаётся каналом состояния.
-        // Смена статуса ревью (чужой шип) перечитывает мету: вердикты уедут в снапшот UI.
-        const reviewFeed =
-            reviewHost === null
-                ? null
-                : new ReviewFeed(reviewHost.host, {
-                      ...(reviewHost.watchStatus === undefined ? {} : { watchStatus: reviewHost.watchStatus }),
-                      onStatusChange: () => {
-                          void prMeta.refresh();
-                      },
-                  });
-        // Мета PR едет в снапшоте, а `buildState` синхронна: сетевой `getPr()` живёт в кеше.
         const prMeta = new PrMetaCache({ host: source?.host ?? null });
-        // Буфер черновиков: текст, который хост ещё не принял, переживает и падение
-        // хоста, и перезагрузку вкладки, и перезапуск сервера.
-        const draftBuffer = options.presentation === 'story' ? null : new DraftBufferWriter({
-            host: reviewHost?.host ?? null,
-            store: new DraftBufferStore(options.now === undefined ? { db } : { db, now: options.now }),
-            reviewFeed,
-        });
-        // Проверка новой версии в trunk. На фикстурном хосте выключена: там версию
-        // подставляет дев-ручка, а не Арканум.
-        const updateChecker = options.presentation === 'story' ? null : new UpdateChecker({
-            ...options.updateCheck,
-            sherpaDir,
-            settings: settingsStore,
-            enabled: reviewHost?.name !== 'fixture',
-        });
-        // Маршрут, как и прогресс чтения, локален: без хоста он просто не покидает фазу `none`.
+        // Без источника диффа объяснение остаётся в фазе `none`.
         const routeStore = new RouteStore(options.now === undefined ? { db } : { db, now: options.now });
-        if (options.presentation === 'story') {
+        {
             for (const task of queue.listTasks()) {
                 const open = task.status === 'queued' || task.status === 'leased';
                 if (open && (task.type === 'review.feedback' ||
@@ -323,8 +248,8 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 routeStore.setGenerationPresentation('story');
             }
         }
-        // Заметки создаются раньше фида: их якоря он перевозит на новую итерацию.
-        const chatStore = new ChatStore({ db, createNotes: options.presentation !== 'story', ...(options.now === undefined ? {} : { now: options.now }) });
+        // Старые заметки остаются в БД; объяснение создаёт только сообщения чата.
+        const chatStore = new ChatStore({ db, createNotes: false, ...(options.now === undefined ? {} : { now: options.now }) });
         // Итерации PR: один вотчер на сервер — из него растут `uiState.iterations` и `stale`.
         const iterationFeed =
             source === null
@@ -333,8 +258,6 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                       host: source.host,
                       iterations: iterationStore,
                       route: routeStore,
-                      notes: options.presentation === 'story' ? null : chatStore,
-                      progress: options.presentation === 'story' ? null : progress,
                   });
         // Общий контекст переживает рестарт вместе с задачами: и чистка на старте, и чистка при
         // смене ключа оставляют дифф, на который ещё ссылается открытая или удерживаемая задача.
@@ -343,18 +266,15 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         );
         sharedPayload.sweepDiffKeys();
         const routeOrchestrator = new RouteOrchestrator({
-            presentation: options.presentation,
             store: routeStore,
             queue,
             registry: workerRegistry,
             host: source?.host ?? null,
             payloadDir: routePayloadDirOf(sherpaDir, prKey),
             shared: sharedPayload,
-            progress: options.presentation === 'story' ? null : progress,
             iterations: iterationStore,
             // Язык генерации: настройки — вторая ступень лестницы после запроса вкладки.
             settings: settingsStore,
-            ...(options.route === undefined ? {} : { config: options.route }),
         });
         const chatOrchestrator = new ChatOrchestrator({
             store: chatStore,
@@ -368,30 +288,13 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             settings: settingsStore,
             registry: workerRegistry,
         });
-        // Раунды публикации превращаются в задачи агенту только там, где хост это умеет
-        // (локальный чекаут): у прочих хостов оркестратора нет вовсе.
-        const feedbackOrchestrator =
-            reviewHost?.feedback === undefined || options.presentation === 'story'
-                ? null
-                : new FeedbackOrchestrator({
-                      host: reviewHost.feedback,
-                      queue,
-                      store: new FeedbackStore(
-                          options.now === undefined ? { db } : { db, now: options.now },
-                      ),
-                      payloadDir: feedbackPayloadDirOf(sherpaDir, prKey),
-                      settings: settingsStore,
-                      registry: workerRegistry,
-                  });
         queue.setResultAcceptor(
             (task, result) =>
                 routeOrchestrator.acceptResult(task, result) ??
                 chatOrchestrator.acceptResult(task, result) ??
-                feedbackOrchestrator?.acceptResult(task, result) ??
                 null,
         );
 
-        const setLocalVerdicts = reviewHost?.setLocalVerdicts;
         routes.push(
             ...createWorkerRoutes({
                 queue,
@@ -402,59 +305,28 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 publishWorkerId: (workerId) => {
                     writeWorkerIdFile(workerIdPath, workerId);
                 },
-                // Режим сменился — мета с новым `publishVerdicts` уезжает в UI тем же снапшотом.
-                ...(setLocalVerdicts === undefined
-                    ? {}
-                    : {
-                          setLocalVerdicts: (instruction: string | null) => {
-                              if (setLocalVerdicts(instruction)) {
-                                  void prMeta.refresh();
-                              }
-                          },
-                      }),
             }),
             ...createUiRoutes({
                 prKey,
                 queue,
                 registry: workerRegistry,
                 reviewHost: source?.name ?? null,
-                reviewFeed,
                 iterationFeed,
                 prMeta,
-                update: updateChecker,
                 development: options.development ?? source?.name === 'fixture',
-                feedback: feedbackAvailability(options.feedback),
-                progress,
                 route: routeStore,
                 chat: chatStore,
                 presence: uiPresence,
                 shutdownSignal: shutdownController.signal,
             }),
-            ...(draftBuffer === null || progress === null ? createReadRoutes({
+            ...createReadRoutes({
                 host: source?.host ?? null, prMeta, iterations: iterationStore, iterationFeed,
                 blobs: new BlobCache(sherpaDir, blobsDirOf(sherpaDir, prKey)),
-            }) : createReviewRoutes({
-                host: reviewHost?.host ?? null, reviewFeed, progress, route: routeStore, prMeta,
-                draftBuffer, iterations: iterationStore, iterationFeed,
-                blobs: new BlobCache(sherpaDir, blobsDirOf(sherpaDir, prKey)),
-                ...(feedbackOrchestrator === null ? {} : { onPublished: () => { void feedbackOrchestrator.reconcile(); } }),
-            })),
-            ...(options.presentation === 'story' ? [] : createFeedbackRoutes({
-                prKey, workerStatus: () => workerRegistry.status(),
-                ...(reviewHost?.currentUser === undefined ? {} : { currentUser: reviewHost.currentUser }), ...options.feedback,
-            })),
+            }),
             // Настройки глобальные: ручка не зависит ни от ревью-хоста, ни от стейта этого PR.
             ...createSettingsRoutes({
                 settings: settingsStore,
-                // Отклонённая версия живёт в настройках: после патча снапшот обязан пересобраться.
-                onChange: () => {
-                    updateChecker?.settingsChanged();
-                },
             }),
-            // Состояние UI этого PR (свёртки, история палитры) — локальное, ревью-хост ему не нужен.
-            ...(options.presentation === 'story' ? [] : createPrStateRoutes({
-                prState: new PrStateStore(options.now === undefined ? { db } : { db, now: options.now }),
-            })),
             ...createRouteRoutes({ store: routeStore, orchestrator: routeOrchestrator, iterationFeed }),
             ...createChatRoutes({ store: chatStore, orchestrator: chatOrchestrator }),
             // Дев-ручки есть только у фикстурного хоста; у остальных этих маршрутов не существует.
@@ -462,10 +334,6 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 ? []
                 : createDevRoutes({
                       advanceIteration,
-                      update: updateChecker,
-                      ...(reviewHost?.setFailDraftWrites === undefined
-                          ? {}
-                          : { setFailDraftWrites: reviewHost.setFailDraftWrites }),
                   })),
         );
         markRoutesReady();
@@ -482,30 +350,19 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             unsubscribeQueue,
             shutdownController,
             idleWatch,
-            reviewFeed,
             iterationFeed,
             prMeta,
-            draftBuffer,
-            updateChecker,
-            progress,
             routeStore,
             routeOrchestrator,
             chatStore,
             chatOrchestrator,
-            feedbackOrchestrator,
         });
         // Прогрев маршрута — после сборки handle и своим таймером: старт сервера не ждёт `getDiff()`,
         // иначе «дифф на экране меньше двух секунд» уехало бы за сетевой вызов хоста.
         routeOrchestrator.start();
         chatOrchestrator.start();
-        // Раунд, не доехавший до агента в прошлый запуск, встаёт в очередь заново.
-        void feedbackOrchestrator?.reconcile();
         // Мета PR грузится тем же фоном: снапшот отдаётся сразу, мета доезжает по SSE.
         prMeta.start();
-        // Черновики, не довезённые прошлым запуском, встают в очередь повтора.
-        draftBuffer?.start();
-        // Проверка версии — тоже фоном и после listen: старт сервера её не ждёт.
-        updateChecker?.start();
         // Взводим самоостановку последним: раньше этого момента останавливать нечего.
         idleWatch.arm(() => {
             options.onIdleStop?.(idleSeconds);
@@ -587,17 +444,12 @@ function createHandle(parts: {
     unsubscribeQueue: () => void;
     shutdownController: AbortController;
     idleWatch: IdleWatch;
-    reviewFeed: ReviewFeed | null;
     iterationFeed: IterationFeed | null;
     prMeta: PrMetaCache;
-    draftBuffer: DraftBufferWriter | null;
-    updateChecker: UpdateChecker | null;
-    progress: ProgressStore | null;
     routeStore: RouteStore;
     routeOrchestrator: RouteOrchestrator;
     chatStore: ChatStore;
     chatOrchestrator: ChatOrchestrator;
-    feedbackOrchestrator: FeedbackOrchestrator | null;
 }): SherpaServer {
     let closing: Promise<void> | null = null;
 
@@ -622,21 +474,17 @@ function createHandle(parts: {
                 parts.workerRegistry.close();
                 parts.uiPresence.close();
                 // Поллинг хоста гасим здесь же: без него подписка пережила бы закрытие сервера.
-                parts.reviewFeed?.close();
+
                 parts.iterationFeed?.close();
                 // Ретрай загрузки меты не должен проснуться после остановки сервера.
                 parts.prMeta.close();
-                // То же у повторов буфера черновиков: их подхватит следующий запуск.
-                parts.draftBuffer?.close();
-                parts.updateChecker?.close();
-                parts.progress?.close();
                 // Автомат маршрута гасим до закрытия хранилища: его отложенный прогрев не должен
                 // проснуться над закрытой БД.
                 parts.routeOrchestrator.close();
                 parts.routeStore.close();
                 parts.chatOrchestrator.close();
                 parts.chatStore.close();
-                parts.feedbackOrchestrator?.close();
+
                 await removeOwnManifest(parts.manifestPath, parts.manifest);
                 await shutdown(parts.httpServer, parts.db);
             })();

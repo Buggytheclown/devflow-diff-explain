@@ -2,12 +2,12 @@ import { UI_ENDPOINTS, uiSettingsPatchSchema, uiSettingsResponseSchema } from '@
 
 import type { Route } from './http.js';
 import { handlingRpcFailures } from './http.js';
-import { readRequest, respond } from './review-routes.js';
+import { readRequest, respond } from './host-http.js';
 import type { SettingsStore } from './settings-store.js';
 
 export interface SettingsRoutesOptions {
     readonly settings: SettingsStore;
-    /** Патч применён: снапшот UI зависит от настроек (`updates.dismissedVersion`) и должен пересобраться. */
+    /** Подписчик изменений общих настроек. */
     readonly onChange?: () => void;
 }
 

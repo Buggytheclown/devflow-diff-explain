@@ -1,5 +1,4 @@
 import type {
-    HostCapabilities,
     HostId,
     Iteration,
     PrDiff,
@@ -9,25 +8,18 @@ import type {
     UiRouteState,
 } from '@sherpa/protocol';
 
-import type { ChatStore } from './chat-store.js';
 import { RpcFailure } from './errors.js';
 import type { IterationStore } from './iteration-store.js';
 import type { IterationMap } from './iterations/index.js';
-import { affectedStops, buildIterationMap, opaqueMap } from './iterations/index.js';
-import type { ProgressStore } from './progress-store.js';
+import { affectedStops, buildIterationMap } from './iterations/index.js';
 import type { RouteStore } from './route-store.js';
-import { UNKNOWN_BASE_COMMIT } from './route-store.js';
 
 /**
  * Одна подписка сервера на итерации PR: объединённый список хоста и хранилища,
  * активная итерация и признак «маршрут устарел» для UI.
  *
- * Отдельно от `ReviewFeed`: у тредов и итераций разные потребители и разная механика —
- * итерации несут состояние (список, активная, затронутые стопы), треды только ревизию.
- *
- * Подписка ленивая, как у `ReviewFeed`: стартует с первым SSE-клиентом и гаснет без клиентов,
- * иначе поллинг Арканума крутился бы в пустоту. До старта список пуст, а `stale` — `null`:
- * без активной итерации сравнивать снапшот не с чем.
+ * Подписка начинается с первым SSE-клиентом и гаснет без клиентов.
+ * До загрузки списка сравнивать снапшот с активной итерацией не с чем.
  */
 
 /** Затронутые стопы одной пары «снапшот → активная итерация»; считаются интердиффом асинхронно. */
@@ -39,11 +31,6 @@ interface AffectedStops {
     readonly stopIds: string[];
 }
 
-/** Всё, что фиду нужно от хранилища чата, чтобы перевезти якоря заметок на новую итерацию. */
-export type NoteCarrier = Pick<ChatStore, 'adoptLegacyAnchors' | 'migrateNotes' | 'read'>;
-
-/** Через столько повторяем перенос, если хост не отдал срез по временной причине. */
-const CARRY_RETRY_MS = 30_000;
 
 /** Отказ хоста в срезе: `permanent` — источник недостижим навсегда, повторять нечего. */
 type CarryRefusal = 'permanent' | 'temporary';
@@ -57,29 +44,14 @@ export interface IterationFeedOptions {
      * История снапшотов — последний адрес, по которому находится база забытой итерации.
      */
     readonly route: Pick<RouteStore, 'current' | 'subscribe' | 'listSnapshots'>;
-    /** Заметки, чьи якоря переезжают на новую итерацию; null — переносить некому. */
-    readonly notes?: NoteCarrier | null;
-    /** Пауза перед повтором переносов после временного отказа хоста. */
-    readonly carryRetryMs?: number;
-    /** Прогресс чтения: пуш переносит его на новую итерацию. `null` — переносить нечего. */
-    readonly progress?: ProgressCarrier | null;
     /** Куда писать отказы хоста; по умолчанию stderr. */
     readonly log?: (message: string) => void;
 }
-
-/** Часть `ProgressStore`, которая нужна фиду: усыновление легаси и перенос на активную итерацию. */
-export type ProgressCarrier = Pick<
-    ProgressStore,
-    'adoptLegacy' | 'latestDiffIdWithProgress' | 'carryRanges'
->;
 
 export class IterationFeed {
     private readonly host: ReviewSource | null;
     private readonly store: IterationStore;
     private readonly route: Pick<RouteStore, 'current' | 'subscribe' | 'listSnapshots'>;
-    private readonly notes: NoteCarrier | null;
-    private readonly carryRetryMs: number;
-    private readonly progress: ProgressCarrier | null;
     private readonly log: (message: string) => void;
     private readonly listeners = new Set<(revision: number) => void>();
     /** Идущие расчёты затронутых стопов: второй такой же не нужен. */
@@ -94,16 +66,7 @@ export class IterationFeed {
      * только после первого ответа, поэтому склейка на лету нужна отдельно.
      */
     private readonly interdiffs = new Map<string, Promise<PrDiff>>();
-
-    /**
-     * Идущие переносы одной пары итераций: второй такой же не нужен. Ключ начинается с имени
-     * переносчика (`notes` / `progress`) — прогресс и якоря заметок едут независимо.
-     */
-    private readonly carrying = new Set<string>();
-    /** Источники переноса, срез с которыми хост отверг: ключ — итерация, на которую переносим. */
-    private readonly refusedCarry = new Map<HostId, Set<HostId>>();
-    /** Итерации, про которые уже сказано «источник не найден»: событий вотчера много, строка одна. */
-    private readonly reportedNoSource = new Set<HostId>();
+    private capabilities: Promise<boolean> | null = null;
 
     private list: Iteration[] = [];
     private affected: AffectedStops | null = null;
@@ -112,10 +75,6 @@ export class IterationFeed {
     private unsubscribeRoute: (() => void) | null = null;
     /** Идущая загрузка патча активной итерации: параллельные запросы одного и того же не нужны. */
     private diffLoad: { diffId: HostId; patch: Promise<PrDiff> } | null = null;
-    /** Отложенный повтор переносов после временного отказа хоста; null — повторять нечего. */
-    private carryRetry: ReturnType<typeof setTimeout> | null = null;
-    /** Возможности хоста: спрашиваются один раз — от них зависит, есть ли чем переносить якоря. */
-    private capabilities: Promise<HostCapabilities> | null = null;
     /** Идущий разовый запрос списка: вызовы `resolveActive` делят его на всех. */
     private resolving: Promise<void> | null = null;
     private closed = false;
@@ -124,9 +83,6 @@ export class IterationFeed {
         this.host = options.host;
         this.store = options.iterations;
         this.route = options.route;
-        this.notes = options.notes ?? null;
-        this.carryRetryMs = options.carryRetryMs ?? CARRY_RETRY_MS;
-        this.progress = options.progress ?? null;
         this.log =
             options.log ??
             ((message: string): void => {
@@ -239,10 +195,6 @@ export class IterationFeed {
         this.unwatch = null;
         this.unsubscribeRoute?.();
         this.unsubscribeRoute = null;
-        if (this.carryRetry !== null) {
-            clearTimeout(this.carryRetry);
-            this.carryRetry = null;
-        }
     }
 
     /** Список от хоста: сводим с хранилищем, добираем патч активной итерации, пересчитываем stale. */
@@ -258,15 +210,9 @@ export class IterationFeed {
         this.list = merged;
         const active = this.active();
         if (active !== null) {
-            // Перенос прогресса ждёт патча новой итерации: без него `fileId` не сопоставить.
-            void this.activeDiff(active)
-                .then(() => this.carryProgress(active))
-                .catch((error: unknown) => {
-                    // Перенос пишет в БД: его отказ не должен ронять процесс через unhandled rejection.
-                    this.log(`прогресс не перенесён на ${active.diffId}: ${messageOf(error)}`);
-                });
-            // Свой патч заметки ждут сами: у переноса якорей есть повтор после отказа хоста.
-            this.carryNotes(active);
+            void this.activeDiff(active).catch((error: unknown) => {
+                this.log(`патч итерации ${active.diffId} не сохранён: ${messageOf(error)}`);
+            });
         }
         this.refreshAffected();
         this.notify();
@@ -318,158 +264,6 @@ export class IterationFeed {
     }
 
     /**
-     * Якоря заметок переезжают на активную итерацию. Обычно переносить надо с одной
-     * итерации, но два пуша подряд без открытого UI оставляют заметки на разных — поэтому
-     * набор, а не одна пара. Заметка, уже потерявшая якорь, не мигрирует больше никогда.
-     */
-    private carryNotes(active: Iteration): void {
-        const notes = this.notes;
-        if (notes === null) {
-            return;
-        }
-
-        try {
-            notes.adoptLegacyAnchors(active.diffId);
-        } catch (error) {
-            this.log(`якоря заметок старого формата не усыновлены: ${messageOf(error)}`);
-            return;
-        }
-
-        const refused = this.refusedSourcesFor(active.diffId);
-        const stale = new Set(
-            notes
-                .read()
-                .notes.filter((note) => !note.lostAnchor && note.anchor.diffId !== active.diffId)
-                .map((note) => note.anchor.diffId),
-        );
-        for (const from of stale) {
-            if (refused.has(from)) {
-                continue;
-            }
-            const pair = `notes ${from} ${active.diffId}`;
-            if (this.carrying.has(pair)) {
-                continue;
-            }
-            this.carrying.add(pair);
-            void this.carryNotesFrom(notes, from, active, pair);
-        }
-    }
-
-    private async carryNotesFrom(
-        notes: NoteCarrier,
-        from: HostId,
-        active: Iteration,
-        pair: string,
-    ): Promise<void> {
-        try {
-            const host = this.host;
-            // Без срезов у хоста переносить нечем: карта пустая, заметки честно теряют якорь.
-            const blind = host === null || !(await this.hostCapabilities(host)).iterations;
-            const carry = blind ? { map: opaqueMap(), refusal: null } : await this.noteCarry(host, from, active);
-            if (carry === null) {
-                return;
-            }
-            // Пустой карте файлы не нужны: затронуто всё, и якорь теряется независимо от `fileId`.
-            const fileIdOf = carry.refusal === null ? await this.activeFileIds(active) : (): null => null;
-            // Пока считался срез, автор мог запушить снова: переносить на уже неактивную итерацию нельзя.
-            if (this.closed || this.active()?.diffId !== active.diffId) {
-                return;
-            }
-            const migration = notes.migrateNotes(from, active.diffId, carry.map, fileIdOf, active.headCommit);
-            if (carry.refusal !== null) {
-                // Источник отказан только после удачной записи: иначе повтора уже не будет, а
-                // заметки остались бы с якорем на итерации, которой у хоста нет.
-                this.refusedSourcesFor(active.diffId).add(from);
-                this.log(
-                    `срез ${from}→${active.diffId} хост отверг окончательно, ` +
-                        `заметок без якоря ${String(migration.lost)}: ${carry.refusal}`,
-                );
-            }
-        } catch (error) {
-            // Патч активной итерации и запись в БД про источник ничего не говорят: только повтор.
-            this.log(`якоря заметок итерации ${from} не перенесены, будет повтор: ${messageOf(error)}`);
-            this.scheduleCarryRetry();
-        } finally {
-            this.carrying.delete(pair);
-        }
-    }
-
-    /**
-     * Карта переноса якорей с источника: `refusal` — причина окончательного отказа хоста, при
-     * которой карта пустая и заметки теряют якорь. `null` вместо карты — временный отказ, повтор
-     * назначен: соврать «якорь потерян» из-за сетевой ошибки нельзя, это необратимо.
-     */
-    private async noteCarry(
-        host: ReviewSource,
-        from: HostId,
-        active: Iteration,
-    ): Promise<{ map: IterationMap; refusal: string | null } | null> {
-        try {
-            return { map: await this.noteMap(host, from, active), refusal: null };
-        } catch (error) {
-            if (this.carryRefusal(from, error) === 'temporary') {
-                this.log(`якоря заметок итерации ${from} не перенесены, будет повтор: ${messageOf(error)}`);
-                this.scheduleCarryRetry();
-                return null;
-            }
-            // Пустая карта: всё считается затронутым — ровно то же, что у хоста без срезов.
-            return { map: opaqueMap(), refusal: messageOf(error) };
-        }
-    }
-
-    /** Путь → `fileId` в патче активной итерации; null — файла там нет. */
-    private async activeFileIds(active: Iteration): Promise<(path: string) => string | null> {
-        const files = new Map((await this.activeDiff(active)).files.map((file) => [file.path, file.fileId]));
-        return (path) => files.get(path) ?? null;
-    }
-
-    /**
-     * Повтор переноса после временного отказа хоста — и якорей заметок, и прогресса: срез у них
-     * общий, значит и отказ общий. Ждать следующего списка итераций нельзя: вотчер будит фид
-     * только на новый пуш, а до тех пор заметка с якорем прошлой итерации не находит своего
-     * файла в активном диффе и пропадает из кода — без баннера и без пометки в чате.
-     */
-    private scheduleCarryRetry(): void {
-        if (this.closed || this.unwatch === null || this.carryRetry !== null) {
-            return;
-        }
-        this.carryRetry = setTimeout(() => {
-            this.carryRetry = null;
-            const active = this.active();
-            if (this.closed || this.unwatch === null || active === null) {
-                return;
-            }
-            this.carryNotes(active);
-            void this.activeDiff(active)
-                .then(() => this.carryProgress(active))
-                .catch((error: unknown) => {
-                    this.log(`прогресс не перенесён на ${active.diffId}: ${messageOf(error)}`);
-                });
-        }, this.carryRetryMs);
-        // Таймер процесс живым не держит и активностью сервера не считается (см. idle.ts).
-        this.carryRetry.unref();
-    }
-
-    /**
-     * Карта переноса строк для заметок. Наружу отдаёт только отказ хоста на срезе: по нему и
-     * решается, повторять перенос или хоронить якоря.
-     */
-    private async noteMap(host: ReviewSource, from: HostId, active: Iteration): Promise<IterationMap> {
-        const fromIteration =
-            this.list.find((iteration) => iteration.diffId === from) ?? this.store.get(from)?.iteration ?? null;
-        if (fromIteration === null) {
-            // Итерации нет ни в списке, ни в хранилище: её базу не с чем сравнить.
-            return opaqueMap();
-        }
-        const interdiff = await this.interdiff(host, from, active.diffId);
-        return buildIterationMap({
-            interdiff,
-            fromBaseCommit: fromIteration.baseCommit,
-            toBaseCommit: active.baseCommit,
-        });
-    }
-
-    /**
      * Срез пары итераций: из кэша хранилища, а на промахе — один запрос к хосту на пару.
      * Затронутые остановки и перенос якорей заметок стартуют после пуша одновременно, и до
      * первого ответа кэш хранилища ещё пуст — второй такой же запрос ждёт первого.
@@ -488,141 +282,6 @@ export class IterationFeed {
             });
         this.interdiffs.set(pair, loading);
         return loading;
-    }
-
-    private hostCapabilities(host: ReviewSource): Promise<HostCapabilities> {
-        this.capabilities ??= host
-            .getPr()
-            .then((pr) => pr.capabilities)
-            .catch((error: unknown) => {
-                this.capabilities = null;
-                throw error;
-            });
-        return this.capabilities;
-    }
-
-    /**
-     * Прогресс переезжает на активную итерацию: сначала усыновляются
-     * записи без итерации, потом переносятся диапазоны и файловые отметки самой поздней
-     * итерации, у которой они есть.
-     *
-     * Пара переносится один раз и навсегда (`progress_carries`), поэтому повторный список
-     * хоста ничего не дублирует.
-     */
-    private async carryProgress(active: Iteration): Promise<void> {
-        const progress = this.progress;
-        const host = this.host;
-        if (progress === null || host === null || this.closed) {
-            return;
-        }
-
-        progress.adoptLegacy(active.diffId);
-        const refused = this.refusedSourcesFor(active.diffId);
-        for (;;) {
-            const from = progress.latestDiffIdWithProgress(active.diffId, [...refused]);
-            if (from === null) {
-                if (!this.reportedNoSource.has(active.diffId)) {
-                    this.reportedNoSource.add(active.diffId);
-                    this.log(
-                        `перенос прогресса на ${active.diffId}: источник не найден — ` +
-                            'прогресса на других итерациях нет',
-                    );
-                }
-                return;
-            }
-            if (!(await this.progressSlices(host, active))) {
-                return;
-            }
-
-            const pair = `progress ${from} ${active.diffId}`;
-            if (this.carrying.has(pair)) {
-                return;
-            }
-            this.carrying.add(pair);
-            try {
-                const slice = await this.interdiff(host, from, active.diffId).then(
-                    (interdiff) => ({ interdiff }),
-                    (error: unknown) => {
-                        const refusal = this.carryRefusal(from, error);
-                        this.log(
-                            `срез ${from}→${active.diffId} не получен` +
-                                `${refusal === 'temporary' ? ', будет повтор' : ' и не будет'}: ${messageOf(error)}`,
-                        );
-                        return { refusal };
-                    },
-                );
-                if ('refusal' in slice) {
-                    if (slice.refusal === 'temporary') {
-                        // Сетевой сбой не повод понижать источник: у более ранней итерации
-                        // прогресс старее, и подменять им свежий молча нельзя.
-                        this.scheduleCarryRetry();
-                        return;
-                    }
-                    // Источника не существует (обычно его смёл force-push): берём следующего
-                    // кандидата — прогресс есть и у более ранних итераций.
-                    refused.add(from);
-                    continue;
-                }
-                const interdiff = slice.interdiff;
-                if (!this.stillActive(active.diffId)) {
-                    // Пока считался срез, автор запушил снова: перенос поедет на новую активную.
-                    return;
-                }
-
-                const fromBaseCommit = this.baseCommitOf(from);
-                const result = progress.carryRanges(
-                    from,
-                    active.diffId,
-                    buildIterationMap({ interdiff, fromBaseCommit, toBaseCommit: active.baseCommit }),
-                );
-                if (fromBaseCommit === null && !result.skipped) {
-                    this.log(
-                        `перенос прогресса ${from} → ${active.diffId}: база итерации ${from} неизвестна, ` +
-                            'диапазоны старой стороны не переносятся',
-                    );
-                }
-                return;
-            } finally {
-                this.carrying.delete(pair);
-            }
-        }
-    }
-
-    /**
-     * База итерации: список хоста, сохранённый патч, снапшот маршрута, построенный на ней.
-     * `null` — неизвестна: подставить базу активной итерации значило бы построить заведомо
-     * кривую карту строк и молча перенести по ней старую сторону.
-     */
-    private baseCommitOf(diffId: HostId): string | null {
-        const known =
-            this.list.find((iteration) => iteration.diffId === diffId)?.baseCommit ??
-            this.store.get(diffId)?.iteration.baseCommit;
-        if (known !== undefined) {
-            return known;
-        }
-        // Снапшот старого формата базы в себе не несёт, и `RouteStore` подставляет в неё
-        // заглушку. Принять её за коммит — то же самое, что взять базу наугад.
-        const stored = this.route.listSnapshots().findLast((snapshot) => snapshot.diffId === diffId);
-        const base = stored?.baseCommit;
-        return base === undefined || base === UNKNOWN_BASE_COMMIT ? null : base;
-    }
-
-    /**
-     * Есть ли чем переносить прогресс. Хост без срезов отвергнет любую пару, и перебирать
-     * источники незачем; неудачный опрос возможностей — про хост, а не про источник: повтор.
-     */
-    private async progressSlices(host: ReviewSource, active: Iteration): Promise<boolean> {
-        try {
-            const { iterations } = await this.hostCapabilities(host);
-            if (!iterations) {
-                this.log(`прогресс не перенесён на ${active.diffId}: хост без срезов`);
-            }
-            return iterations;
-        } catch (error) {
-            this.log(`прогресс не перенесён на ${active.diffId}, будет повтор: ${messageOf(error)}`);
-            this.scheduleCarryRetry();
-            return false;
-        }
     }
 
     /** Итерация всё ещё активна, а фид жив: результат сетевого вызова ещё кому-то нужен. */
@@ -644,17 +303,6 @@ export class IterationFeed {
         }
         const known = this.list.find((iteration) => iteration.diffId === from);
         return known?.status === 'gone' ? 'permanent' : 'temporary';
-    }
-
-    /** Источники, срез с которыми хост отверг навсегда для этой активной итерации. */
-    private refusedSourcesFor(toDiffId: HostId): Set<HostId> {
-        const known = this.refusedCarry.get(toDiffId);
-        if (known !== undefined) {
-            return known;
-        }
-        const empty = new Set<HostId>();
-        this.refusedCarry.set(toDiffId, empty);
-        return empty;
     }
 
     /**
@@ -703,7 +351,7 @@ export class IterationFeed {
         }
 
         try {
-            if (!(await this.hostCapabilities(host)).iterations) {
+            if (!(await this.supportsInterdiff(host))) {
                 // Срезов у хоста нет вовсе: считать список нечем и не станет — как отказ навсегда.
                 this.refused.add(pair);
                 this.log(`затронутые остановки снапшота ${snapshot.snapshotId} не посчитаны: хост без срезов`);
@@ -783,6 +431,14 @@ export class IterationFeed {
             };
         }
         return this.map.built;
+    }
+
+    private supportsInterdiff(host: ReviewSource): Promise<boolean> {
+        this.capabilities ??= host.getPr().then((pr) => pr.capabilities.iterations).catch((error: unknown) => {
+            this.capabilities = null;
+            throw error;
+        });
+        return this.capabilities;
     }
 
     private notify(): void {

@@ -3,15 +3,11 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { fixtureIteration, makeFixtureHost } from '@sherpa/fixtures';
 
 import { ChatStore } from './chat-store.js';
 import { openDatabase, readSchemaVersion } from './db.js';
-import { IterationFeed } from './iteration-feed.js';
-import { IterationStore } from './iteration-store.js';
 import { MIGRATIONS } from './migrations.js';
 import { databasePathFor } from './paths.js';
-import { ProgressStore } from './progress-store.js';
 import { RouteStore } from './route-store.js';
 import type { SherpaServer } from './server.js';
 import { startServer } from './server.js';
@@ -34,7 +30,7 @@ describe('хранилище', () => {
 
     it('сервер создаёт БД PR в режиме WAL', async () => {
         // Живой Арканум в тестах запрещён (docs/testing.md): без хоста прогрев маршрута никуда не ходит.
-        servers.push(await startServer({ prKey: 'arcanum-42', sherpaDir, reviewHostFactory: () => null }));
+        servers.push(await startServer({ prKey: 'arcanum-42', sherpaDir, reviewSourceFactory: () => null }));
         const file = databasePathFor(sherpaDir, 'arcanum-42');
 
         await expect(fs.stat(file)).resolves.toBeDefined();
@@ -501,117 +497,6 @@ describe('хранилище', () => {
             chat.close();
         } finally {
             after.close();
-        }
-    });
-
-    // Апгрейд накопленной БД 0.3.x: прогресс есть, итераций нет — перенос обязан его найти.
-    it('после апгрейда 0.3.x отметки переезжают на итерацию, на которой сервер поднялся', async () => {
-        const file = `${sherpaDir}/legacy-carry.db`;
-        const at = '2026-08-25T10:00:00.000Z';
-        const v1 = fixtureIteration('medium', 0);
-        const v2 = fixtureIteration('medium', 1);
-        // Файл, которого срез v1→v2 не касается: его отметки обязаны доехать целиком.
-        const source = v1.diff.files[0];
-        const target = v2.diff.files[0];
-        if (source === undefined || target === undefined) {
-            throw new Error('у фикстуры medium нет файлов');
-        }
-        const snapshot = {
-            snapshotId: 'snap-legacy-iter',
-            commit: v1.iteration.headCommit,
-            diffId: v1.iteration.diffId,
-            createdAt: at,
-            provenance: { harness: 'claude-code', model: 'opus' },
-            summary: 'маршрут, построенный до итераций',
-            stops: [
-                {
-                    id: 's01',
-                    planIndex: 1,
-                    tier: 'high',
-                    title: 'Окно редактирования',
-                    status: 'ready',
-                    paragraph: 'что изменилось',
-                    bridge: null,
-                    anchors: [
-                        {
-                            fileId: source.fileId,
-                            path: source.path,
-                            side: 'new',
-                            start: 1,
-                            end: 5,
-                            collapsed: false,
-                        },
-                    ],
-                    tests: [],
-                    droppedClaims: 0,
-                    validationNotes: [],
-                    provenance: null,
-                },
-            ],
-            tourOrder: ['s01'],
-            contentHash: 'abcdef123456',
-        };
-
-        const before = openDatabase(file, migrationsBefore('010-iterations'));
-        before
-            .prepare(
-                `INSERT INTO route_state (id, phase, small_pr, snapshot, intents, updated_at)
-                 VALUES (1, 'ready', 0, ?, '[]', ?)`,
-            )
-            .run(JSON.stringify(snapshot), at);
-        before.prepare('INSERT INTO stop_progress (stop_id, viewed, updated_at) VALUES (?, 1, ?)').run('s01', at);
-        before
-            .prepare('INSERT INTO file_progress (file_id, viewed, updated_at) VALUES (?, 1, ?)')
-            .run(source.fileId, at);
-        before
-            .prepare(
-                `INSERT INTO file_seen_ranges (file_id, side, start_line, end_line, source_stop_id)
-                 VALUES (?, 'new', 1, 5, 's01')`,
-            )
-            .run(source.fileId);
-        before.close();
-
-        const db = openDatabase(file);
-        try {
-            // Итераций в базе 0.3.x нет вовсе: искать источник по таблице `iterations` бесполезно.
-            expect(db.prepare('SELECT COUNT(*) AS count FROM iterations').get()).toMatchObject({ count: 0 });
-
-            const iterations = new IterationStore({ db });
-            const route = new RouteStore({ db });
-            const progress = new ProgressStore({ db, iterations, log: () => undefined });
-            const host = makeFixtureHost('medium');
-            // Пуш случился, пока сервер лежал: он поднимается уже на второй итерации.
-            host.advanceIteration();
-            const feed = new IterationFeed({
-                host,
-                iterations,
-                route,
-                progress,
-                log: () => undefined,
-            });
-            const release = feed.subscribe(() => undefined);
-            try {
-                for (let attempt = 0; attempt < 200; attempt += 1) {
-                    if (progress.read(v2.iteration.diffId).length > 0) {
-                        break;
-                    }
-                    await new Promise((resolve) => setTimeout(resolve, 5));
-                }
-
-                expect(progress.read(v2.iteration.diffId)).toEqual([
-                    { fileId: target.fileId, viewed: true, seenRanges: [{ side: 'new', start: 1, end: 5 }] },
-                ]);
-                expect(
-                    db.prepare('SELECT from_diff_id, to_diff_id FROM progress_carries').all(),
-                ).toEqual([{ from_diff_id: v1.iteration.diffId, to_diff_id: v2.iteration.diffId }]);
-            } finally {
-                release();
-                feed.close();
-                progress.close();
-                route.close();
-            }
-        } finally {
-            db.close();
         }
     });
 

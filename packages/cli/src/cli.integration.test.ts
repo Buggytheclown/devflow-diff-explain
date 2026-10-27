@@ -46,7 +46,7 @@ describe('CLI против сервера', () => {
     async function start(longPollSeconds = 0.2): Promise<SherpaServer> {
         // Живой Арканум в тестах запрещён: без хоста прогрев маршрута не ходит в сеть,
         // а этому набору важен только протокол CLI↔сервер.
-        server = await startServer({ prKey: PR_KEY, sherpaDir, longPollSeconds, reviewHostFactory: () => null });
+        server = await startServer({ prKey: PR_KEY, sherpaDir, longPollSeconds, reviewSourceFactory: () => null });
         return server;
     }
 
@@ -161,7 +161,7 @@ describe('CLI против сервера', () => {
             prKey: localKey,
             sherpaDir,
             longPollSeconds: 0.2,
-            reviewHostFactory: () => null,
+            reviewSourceFactory: () => null,
         });
         const arc: NonNullable<CliIo['runCommand']> = (_command, args) =>
             Promise.resolve({

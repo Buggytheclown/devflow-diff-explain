@@ -4,26 +4,19 @@ import type {
     PrMeta,
     UiCancelResponse,
     UiChatEvent,
-    UiFeedbackAvailability,
     UiEnqueueResponse,
-    UiProgressEvent,
-    UiReviewEvent,
     UiRouteEvent,
     UiState,
     UiTask,
-    UiUpdate,
 } from '@sherpa/protocol';
 import {
     UI_CHAT_EVENT,
     UI_ENDPOINTS,
-    UI_PROGRESS_EVENT,
-    UI_REVIEW_EVENT,
     UI_ROUTE_EVENT,
     UI_STATE_EVENT,
     uiCancelRequestSchema,
     uiEnqueueRequestSchema,
     uiTaskSchema,
-    uiUpdateCheckResponseSchema,
 } from '@sherpa/protocol';
 import type { z } from 'zod';
 
@@ -33,12 +26,9 @@ import type { RequestContext, Route, StreamContext } from './http.js';
 import { abortOnDisconnect, handlingRpcFailures, readJsonBody } from './http.js';
 import type { IterationFeed } from './iteration-feed.js';
 import { routeRevisionOf } from './iteration-feed.js';
-import type { ProgressStore } from './progress-store.js';
 import type { TaskQueue, TaskRecord } from './queue.js';
-import type { ReviewFeed } from './review-feed.js';
 import type { RouteStore } from './route-store.js';
 import type { UiPresence } from './ui-presence.js';
-import type { UpdateForceResult } from './update-check.js';
 import type { WorkerRegistry } from './worker-registry.js';
 
 /**
@@ -51,18 +41,6 @@ export interface PrMetaSource {
     subscribe: (listener: () => void) => () => void;
 }
 
-/**
- * Синхронный источник «доступна новая версия»: та же причина, что у меты PR — снапшот собирается
- * без сети. Реализация — `UpdateChecker`.
- */
-export interface UpdateSource {
-    /** null — проверки не было, она провалилась, версия свежая или отклонена. */
-    get: () => UiUpdate | null;
-    subscribe: (listener: () => void) => () => void;
-    /** Перепроверка мимо TTL — команда палитры «Проверить обновления». */
-    force: () => Promise<UpdateForceResult>;
-}
-
 export interface UiRoutesOptions {
     readonly prKey: string;
     readonly queue: TaskQueue;
@@ -71,18 +49,10 @@ export interface UiRoutesOptions {
     readonly reviewHost: string | null;
     /** Мета PR для снапшота: её обновление тоже будит SSE-клиентов. */
     readonly prMeta: PrMetaSource;
-    /** Новая версия в trunk: её появление тоже будит SSE-клиентов. */
-    readonly update: UpdateSource | null;
     /** Служебные echo-задачи доступны только на фикстурах. */
     readonly development?: boolean;
-    /** Доступность канала фидбека зависит только от OAuth-токена в окружении. */
-    readonly feedback: UiFeedbackAvailability;
-    /** Ревизия тредов для SSE; null — ревью-событий у этого сервера не бывает. */
-    readonly reviewFeed: ReviewFeed | null;
     /** Итерации PR: их список едет в снапшоте, а смена активной делает маршрут устаревшим. */
     readonly iterationFeed: IterationFeed | null;
-    /** Прогресс чтения: его ревизия едет в канал, чтобы вторая вкладка сошлась. */
-    readonly progress: ProgressStore | null;
     /** Состояние маршрута: его ревизия едет в канал тем же способом, что и прогресс. */
     readonly route: RouteStore;
     /** История чата и заметки: событие несёт только ревизию, данные перечитываются отдельной ручкой. */
@@ -104,7 +74,6 @@ const KEEPALIVE_INTERVAL_MS = 30_000;
  * снапшот `UiState` — серверные внутренности (пути файлов, workerId аренды) в него не попадают.
  */
 export function createUiRoutes(options: UiRoutesOptions): Route[] {
-    const update = options.update;
     return [
         {
             method: 'GET',
@@ -137,21 +106,6 @@ export function createUiRoutes(options: UiRoutesOptions): Route[] {
                 return { status: 200, body };
             }),
         },
-        ...(update === null ? [] : [
-            {
-                method: 'POST' as const,
-                path: UI_ENDPOINTS.updateCheck,
-                handle: handlingRpcFailures(async () => {
-                    const result = await update.force();
-                    // Провал проверки нельзя выдать за «обновлений нет»: палитра различает их
-                    // только по коду ответа, а `{update: null}` она читает как «версия свежая».
-                    if (result.failure !== null) {
-                        throw new RpcFailure('host_unavailable', `Не удалось проверить обновления: ${result.failure}`);
-                    }
-                    return { status: 200, body: uiUpdateCheckResponseSchema.parse({ update: result.update }) };
-                }),
-            },
-        ]),
         {
             method: 'GET',
             path: UI_ENDPOINTS.events,
@@ -211,22 +165,6 @@ function streamState(options: UiRoutesOptions, ctx: StreamContext): void {
         });
     };
 
-    const pushReview = (revision: number): void => {
-        if (abort.signal.aborted || res.writableEnded || res.destroyed) {
-            return;
-        }
-        const event: UiReviewEvent = { threadsRevision: revision };
-        sendEvent(res, UI_REVIEW_EVENT, JSON.stringify(event));
-    };
-
-    const pushProgress = (revision: number): void => {
-        if (abort.signal.aborted || res.writableEnded || res.destroyed) {
-            return;
-        }
-        const event: UiProgressEvent = { progressRevision: revision };
-        sendEvent(res, UI_PROGRESS_EVENT, JSON.stringify(event));
-    };
-
     // Ревизия составная: `stale` живёт не в `RouteStore`, а считается по итерациям (`withStale`),
     // и без учёта фида пуш не заставил бы UI перечитать маршрут.
     const pushRoute = (): void => {
@@ -251,12 +189,7 @@ function streamState(options: UiRoutesOptions, ctx: StreamContext): void {
     const unsubscribeQueue = options.queue.subscribeChanges(schedule);
     const unsubscribeWorker = options.registry.subscribe(schedule);
     const unsubscribePrMeta = options.prMeta.subscribe(schedule);
-    const unsubscribeUpdate = options.update?.subscribe(schedule);
-    // Подписка на треды поднимается первым SSE-клиентом и гаснет с последним (см. ReviewFeed);
-    // заводится после первого снапшота состояния, чтобы канал начинался с `state`.
-    let unsubscribeReview: (() => void) | null = null;
     let unsubscribeIterations: (() => void) | null = null;
-    let unsubscribeProgress: (() => void) | null = null;
     let unsubscribeRoute: (() => void) | null = null;
     let unsubscribeChat: (() => void) | null = null;
 
@@ -265,10 +198,7 @@ function streamState(options: UiRoutesOptions, ctx: StreamContext): void {
         unsubscribeQueue();
         unsubscribeWorker();
         unsubscribePrMeta();
-        unsubscribeUpdate?.();
-        unsubscribeReview?.();
         unsubscribeIterations?.();
-        unsubscribeProgress?.();
         unsubscribeRoute?.();
         unsubscribeChat?.();
         disconnectPresence();
@@ -299,17 +229,6 @@ function streamState(options: UiRoutesOptions, ctx: StreamContext): void {
     }
 
     push();
-    // Текущая ревизия — сразу: клиент после реконнекта должен узнать, что треды успели уехать.
-    // Канал мог закрыться прямо в `push` (снапшот не собрался) — тогда подписываться уже не на кого.
-    if (options.reviewFeed !== null && !res.writableEnded && !res.destroyed) {
-        pushReview(options.reviewFeed.revision);
-        unsubscribeReview = options.reviewFeed.subscribe(pushReview);
-    }
-    // Прогресс чтения локальный и от хоста не зависит: событие есть всегда, даже без ревью-хоста.
-    if (options.progress !== null && !res.writableEnded && !res.destroyed) {
-        pushProgress(options.progress.revision);
-        unsubscribeProgress = options.progress.subscribe(pushProgress);
-    }
     // Маршрут — тоже локальное состояние: без хоста он просто никогда не покидает фазу `none`.
     if (!res.writableEnded && !res.destroyed) {
         pushRoute();
@@ -335,9 +254,9 @@ function buildState(options: UiRoutesOptions): UiState {
         tasks: options.queue.listTasks().map(toUiTask),
         reviewHost: options.reviewHost,
         pr: options.prMeta.get(),
-        feedback: options.feedback,
+        feedback: { available: false, reason: 'Отправка фидбека больше не поддерживается.' },
         iterations: options.iterationFeed?.iterations() ?? [],
-        update: options.update?.get() ?? null,
+        update: null,
         generationCap: options.route.currentGenerationCap(),
     };
 }
@@ -367,7 +286,7 @@ function toUiTask(record: TaskRecord): UiTask {
  */
 function echoInstructions(text: string): string {
     return [
-        'This is a check echo task of the Sherpa loop.',
+        'This is a check echo task of the Diff Explain worker loop.',
         'Save exactly this text to a file (no quotes, no comments) and submit it as the result:',
         '',
         text,

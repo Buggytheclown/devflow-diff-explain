@@ -2,7 +2,6 @@ import type {
     UiChatAskResponse,
     UiChatCancelResponse,
     UiChatRetryResponse,
-    UiReviewWriteAck,
 } from '@sherpa/protocol';
 import {
     UI_ENDPOINTS,
@@ -13,8 +12,6 @@ import {
     uiChatResponseSchema,
     uiChatRetryRequestSchema,
     uiChatRetryResponseSchema,
-    uiChatNoteDeleteRequestSchema,
-    uiReviewWriteAckSchema,
 } from '@sherpa/protocol';
 import type { z } from 'zod';
 
@@ -23,20 +20,20 @@ import type { ChatStore } from './chat-store.js';
 import { RpcFailure } from './errors.js';
 import type { RequestContext, Route } from './http.js';
 import { handlingRpcFailures, readJsonBody } from './http.js';
-import { respond } from './review-routes.js';
+import { respond } from './host-http.js';
 
 export interface ChatRoutesOptions {
     readonly store: ChatStore;
     readonly orchestrator: ChatOrchestrator;
 }
 
-/** История чата, управление вопросами и удаление локальных заметок. */
+/** История объяснения и управление явно заданными вопросами. */
 export function createChatRoutes(options: ChatRoutesOptions): Route[] {
     return [
         {
             method: 'GET',
             path: UI_ENDPOINTS.reviewChat,
-            handle: handlingRpcFailures(() => respond(uiChatResponseSchema, options.store.read(), 'local')),
+            handle: handlingRpcFailures(() => respond(uiChatResponseSchema, { ...options.store.read(), notes: [] }, 'local')),
         },
         {
             method: 'POST',
@@ -70,16 +67,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Route[] {
                 const request = await readChatRequest(ctx, uiChatRetryRequestSchema);
                 const body: UiChatRetryResponse = { outcome: await options.orchestrator.retry(request.exchangeId) };
                 return respond(uiChatRetryResponseSchema, body, 'local');
-            }),
-        },
-        {
-            method: 'POST',
-            path: UI_ENDPOINTS.reviewChatNoteDelete,
-            handle: handlingRpcFailures(async (ctx) => {
-                const request = await readChatRequest(ctx, uiChatNoteDeleteRequestSchema);
-                options.store.deleteNote(request.noteId);
-                const body: UiReviewWriteAck = { acknowledged: true };
-                return respond(uiReviewWriteAckSchema, body, 'local');
             }),
         },
     ];

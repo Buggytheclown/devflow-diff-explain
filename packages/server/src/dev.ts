@@ -1,7 +1,6 @@
 import path from 'node:path';
 
 import { ServerAlreadyRunningError } from './errors.js';
-import { feedbackOptionsFor } from './feedback-launch.js';
 import { formatUiUrl, readOption, resolveUiDir, UI_BUILD_HINT } from './launch.js';
 import { readListenHost } from './listen-host.js';
 import { DEFAULT_SHERPA_DIR, manifestPathFor } from './paths.js';
@@ -18,15 +17,13 @@ async function main(argv: readonly string[]): Promise<number> {
     if (prKey === null) {
         process.stderr.write(
             'Использование: dev --pr <ключ PR> [--sherpa-dir <путь>] [--ui <путь к dist>] ' +
-                '[--install-dir <путь>] [--repo <каталог проекта>] [--base <ref>] [--branch <ветка>]\n',
+                '[--repo <каталог проекта>] [--base <ref>] [--branch <ветка>]\n',
         );
         return 1;
     }
 
     const sherpaDir = readOption(argv, '--sherpa-dir') ?? DEFAULT_SHERPA_DIR;
     const uiDir = await resolveUiDir(readOption(argv, '--ui'));
-    // Как в бандле: классификация установки для тоста обновления нужна и галерее, и e2e.
-    const installDir = readOption(argv, '--install-dir');
     const host = readListenHost(process.env);
     // Локальное ревью: каталог проекта, база сравнения и ветка — те же аргументы, что у бандла.
     const repo = readOption(argv, '--repo');
@@ -36,7 +33,6 @@ async function main(argv: readonly string[]): Promise<number> {
     // Самоостановка по простою выключена: дев-сервер держит открытый терминал разработчика,
     // и внезапная смерть посреди работы над кодом ему только мешает — останавливает Ctrl+C.
     const options = {
-        presentation: 'story' as const,
         prKey,
         sherpaDir,
         host,
@@ -44,8 +40,6 @@ async function main(argv: readonly string[]): Promise<number> {
         ...(repo === null ? {} : { repo: path.resolve(repo) }),
         ...(reviewBase === null ? {} : { base: reviewBase }),
         ...(reviewBranch === null ? {} : { branch: reviewBranch }),
-        updateCheck: installDir === null ? {} : { installDir },
-        feedback: feedbackOptionsFor(installDir),
     };
 
     let server: SherpaServer;

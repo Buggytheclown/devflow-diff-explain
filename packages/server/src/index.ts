@@ -6,13 +6,6 @@ export { createToken, extractBearerToken, tokenMatches } from './auth.js';
 export type { SherpaDatabase } from './db.js';
 export { applyMigrations, openDatabase, readSchemaVersion, transaction } from './db.js';
 export { RpcFailure, ServerAlreadyRunningError } from './errors.js';
-export type { FeedbackIntegrationOptions, FeedbackRoutesOptions } from './feedback-routes.js';
-export {
-    createFeedbackRoutes,
-    feedbackAvailability,
-    feedbackUnavailableMessage,
-    NO_TRACKER_TOKEN_REASON,
-} from './feedback-routes.js';
 export type {
     JsonResponse,
     JsonRoute,
@@ -34,30 +27,14 @@ export {
     rpcError,
     rpcFailureResponse,
 } from './http.js';
-export type { TrackerClientOptions, TrackerFetchLike, TrackerIssue, TrackerIssueInput } from './tracker-client.js';
-export {
-    FEEDBACK_QUEUE,
-    TRACKER_API_BASE,
-    TrackerClient,
-} from './tracker-client.js';
-export type { LocateYaOptions, RunYa, TrackerTokenOptions, TrackerTokenSource } from './tracker-token.js';
-export {
-    locateYa,
-    resolveTrackerToken,
-    TRACKER_TOKEN_ENV_VARS,
-    trackerTokenAvailable,
-    trackerTokenFromEnv,
-    trackerTokenSource,
-    YA_FETCH_TOKEN_ARGS,
-} from './tracker-token.js';
 export type { ArcanumHostOptions } from './hosts/arcanum/arcanum-host.js';
 export { ArcanumHost, makeArcanumHost } from './hosts/arcanum/arcanum-host.js';
 export type { ArcanumClientOptions, FetchLike } from './hosts/arcanum/client.js';
 export { ARCANUM_API_BASE, ArcanumClient } from './hosts/arcanum/client.js';
 export type { ArcTokenOptions, TokenSource } from './hosts/arcanum/token.js';
 export { arcTokenSource, resolveArcToken } from './hosts/arcanum/token.js';
-export type { ReviewHostFactory, SelectedHost } from './hosts/select.js';
-export { selectReviewHost } from './hosts/select.js';
+export type { ReviewSourceFactory, SelectedSource } from './hosts/select.js';
+export { selectReviewSource } from './hosts/select.js';
 export { affectedStops, buildIterationMap, classifyStop, identityMap } from './iterations/index.js';
 export type { FileStatus, IterationMap, IterationMapInput, MappedRange, StopChangeKind } from './iterations/index.js';
 export {
@@ -93,11 +70,8 @@ export type {
     TaskResultAcceptor,
 } from './queue.js';
 export { MAX_RESULT_REJECTIONS, TaskQueue } from './queue.js';
-export { ReviewFeed } from './review-feed.js';
-export type { ReviewRoutesOptions } from './review-routes.js';
-export { createReviewRoutes } from './review-routes.js';
-export type { RouteConfig, RouteOrchestratorOptions } from './route-orchestrator.js';
-export { DEFAULT_ROUTE_CONFIG, isSmallPr, RouteOrchestrator } from './route-orchestrator.js';
+export type { RouteOrchestratorOptions } from './route-orchestrator.js';
+export { RouteOrchestrator } from './route-orchestrator.js';
 export type { RouteRoutesOptions } from './route-routes.js';
 export { createRouteRoutes } from './route-routes.js';
 export type { AcceptedSkeletonInput, RouteListener, RouteStoreOptions } from './route-store.js';

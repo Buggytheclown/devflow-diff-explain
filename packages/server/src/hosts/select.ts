@@ -106,8 +106,21 @@ export interface SelectedSource {
 export type ReviewSourceFactory = (prKey: string, options: SelectHostOptions) => SelectedSource | null;
 export function selectReviewSource(prKey: string, options: SelectHostOptions = {}): SelectedSource | null {
     const selected = selectReviewHost(prKey, options);
-    return selected === null ? null : { name: selected.name, host: selected.host,
+    return selected === null ? null : { name: selected.name, host: readOnlySource(selected.host),
         ...(selected.advanceIteration === undefined ? {} : { advanceIteration: selected.advanceIteration }) };
+}
+
+/** В рантайм объяснения попадают только операции чтения, даже у полного адаптера. */
+function readOnlySource(host: ReviewSource): ReviewSource {
+    return {
+        getPr: host.getPr.bind(host),
+        listIterations: host.listIterations.bind(host),
+        getDiff: host.getDiff.bind(host),
+        watchIterations: host.watchIterations.bind(host),
+        ...(host.getFileContent === undefined ? {} : { getFileContent: host.getFileContent.bind(host) }),
+        ...(host.getSourceAtRevision === undefined ? {} : { getSourceAtRevision: host.getSourceAtRevision.bind(host) }),
+        ...(host.getBlob === undefined ? {} : { getBlob: host.getBlob.bind(host) }),
+    };
 }
 
 export interface SelectedHost {

@@ -190,7 +190,7 @@ describe('сервер по простою', () => {
             prKey: PR_KEY,
             sherpaDir,
             idleSeconds: SHORT_IDLE_SECONDS,
-            reviewHostFactory: () => null,
+            reviewSourceFactory: () => null,
         };
         const server = await startServer(
             longPollSeconds === undefined ? base : { ...base, longPollSeconds },
@@ -263,7 +263,7 @@ describe('сервер по простою', () => {
     });
 
     it('с нулевым порогом не гаснет', async () => {
-        const server = await startServer({ prKey: PR_KEY, sherpaDir, idleSeconds: 0, reviewHostFactory: () => null });
+        const server = await startServer({ prKey: PR_KEY, sherpaDir, idleSeconds: 0, reviewSourceFactory: () => null });
         servers.push(server);
 
         await delay(OVER_IDLE_MS);

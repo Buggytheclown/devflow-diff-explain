@@ -30,7 +30,7 @@ const DESCRIPTIONS = {
         state: 'снимок состояния PR для первой отрисовки',
         enqueue: 'постановка задачи из UI (только `echo`, дев-демо петли)',
         cancel: 'снятие поставленной задачи',
-        events: 'SSE-поток: снимок состояния и ревизии ревью, прогресса, маршрута, чата',
+        events: 'SSE-поток: состояние очереди, ревизии объяснения и чата',
         reviewDiff: 'дифф итерации PR',
         reviewThreads: 'треды комментариев PR',
         reviewLenses: 'линзы фильтра файлов',
@@ -56,7 +56,7 @@ const DESCRIPTIONS = {
         reviewSnapshots: 'список снапшотов маршрута',
         reviewRouteGenerate: 'запуск и перезапуск генерации маршрута',
         reviewRouteFillStop: 'перезаполнение одной остановки',
-        reviewChat: 'история чата и заметки агента',
+        reviewChat: 'история вопросов и ответов',
         reviewChatAsk: 'вопрос агенту',
         reviewChatCancel: 'отмена заданного вопроса',
         reviewChatRetry: 'повтор провалившегося вопроса',
@@ -83,11 +83,25 @@ function main() {
     const worker = parseEndpoints(read(CONSTANTS_FILE), 'WORKER_ENDPOINTS', CONSTANTS_FILE);
 
     assertWorkerMethod(worker);
+    assertDescriptions(ui.entries, DESCRIPTIONS.ui, 'UI_ENDPOINTS');
+    // В протоколе остаются имена старых ручек ради совместимости типов.
+    // Документируем только маршруты текущего сервера.
+    const registered = new Set(
+        ['ui-routes', 'read-routes', 'route-routes', 'chat-routes', 'settings-routes'].flatMap((name) =>
+            [...read(path.join(ROOT, `packages/server/src/${name}.ts`)).matchAll(/path:\s*UI_ENDPOINTS\.(\w+)/g)]
+                .map((match) => match[1]),
+        ),
+    );
+    for (const key of registered) {
+        if (!ui.entries.some((entry) => entry.key === key)) fail(`Неизвестная UI-ручка ${key}`);
+    }
+    const active = ui.entries.filter((entry) => registered.has(entry.key));
+    const descriptions = Object.fromEntries(active.map((entry) => [entry.key, DESCRIPTIONS.ui[entry.key]]));
 
     const markdown = [
         '### UI-ручки',
         '',
-        renderTable(ui.entries, DESCRIPTIONS.ui, 'UI_ENDPOINTS', (entry) => methodsOf(entry, UI_FILE)),
+        renderTable(active, descriptions, 'UI_ENDPOINTS', (entry) => methodsOf(entry, UI_FILE)),
         '',
         '### Воркерские ручки',
         '',

@@ -15,12 +15,12 @@ import {
     uiChatRetryResponseSchema,
     uiStateSchema,
 } from '@sherpa/protocol';
-import { makeFixtureHost } from '@sherpa/fixtures';
+import { makeFixtureHost, readableStoryFixture } from '@sherpa/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { chatPayloadDirOf, databasePathFor, routePayloadDirOf, sharedPayloadDirOf } from './paths.js';
 import { MAX_RESULT_REJECTIONS } from './queue.js';
-import { asRawText, mediumDiff, mediumRawResults, mediumReadySnapshot } from './route/fixture-support.js';
+import { mediumDiff } from './route/fixture-support.js';
 import type { SherpaServer } from './server.js';
 import { startServer } from './server.js';
 import { get, makeTempSherpaDir, postJson, removeTempSherpaDir } from './test-support.js';
@@ -39,7 +39,7 @@ const ANCHOR: ChatAnchor = {
     end: 12,
 };
 
-describe('чат и заметки', () => {
+describe('вопросы об объяснении и коде', () => {
     let sherpaDir: string;
     let servers: SherpaServer[];
     let streams: SseStream[];
@@ -68,7 +68,7 @@ describe('чат и заметки', () => {
             sherpaDir,
             longPollSeconds: 0.1,
             now: () => new Date(Date.now() + clockOffsetMs),
-            ...(prKey === LOCAL_PR ? { reviewHostFactory: () => null } : {}),
+            ...(prKey === LOCAL_PR ? { reviewSourceFactory: () => null } : {}),
         });
         servers.push(server);
         return server;
@@ -288,7 +288,7 @@ describe('чат и заметки', () => {
         await server.route.warmup();
         const skeleton = server.queue.listTasks().find((task) => task.type === 'route.skeleton');
         expect(server.queue.next(WORKER)?.task.id).toBe(skeleton?.id);
-        expect(complete(server, skeleton?.id ?? 0, asRawText(mediumRawResults().skeleton)).kind).toBe('accepted');
+        expect(complete(server, skeleton?.id ?? 0, JSON.stringify(readableStoryFixture().outline)).kind).toBe('accepted');
         expect(server.queue.listTasks().some((task) => task.type === 'route.section' && task.status === 'queued')).toBe(
             true,
         );
@@ -481,7 +481,7 @@ describe('чат и заметки', () => {
             prKey: PR,
             sherpaDir,
             longPollSeconds: 0.1,
-            reviewHostFactory: () => ({ name: 'fixture', host: pushed }),
+            reviewSourceFactory: () => ({ name: 'fixture', host: pushed }),
         });
         servers.push(server);
 
@@ -547,7 +547,7 @@ describe('чат и заметки', () => {
         );
     });
 
-    it('принятый ответ создаёт заметку только при якоре и с head-коммитом диффа', async () => {
+    it('ответ с якорем сохраняется в чате без отдельной заметки', async () => {
         const server = await start(PR);
         const anchored = await ask(server, 'Почему этот диапазон нужен?', ANCHOR);
         const anchoredTask = leaseChat(server);
@@ -555,30 +555,24 @@ describe('чат и заметки', () => {
 
         const first = await readChat(server);
         expect(first.exchanges[0]).toMatchObject({ id: anchored.id, status: 'done', answer: ANSWER });
-        expect(first.notes).toEqual([
-            expect.objectContaining({
-                exchangeId: anchored.id,
-                anchor: ANCHOR,
-                text: ANSWER,
-                lostAnchor: false,
-                origin: { commit: mediumReadySnapshot().commit, anchor: ANCHOR },
-            }),
-        ]);
+        expect(first.exchanges[0]?.anchor).toEqual(ANCHOR);
+        expect(first.notes).toEqual([]);
 
         await ask(server, 'Вопрос ко всему PR');
         const plainTask = server.queue.next(WORKER)?.task.id ?? 0;
         expect(complete(server, plainTask).kind).toBe('accepted');
-        expect((await readChat(server)).notes).toHaveLength(1);
+        expect((await readChat(server)).notes).toEqual([]);
     });
 
-    it('ответ и заметка откатываются вместе, после восстановления сверка применяет результат', async () => {
+    it('сбой записи ответа откатывает обмен, после восстановления сверка применяет результат', async () => {
         const server = await start();
-        await ask(server, 'Нужна атомарная заметка', ANCHOR);
+        await ask(server, 'Сохрани ответ атомарно', ANCHOR);
         const taskId = leaseChat(server);
         const db = new DatabaseSync(databasePathFor(sherpaDir, LOCAL_PR));
         db.exec(`
-            CREATE TRIGGER reject_agent_note
-            BEFORE INSERT ON agent_notes
+            CREATE TRIGGER reject_chat_answer
+            BEFORE UPDATE OF answer ON chat_exchanges
+            WHEN NEW.answer IS NOT NULL
             BEGIN
                 SELECT RAISE(ABORT, 'test rollback');
             END;
@@ -590,7 +584,7 @@ describe('чат и заметки', () => {
                 notes: [],
             });
         } finally {
-            db.exec('DROP TRIGGER reject_agent_note;');
+            db.exec('DROP TRIGGER reject_chat_answer;');
             db.close();
         }
 
@@ -603,29 +597,28 @@ describe('чат и заметки', () => {
         server.queue.cancel(poke.id);
         expect(await readChat(server)).toMatchObject({
             exchanges: [expect.objectContaining({ status: 'done', answer: ANSWER })],
-            notes: [expect.objectContaining({ text: ANSWER })],
+            notes: [],
         });
     });
 
-    it('удаление заметки не меняет историю и двигает ревизию', async () => {
+    it('старой ручки заметок нет, история ответа остаётся доступной', async () => {
         const server = await start();
         await ask(server, 'Закрепи ответ', ANCHOR);
         const taskId = leaseChat(server);
         complete(server, taskId);
         const before = await readChat(server);
-        const noteId = before.notes[0]?.id ?? 0;
 
         const response = await postJson(
             server.port,
             UI_ENDPOINTS.reviewChatNoteDelete,
-            { noteId },
+            { noteId: 1 },
             server.token,
         );
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(404);
         const after = await readChat(server);
         expect(after.notes).toEqual([]);
         expect(after.exchanges).toEqual(before.exchanges);
-        expect(after.chatRevision).toBeGreaterThan(before.chatRevision);
+        expect(after.chatRevision).toBe(before.chatRevision);
     });
 
     it('вытеснение воркера переживает рестарт, новый воркер продолжает вопрос', async () => {
@@ -647,7 +640,7 @@ describe('чат и заметки', () => {
         expect((await readChat(second)).exchanges[0]).toMatchObject({ status: 'running', error: null });
     });
 
-    it('рестарт при выданной аренде chat: та же сессия сдаёт ответ, заметка появляется', async () => {
+    it('рестарт при выданной аренде chat: та же сессия сдаёт ответ с исходным якорем', async () => {
         const first = await start();
         const exchange = await ask(first, 'Ответь уже после рестарта', ANCHOR);
         const taskId = leaseChat(first);
@@ -666,9 +659,8 @@ describe('чат и заметки', () => {
         expect(complete(second, taskId).kind).toBe('accepted');
         const done = await readChat(second);
         expect(done.exchanges[0]).toMatchObject({ id: exchange.id, status: 'done', answer: ANSWER });
-        expect(done.notes).toEqual([
-            expect.objectContaining({ exchangeId: exchange.id, anchor: ANCHOR, text: ANSWER }),
-        ]);
+        expect(done.exchanges[0]?.anchor).toEqual(ANCHOR);
+        expect(done.notes).toEqual([]);
     });
 
     it('рестарт при выданной аренде chat: сессия не вернулась, аренда протухает — failed и retry', async () => {

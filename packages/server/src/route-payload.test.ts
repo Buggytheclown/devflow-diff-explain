@@ -2,29 +2,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { Locale, PrDiff, PrMeta, Thread } from '@sherpa/protocol';
+import type { Locale, PrDiff, PrMeta } from '@sherpa/protocol';
 import { generateJsonSchemas } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { IterationMap } from './iterations/index.js';
-import { buildIterationMap, identityMap } from './iterations/index.js';
-import type { RegenerationBudgets, RouteTaskContext } from './route-payload.js';
+import type { RouteTaskContext } from './route-payload.js';
 import {
     CONTEXT_BUDGET_BYTES,
     prDiffContext,
     prDiffPayload,
     RoutePayloadWriter,
-    sectionPlanContext,
 } from './route-payload.js';
-import type { RouteRegenerationContext } from './route-regeneration.js';
 import { indexDiff } from './route/diff-index.js';
 import {
     mediumDiff,
-    mediumDiffV2,
-    mediumInterdiffV1V2,
     mediumRawResults,
     mediumReadySnapshot,
-    mediumThreadsV2,
 } from './route/fixture-support.js';
 import { SharedPayloadStore } from './shared-payload.js';
 
@@ -222,59 +215,6 @@ describe('общий контекст диффа', () => {
     });
 });
 
-describe('план задачи секции', () => {
-    const stops = mediumReadySnapshot().stops;
-
-    it('план целиком, целевые стопы выделены, замыслы на месте', () => {
-        const text = sectionPlanContext([3], stops, intents());
-
-        expect(text).toContain('# Route plan (fixed by the server)');
-        for (const stop of stops) {
-            expect(text).toContain(stop.title);
-        }
-        expect(text).toContain('| 3 | medium |');
-        expect(text).toContain('**your target**');
-        expect(text).toContain(`### Stop 3 — medium — ${stops[2]?.title ?? ''}`);
-        // Замысел целевого стопа — цитатой, замыслы соседей — строкой списка (для связок).
-        expect(text).toContain(`> ${intents().get(3) ?? ''}`);
-        expect(text).toContain(`- stop 1 (high) ${stops[0]?.title ?? ''} — ${intents().get(1) ?? ''}`);
-        // «Прочее» синтезирует сервер: заполнять его модели нечем.
-        expect(text).toContain('synthetic, filled by the server');
-    });
-
-    it('диффа в плане нет: он общий и лежит по своему пути', () => {
-        const text = sectionPlanContext([3], stops, intents());
-
-        expect(text).not.toContain('## Patches');
-        expect(text).not.toContain('| file # | file | change | +/- | notes |');
-        expect(text).not.toMatch(/^ *(\d+|\.) +(\d+|\.) \| /m);
-        for (const file of mediumDiff().files) {
-            expect(text).not.toContain(`\`${file.path}\``);
-        }
-    });
-
-    it('батч из нескольких стопов: цели все, соседи — остальные', () => {
-        const text = sectionPlanContext([1, 2], stops, intents());
-
-        expect(text).toContain('### Stop 1 —');
-        expect(text).toContain('### Stop 2 —');
-        expect(text).not.toContain('### Stop 3 —');
-        expect(text).toContain(`- stop 3 (medium) ${stops[2]?.title ?? ''}`);
-    });
-
-    it('номер стопа печатается числом схемы, а не двузначным номером файла', () => {
-        const plan = sectionPlanContext([3], stops, intents());
-
-        // `planIndex` — z.number(): «03» в JSON модели схема не примет.
-        expect(plan).not.toMatch(/^\| 0\d \|/m);
-        expect(plan).not.toMatch(/### Stop 0\d /);
-        expect(plan).toContain('`"planIndex": 3`');
-        // Двузначная нумерация осталась только у файлов, и колонки названы по-разному.
-        expect(plan).toContain('| stop # | tier | title | |');
-        expect(prDiffContext(context(), CONTEXT_BUDGET_BYTES)).toContain('| file # | file | change | +/- | notes |');
-    });
-});
-
 describe('одна политика урезания общего диффа', () => {
     it('тест-файлы режутся последними: дайджесту нужны их строки для якорей', () => {
         // Бюджета хватает на неурезаемую часть и тесты, но не на весь дифф.
@@ -374,12 +314,12 @@ describe('запись payload на диск', () => {
         expect(guide).toMatch(/shared[/\\]guides[/\\]skeleton-guide-[0-9a-f]{8}\.md$/);
         expect(pr?.startsWith(sharedDir)).toBe(true);
         expect(path.basename(pr ?? '')).toBe('pr-diff.md');
-        expect(fs.readFileSync(guide ?? '', 'utf8')).toContain('# Task: plan the review route');
+        expect(fs.readFileSync(guide ?? '', 'utf8')).toContain('PR');
         expect(fs.readFileSync(pr ?? '', 'utf8')).toContain('## Changed files (21, complete list)');
-        expect(input.instructions).toContain('Plan the review route');
+        expect(input.instructions).toContain('Plan a concise coherent explanation');
         // Своего у скелета нет: каталог генерации держит только схему результата.
         expect(fs.readdirSync(path.dirname(input.resultSchemaFile ?? ''))).toEqual([
-            'route-skeleton-result.schema.json',
+            'route-readableSkeleton-result.schema.json',
         ]);
     });
 
@@ -390,8 +330,8 @@ describe('запись payload на диск', () => {
 
         const schemas = generateJsonSchemas();
         const readSchema = (file: string | undefined): unknown => JSON.parse(fs.readFileSync(file ?? '', 'utf8'));
-        expect(readSchema(skeleton.resultSchemaFile)).toEqual(schemas.routeSkeletonResult);
-        expect(readSchema(sections.resultSchemaFile)).toEqual(schemas.routeSectionResult);
+        expect(readSchema(skeleton.resultSchemaFile)).toEqual(schemas.readableSkeletonResult);
+        expect(readSchema(sections.resultSchemaFile)).toEqual(schemas.readableSectionResult);
     });
 
     it('задача секции: целевые номера в инструкции, план — свой файл без патчей', () => {
@@ -404,7 +344,7 @@ describe('запись payload на диск', () => {
         expect(plan.startsWith(payloadDir)).toBe(true);
         expect(path.basename(plan)).toBe('section-03-04-plan.md');
         const text = fs.readFileSync(plan, 'utf8');
-        expect(text).toContain('# Route plan');
+        expect(text).toContain('## Accepted blocks and ordered file assignments');
         expect(text).not.toContain('## Patches');
     });
 
@@ -459,348 +399,6 @@ describe('запись payload на диск', () => {
         expect(fs.statSync(path.dirname(input.contextFiles[1] ?? '')).mode & 0o777).toBe(0o700);
         expect(fs.statSync(input.contextFiles[1] ?? '').mode & 0o777).toBe(0o600);
     });
-});
-
-/**
- * Контекст перегенерации: прошлый маршрут, срез между итерациями и обсуждение с тех пор.
- * Проверяется на паре итераций фикстуры `medium`: пуш трогает `edit-policy.ts` и `handlers.ts`,
- * уносит `card-token.ts` и пересобирает лок.
- */
-describe('контекст перегенерации после пуша', () => {
-    let root: string;
-    let payloadDir: string;
-    let sharedDir: string;
-
-    beforeEach(async () => {
-        root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sherpa-regen-'));
-        payloadDir = path.join(root, 'payload', 'route');
-        sharedDir = path.join(root, 'payload', 'shared');
-    });
-
-    afterEach(async () => {
-        await fs.promises.rm(root, { recursive: true, force: true });
-    });
-
-    function writer(
-        budgets?: Partial<RegenerationBudgets>,
-        openContextFiles: () => string[] = () => [],
-    ): RoutePayloadWriter {
-        return new RoutePayloadWriter({
-            payloadDir,
-            shared: new SharedPayloadStore(sharedDir, openContextFiles),
-            ...(budgets === undefined ? {} : { regenerationBudgets: budgets }),
-        });
-    }
-
-    function map(): IterationMap {
-        return buildIterationMap({
-            interdiff: mediumInterdiffV1V2(),
-            fromBaseCommit: mediumDiff().baseCommit,
-            toBaseCommit: mediumDiffV2().baseCommit,
-        });
-    }
-
-    function regeneration(overrides: Partial<RouteRegenerationContext> = {}): RouteRegenerationContext {
-        return {
-            previous: mediumReadySnapshot(),
-            interdiff: mediumInterdiffV1V2(),
-            map: map(),
-            threads: mediumThreadsV2(),
-            ...overrides,
-        };
-    }
-
-    /** Контекст задачи второй итерации: дифф уже новый, перегенерация — от прошлого снапшота. */
-    function contextV2(overrides: Partial<RouteRegenerationContext> = {}): RouteTaskContext {
-        return { diff: mediumDiffV2(), meta: META, locale: 'ru', regeneration: regeneration(overrides) };
-    }
-
-    function read(file: string | undefined): string {
-        return fs.readFileSync(file ?? '', 'utf8');
-    }
-
-    it('скелет и секция несут срез, прошлый маршрут и обсуждение — в этом порядке', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration());
-        const skeleton = builder.skeletonTask(contextV2());
-        const section = builder.sectionTask(contextV2(), [2], mediumReadySnapshot().stops, intents());
-
-        expect(skeleton.contextFiles.map((file) => path.basename(file))).toEqual([
-            path.basename(skeleton.contextFiles[0] ?? ''),
-            'pr-diff.md',
-            'interdiff.md',
-            'previous-route.md',
-            'threads-since.md',
-        ]);
-        expect(section.contextFiles.map((file) => path.basename(file))).toEqual([
-            path.basename(section.contextFiles[0] ?? ''),
-            'pr-diff.md',
-            'interdiff.md',
-            'previous-route.md',
-            'threads-since.md',
-            'section-02-plan.md',
-        ]);
-        // Инструкция перечисляет контекст по факту: без прошлого маршрута этих строк в ней нет.
-        expect(skeleton.instructions).toContain('previous-route.md');
-        expect(section.instructions).toContain('threads-since.md');
-    });
-
-    it('без прошлого снапшота задачи собираются как при первой генерации', () => {
-        const builder = writer();
-        builder.beginGeneration();
-        const skeleton = builder.skeletonTask({ diff: mediumDiffV2(), meta: META, locale: 'ru' });
-
-        expect(skeleton.contextFiles).toHaveLength(2);
-        expect(skeleton.instructions).not.toContain('previous-route.md');
-        expect(fs.existsSync(path.join(sharedDir, 'diff', interdiffKey(), 'interdiff.md'))).toBe(false);
-    });
-
-    it('срез лежит под ключом голов итераций и печатается тем же гаттером, что дифф', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration());
-        const interdiff = builder.skeletonTask(contextV2()).contextFiles[2] ?? '';
-
-        expect(interdiff).toBe(path.join(sharedDir, 'diff', interdiffKey(), 'interdiff.md'));
-        const text = read(interdiff);
-        expect(text).toContain(
-            `# Interdiff ${mediumDiff().headCommit.slice(0, 7)} -> ${mediumDiffV2().headCommit.slice(0, 7)}`,
-        );
-        expect(text).toContain('`old new | line`');
-        expect(text).toContain('services/orders/src/api/handlers.ts');
-        // Файлы, которых пуш не касался, в срез не входят: это не дифф PR.
-        expect(text).not.toContain('services/orders/src/domain/edit-window.ts');
-    });
-
-    it('шапка патчей среза запрещает брать оттуда якоря, шапка диффа PR — наоборот', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration());
-        const files = builder.skeletonTask(contextV2()).contextFiles;
-        const prDiff = read(files[1]);
-        const interdiff = read(files[2]);
-
-        expect(prDiff).toContain('## Patches\n');
-        expect(prDiff).toContain('Line anchors of a stop are validated against exactly these printed numbers');
-        // Старая сторона среза — голова прошлой итерации, а не база PR: обещать по ней валидацию нельзя.
-        expect(interdiff).toContain('## Patches of the push');
-        expect(interdiff).toContain('Never take line anchors from here.');
-        expect(interdiff).not.toContain('are validated against exactly these printed numbers');
-    });
-
-    it('прошлый маршрут: шапка, выжимка, таблица стопов с якорями и пометкой «затронут»', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration());
-        const text = read(builder.skeletonTask(contextV2()).contextFiles[3]);
-        const previous = mediumReadySnapshot();
-
-        expect(text).toContain(`- Built for commit: ${previous.commit}`);
-        expect(text).toContain(previous.summary.split('\n')[0] ?? '');
-        expect(text).toContain('| stop # | tier | title | anchors | touched by the push |');
-        expect(text).toContain('`services/orders/src/api/handlers.ts`:new:');
-        // Стоп 03 живёт на `handlers.ts` — его пуш задел; стоп 01 на `edit-window.ts` — нет.
-        expect(tableRow(text, 3)).toContain('| yes |');
-        expect(tableRow(text, 1)).toContain('| no |');
-        expect(text).toContain(`### Stop 1 — ${previous.stops[0]?.tier ?? ''}`);
-    });
-
-    it('прошлый маршрут под бюджетом: абзацы уходят с конца, таблица и выжимка остаются', () => {
-        const builder = writer({ previousRoute: 9000 });
-        builder.beginGeneration(regeneration());
-        const text = read(builder.skeletonTask(contextV2()).contextFiles[3]);
-
-        expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(9000);
-        expect(text).toContain('## Summary of the previous route');
-        // Таблица уходит последней: она и есть план, который надо сохранить.
-        expect(tableRow(text, 6)).not.toBe('');
-        expect(text).toContain('### Stop 1 —');
-        expect(text).not.toContain('### Stop 6 —');
-        expect(text).toContain('the remaining stop texts of the previous route were omitted');
-    });
-
-    it('обсуждение: новый ответ на старом треде едет, чужое и старое — нет', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration({ threads: filterCases() }));
-        const text = read(builder.skeletonTask(contextV2()).contextFiles[4]);
-
-        // Ответ автора после пуша на треде затронутого файла.
-        expect(text).toContain('[thread:4820242]');
-        expect(text).toContain('(new)');
-        // Тред уровня PR берётся независимо от файлов.
-        expect(text).toContain('[thread:-38211]');
-        // Черновик — не комментарий обсуждения: тред с одним лишь черновиком не едет,
-        // хотя его файл пуш и унёс. Тред на нетронутом файле не едет тоже.
-        expect(text).not.toContain('[thread:4820260]');
-        expect(text).not.toContain('[thread:4820113]');
-        // Старый тред без новых комментариев тоже не едет.
-        expect(text).not.toContain('[thread:4820109]');
-    });
-
-    it('обсуждение под бюджетом: свежие треды остаются, старые уходят с пометкой', () => {
-        const builder = writer({ threadsSince: 1200 });
-        builder.beginGeneration(regeneration({ threads: filterCases() }));
-        const text = read(builder.skeletonTask(contextV2()).contextFiles[4]);
-
-        expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(1200);
-        expect(text).toContain('[thread:4820242]');
-        expect(text).toContain('older thread(s) omitted by the payload budget');
-    });
-
-    it('нет подходящих тредов — файл с честной строкой, а не ветвление инструкции', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration({ threads: [] }));
-        const text = read(builder.skeletonTask(contextV2()).contextFiles[4]);
-
-        expect(text).toContain('No new comments since the previous route.');
-    });
-
-    it('хост не отдал треды — генерация идёт, файл говорит об этом прямо', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration({ threads: null }));
-        const text = read(builder.skeletonTask(contextV2()).contextFiles[4]);
-
-        expect(text).toContain('[UNAVAILABLE: the host did not give the discussion of this pull request.]');
-    });
-
-    it('без среза интердиффа задача несёт прошлый маршрут и обсуждение, но не срез', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration({ interdiff: null, map: null }));
-        const files = builder.skeletonTask(contextV2({ interdiff: null, map: null })).contextFiles;
-
-        expect(files.map((file) => path.basename(file))).toEqual([
-            path.basename(files[0] ?? ''),
-            'pr-diff.md',
-            'previous-route.md',
-            'threads-since.md',
-        ]);
-    });
-
-    it('без среза прошлый маршрут не рассказывает про пуш и не печатает колонку «затронут»', () => {
-        const builder = writer();
-        const same = regeneration({ interdiff: null, map: identityMap() });
-        builder.beginGeneration(same);
-        const files = builder.skeletonTask(contextV2({ interdiff: null, map: identityMap() })).contextFiles;
-        const previous = read(files[2]);
-        const threads = read(files[3]);
-
-        expect(previous).toContain('The code has not moved since it was built');
-        expect(previous).toContain('| stop # | tier | title | anchors |');
-        // Колонки «затронут пушем» нет: сплошное «no» читалось бы как «не трогай ничего».
-        expect(previous).not.toContain('touched by the push');
-        expect(previous).not.toContain('| no |');
-        expect(threads).toContain('The code has not moved');
-        expect(threads).not.toContain('the push');
-        expect(same.interdiff).toBeNull();
-    });
-
-    it('черновики ревьюера в обсуждение не печатаются: автор их не видел', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration({ threads: withDraftReply() }));
-        const text = read(builder.skeletonTask(contextV2()).contextFiles[4]);
-
-        expect(text).toContain('[thread:4820242]');
-        expect(text).not.toContain('черновик ревьюера, автор его не видел');
-    });
-
-    it('рестарт сервера: новый билдер подхватывает файлы начатой генерации', () => {
-        const before = writer();
-        before.beginGeneration(regeneration());
-        before.skeletonTask(contextV2());
-
-        // Контекст генерации умер вместе с процессом: срез восстановлен из кэша, тредов нет.
-        const after = writer().sectionTask(
-            { diff: mediumDiffV2(), meta: META, locale: 'ru', regeneration: regeneration({ threads: null }) },
-            [2],
-            mediumReadySnapshot().stops,
-            intents(),
-        );
-
-        expect(after.contextFiles.map((file) => path.basename(file))).toEqual([
-            path.basename(after.contextFiles[0] ?? ''),
-            'pr-diff.md',
-            'interdiff.md',
-            'previous-route.md',
-            'threads-since.md',
-            'section-02-plan.md',
-        ]);
-        // Файл обсуждения остался тем, что написала живая генерация: заново он не собирается.
-        expect(read(after.contextFiles[4])).toContain('[thread:4820242]');
-    });
-
-    it('чистка общего каталога щадит и дифф итерации, и срез этой же сборки', () => {
-        const builder = writer();
-        builder.beginGeneration(regeneration());
-        const skeleton = builder.skeletonTask(contextV2());
-
-        expect(fs.existsSync(skeleton.contextFiles[1] ?? '')).toBe(true);
-        expect(fs.existsSync(skeleton.contextFiles[2] ?? '')).toBe(true);
-        expect(fs.readdirSync(path.join(sharedDir, 'diff')).sort()).toEqual(
-            [diffKey(mediumDiffV2()), interdiffKey()].sort(),
-        );
-    });
-
-    function diffKey(diff: PrDiff): string {
-        return `${diff.baseCommit}-${diff.headCommit}`;
-    }
-
-    /** Ключ среза — пара голов итераций: база у них общая. */
-    function interdiffKey(): string {
-        return `${mediumDiff().headCommit}-${mediumDiffV2().headCommit}`;
-    }
-
-    /** Строка таблицы прошлого маршрута по плановому номеру стопа. */
-    function tableRow(text: string, planIndex: number): string {
-        return text.split('\n').find((line) => line.startsWith(`| ${String(planIndex)} | `)) ?? '';
-    }
-
-    /** Тред, прошедший фильтр, с неотправленным черновиком ревьюера в ответах. */
-    function withDraftReply(): Thread[] {
-        return mediumThreadsV2().map((thread) =>
-            thread.id === '4820242'
-                ? {
-                      ...thread,
-                      root: {
-                          ...thread.root,
-                          replies: [
-                              ...thread.root.replies,
-                              {
-                                  ...thread.root,
-                                  id: 'draft-2',
-                                  draft: true,
-                                  createdAt: '2026-08-21T10:58:00.000Z',
-                                  body: 'черновик ревьюера, автор его не видел',
-                                  replies: [],
-                              },
-                          ],
-                      },
-                  }
-                : thread,
-        );
-    }
-
-    /**
-     * Треды под фильтр «что нового»: ответ автора после пуша на затронутом файле (фикстурный
-     * 4820242), свежий комментарий на файле, которого пуш не касался, свежий черновик на файле,
-     * который пуш унёс, и свежий тред уровня PR.
-     */
-    function filterCases(): Thread[] {
-        const after = '2026-08-21T10:58:00.000Z';
-        return mediumThreadsV2().map((thread) => {
-            if (thread.anchor === null || thread.anchor.path === 'services/orders/src/domain/edit-window.ts') {
-                return { ...thread, root: { ...thread.root, createdAt: after } };
-            }
-            if (thread.id === '4820260') {
-                return {
-                    ...thread,
-                    root: {
-                        ...thread.root,
-                        replies: [
-                            { ...thread.root, id: 'draft-1', draft: true, createdAt: after, replies: [] },
-                        ],
-                    },
-                };
-            }
-            return thread;
-        });
-    }
 });
 
 it('large documentation under specs does not displace implementation as if it were a test', () => {

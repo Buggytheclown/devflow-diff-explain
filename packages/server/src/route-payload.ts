@@ -7,15 +7,6 @@ import { generateJsonSchemas } from '@sherpa/protocol';
 
 import { storyGuide } from './story.js';
 import type { EnqueueInput } from './queue.js';
-import type { RegenerationContextFiles } from './route-prompts.js';
-import { promptLocale, sectionGuide, sectionInstructions, skeletonGuide, skeletonInstructions } from './route-prompts.js';
-import type { RouteRegenerationContext } from './route-regeneration.js';
-import {
-    PREVIOUS_ROUTE_FILE,
-    previousRouteContext,
-    THREADS_SINCE_FILE,
-    threadsSinceContext,
-} from './route-regeneration.js';
 import { walkPatch } from './route/diff-index.js';
 import type { SharedPayloadStore } from './shared-payload.js';
 import { diffKeyOf } from './shared-payload.js';
@@ -47,23 +38,6 @@ import { diffKeyOf } from './shared-payload.js';
  */
 export const CONTEXT_BUDGET_BYTES = 320 * 1024;
 
-/**
- * Бюджеты контекста перегенерации. Считаются отдельно от диффа PR: интердифф не должен
- * вытеснять патчи, по которым секция ставит якоря, а прошлый маршрут — самое дешёвое к потере,
- * он лишь помогает сохранить номера стопов. 128 КБ хватает любому обычному пушу целиком, 64 КБ —
- * маршруту на десяток стопов и десятку тредов с ответами.
- */
-export const REGENERATION_BUDGETS: RegenerationBudgets = {
-    interdiff: 128 * 1024,
-    previousRoute: 64 * 1024,
-    threadsSince: 64 * 1024,
-};
-
-export interface RegenerationBudgets {
-    readonly interdiff: number;
-    readonly previousRoute: number;
-    readonly threadsSince: number;
-}
 
 /** Права каталогов payload — те же 0700, что у остального стейта PR (docs/architecture.md §6). */
 const DIR_MODE = 0o700;
@@ -74,14 +48,11 @@ const FILE_MODE = 0o600;
 export interface RoutePayloadContext {
     readonly diff: PrDiff;
     readonly meta: PrMeta | null;
-    /** Прошлый заход: маршрут перестраивается после пуша; null — строится впервые. */
-    readonly regeneration?: RouteRegenerationContext | null;
 }
 
 /** Контекст задачи маршрута: тот же PR плюс язык, на котором задача просит писать результат. */
 export interface RouteTaskContext extends RoutePayloadContext {
     readonly locale: Locale;
-    readonly presentation?: 'legacy' | 'story' | undefined;
     readonly introduction?: string;
     readonly introductionEvidence?: StoryEvidenceBlock | undefined;
 }
@@ -92,8 +63,6 @@ export interface RoutePayloadWriterOptions {
     /** Общий контекст PR: методичка и дифф едут по стабильному пути, а не копией на задачу. */
     readonly shared: SharedPayloadStore;
     readonly budgetBytes?: number;
-    /** Потолки файлов перегенерации; по умолчанию — `REGENERATION_BUDGETS`. */
-    readonly regenerationBudgets?: Partial<RegenerationBudgets>;
 }
 
 /**
@@ -104,47 +73,34 @@ export class RoutePayloadWriter {
     private readonly payloadDir: string;
     private readonly shared: SharedPayloadStore;
     private readonly budgetBytes: number;
-    private readonly regenerationBudgets: RegenerationBudgets;
     private generationDir: string | null = null;
 
     constructor(options: RoutePayloadWriterOptions) {
         this.payloadDir = options.payloadDir;
         this.shared = options.shared;
         this.budgetBytes = options.budgetBytes ?? CONTEXT_BUDGET_BYTES;
-        this.regenerationBudgets = { ...REGENERATION_BUDGETS, ...options.regenerationBudgets };
     }
 
-    /**
-     * Новая генерация: свежий подкаталог, прежние удалены. Контекст перегенерации
-     * материализуется здесь один раз — он общий для скелета и всех секций генерации.
-     */
-    beginGeneration(regeneration: RouteRegenerationContext | null = null): void {
+    /** Новая генерация получает отдельный каталог; payload отменённых задач удаляется. */
+    beginGeneration(): void {
         this.startGeneration();
-        if (regeneration === null) {
-            return;
-        }
-        const budgets = this.regenerationBudgets;
-        this.writeFile(PREVIOUS_ROUTE_FILE, previousRouteContext(regeneration, budgets.previousRoute));
-        this.writeFile(THREADS_SINCE_FILE, threadsSinceContext(regeneration, budgets.threadsSince));
     }
 
     /** Задача `route.skeleton`: summary, план стопов и порядок полного тура одним результатом. */
     skeletonTask(context: RouteTaskContext): EnqueueInput {
         // Дифф PR материализуется первым: он открывает сборку общих ключей, срез к ней добавляется.
         const prDiff = this.prDiff(context);
-        const regeneration = this.regenerationFiles(context);
         const locale = context.locale;
         return {
             type: 'route.skeleton',
             priority: 'background',
-            instructions: context.presentation === 'story' ? 'Read the guide and PR context. Plan a concise coherent explanation. Return JSON matching the attached schema.' : skeletonInstructions(locale, regeneration.present),
+            instructions: 'Read the guide and PR context. Plan a concise coherent explanation. Return JSON matching the attached schema.',
             // Своего у скелета нет: и методичка, и дифф — общие пути.
             contextFiles: [
-                this.shared.guide('skeleton-guide', context.presentation === 'story' ? storyGuide('skeleton', locale) : skeletonGuide(locale)),
+                this.shared.guide('skeleton-guide', storyGuide('skeleton', locale)),
                 prDiff.file,
-                ...regeneration.files,
             ],
-            resultSchemaFile: this.writeSchema(context.presentation === 'story' ? 'readableSkeleton' : 'skeleton'),
+            resultSchemaFile: this.writeSchema('readableSkeleton'),
         };
     }
 
@@ -170,58 +126,19 @@ export class RoutePayloadWriter {
     ): EnqueueInput {
         const locale = context.locale;
         const name = `section-${planIndexes.map(pad2).join('-')}-plan.md`;
-        const plan = this.writeFile(name, context.presentation === 'story'
-            ? explanationPlanContext(planIndexes, stops, intents, context)
-            : sectionPlanContext(planIndexes, stops, intents, locale));
+        const plan = this.writeFile(name, explanationPlanContext(planIndexes, stops, intents, context));
         const prDiff = this.prDiff(context);
-        const regeneration = this.regenerationFiles(context);
         return {
             type: 'route.section',
             priority: 'background',
-            instructions: context.presentation === 'story' ? `Write every assigned section (${planIndexes.join(', ')}) as one coherent concise explanation, continuing the introduction without repeating it. Follow the guide and attached result schema.` : sectionInstructions(locale, planIndexes, regeneration.present),
+            instructions: `Write every assigned section (${planIndexes.join(', ')}) as one coherent concise explanation, continuing the introduction without repeating it. Follow the guide and attached result schema.`,
             contextFiles: [
-                this.shared.guide('section-guide', context.presentation === 'story' ? storyGuide('section', locale) : sectionGuide(locale)),
+                this.shared.guide('section-guide', storyGuide('section', locale)),
                 prDiff.file,
-                ...regeneration.files,
                 plan,
             ],
-            resultSchemaFile: this.writeSchema(context.presentation === 'story' ? 'readableSection' : 'section'),
+            resultSchemaFile: this.writeSchema('readableSection'),
         };
-    }
-
-    /**
-     * Контекст перегенерации задачи: срез пишется в общий каталог (запись идемпотентна), а
-     * прошлый маршрут и обсуждение уже лежат в каталоге генерации — их положил `beginGeneration`.
-     * После рестарта сервера контекст генерации потерян, и файлы берутся с диска как есть.
-     */
-    private regenerationFiles(context: RoutePayloadContext): {
-        files: string[];
-        present: RegenerationContextFiles;
-    } {
-        const interdiff = context.regeneration?.interdiff ?? null;
-        const interdiffFile =
-            interdiff === null
-                ? null
-                : this.shared.interdiff(
-                      diffKeyOf(interdiff),
-                      interdiffContext(interdiff, this.regenerationBudgets.interdiff),
-                  );
-        const previousRoute = this.existingFile(PREVIOUS_ROUTE_FILE);
-        const threadsSince = this.existingFile(THREADS_SINCE_FILE);
-        return {
-            files: [interdiffFile, previousRoute, threadsSince].filter((file): file is string => file !== null),
-            present: {
-                interdiff: interdiffFile !== null,
-                previousRoute: previousRoute !== null,
-                threadsSince: threadsSince !== null,
-            },
-        };
-    }
-
-    /** Файл каталога генерации, если он там есть: после рестарта его писал прошлый процесс. */
-    private existingFile(name: string): string | null {
-        const file = path.join(this.currentDir(), name);
-        return fs.existsSync(file) ? file : null;
     }
 
     /** Общий дифф PR по ключу пары коммитов: у скелета, секций и вопроса чата он один и тот же. */
@@ -305,8 +222,8 @@ export class RoutePayloadWriter {
     }
 
     /** Схема результата файлом (docs/protocol.md §4): канон — zod, JSON Schema — производная. */
-    private writeSchema(kind: 'skeleton' | 'section' | 'readableSkeleton' | 'readableSection'): string {
-        const key = kind === 'skeleton' ? 'routeSkeletonResult' : kind === 'section' ? 'routeSectionResult' : `${kind}Result`;
+    private writeSchema(kind: 'readableSkeleton' | 'readableSection'): string {
+        const key = `${kind}Result`;
         const schema = generateJsonSchemas()[key];
         return this.writeFile(`route-${kind}-result.schema.json`, `${JSON.stringify(schema, null, 2)}\n`);
     }
@@ -327,65 +244,6 @@ export function prDiffContext(context: RoutePayloadContext, budgetBytes: number)
  */
 export function prDiffPayload(context: RoutePayloadContext, budgetBytes: number): PatchedContext {
     return prContext(context, budgetBytes);
-}
-
-/**
- * Срез между итерациями для задач перегенерации: те же патчи с тем же гаттером номеров, только
- * старая сторона — голова итерации прошлого маршрута, а новая — голова итерации этой генерации.
- * Бюджет свой: интердифф не имеет права вытеснить дифф PR, по которому ставятся якоря.
- */
-export function interdiffContext(interdiff: PrDiff, budgetBytes: number): string {
-    return patchedContext(interdiff, interdiffHead(interdiff), budgetBytes, INTERDIFF_PATCHES_HEADING).content;
-}
-
-/** Шапка среза: что это за патчи, между какими коммитами и как их читать. */
-function interdiffHead(interdiff: PrDiff): string {
-    const additions = interdiff.files.reduce((total, file) => total + file.additions, 0);
-    const deletions = interdiff.files.reduce((total, file) => total + file.deletions, 0);
-    const rows = interdiff.files.map((file, index) =>
-        row([
-            fileNumber(index),
-            `\`${file.path}\``,
-            file.changeType,
-            `+${String(file.additions)} / -${String(file.deletions)}`,
-            fileNotes(file),
-        ]),
-    );
-    return [
-        `# Interdiff ${shortCommit(interdiff.baseCommit)} -> ${shortCommit(interdiff.headCommit)}`,
-        '',
-        'What the author pushed after the previous route was built. The old side of these patches is',
-        'the commit of the previous route, the new side is the commit this task works on. This is not',
-        'the diff of the pull request: it never replaces the file list you must cover.',
-        '',
-        `- Slice: ${interdiff.baseCommit} -> ${interdiff.headCommit}`,
-        `- Volume: ${String(interdiff.files.length)} files, +${String(additions)} / -${String(deletions)} lines`,
-        '',
-        '## Files the push touched',
-        '',
-        '| file # | file | change | +/- | notes |',
-        '|---|---|---|---|---|',
-        ...rows,
-    ].join('\n');
-}
-
-/** Коммит в том же коротком виде, в каком его показывает UI. */
-function shortCommit(commit: string): string {
-    return commit.slice(0, 7);
-}
-
-/**
- * Свой файл задачи секции: план маршрута целиком с выделенными целевыми стопами и их замыслами.
- * Диффа здесь нет — он общий. Якорей у стопа до заполнения нет, поэтому какие файлы относятся к
- * стопу, решает модель, и урезать дифф до «файлов стопа» нечем.
- */
-export function sectionPlanContext(
-    planIndexes: readonly number[],
-    stops: readonly RouteStop[],
-    intents: ReadonlyMap<number, string>,
-    locale: Locale = 'ru',
-): string {
-    return `${planBlock(planIndexes, stops, intents, locale)}\n`;
 }
 
 /** План объяснения не включает триаж, покрытие тестами или поля прежнего ревью. */
@@ -426,21 +284,6 @@ const PATCHES_HEADING = [
     'gutter, never count lines yourself.',
 ].join('\n');
 
-/**
- * Шапка патчей среза: гаттер тот же, но якоря по нему ставить нельзя. Старая сторона среза —
- * голова прошлой итерации, а `side: 'old'` резолвится по базе PR; на новой стороне тоже есть щель
- * (строка, возвращённая пушем к базовому значению, в срезе `+`, а в диффе PR — контекст).
- */
-const INTERDIFF_PATCHES_HEADING = [
-    '## Patches of the push',
-    '',
-    GUTTER_EXPLAINED,
-    '',
-    'Never take line anchors from here. These numbers belong to the slice: its old side is the commit',
-    'of the previous route, not the base of the pull request, and its new side marks lines the push',
-    'moved, not lines the pull request changed. Anchors are read off the gutter of the pull request',
-    'diff and validated against it alone. This file tells you what moved, nothing more.',
-].join('\n');
 
 /**
  * Контекст PR под бюджет: шапка, полный список файлов и патчи. Бюджет считается по итоговому
@@ -656,76 +499,6 @@ function fenceLength(patch: string): number {
     const runs = patch.match(/`+/g) ?? [];
     const longest = runs.reduce((max, run) => Math.max(max, run.length), 0);
     return Math.max(3, longest + 1);
-}
-
-/** План маршрута для задачи секции: целевые стопы выделены, у каждого стопа — его замысел. */
-function planBlock(
-    planIndexes: readonly number[],
-    stops: readonly RouteStop[],
-    intents: ReadonlyMap<number, string>,
-    locale: Locale,
-): string {
-    const targets = new Set(planIndexes);
-    const ordered = [...stops].sort((left, right) => left.planIndex - right.planIndex);
-
-    const rows = ordered.map((stop) =>
-        row([String(stop.planIndex), stop.tier, stop.title, planRole(stop, targets)]),
-    );
-
-    const targetBlocks = ordered
-        .filter((stop) => targets.has(stop.planIndex))
-        .map((stop) =>
-            [
-                `### Stop ${String(stop.planIndex)} — ${stop.tier} — ${stop.title}`,
-                '',
-                `Intent, written for you by the planner (${promptLocale(locale).inLanguage}, the reviewer never sees it):`,
-                '',
-                ...(intents.get(stop.planIndex) ?? '(the planner left no intent — go by the title)')
-                    .split('\n')
-                    .map((line) => `> ${line}`),
-            ].join('\n'),
-        );
-
-    const others = ordered
-        .filter((stop) => !targets.has(stop.planIndex) && stop.tier !== 'other')
-        .map((stop) => {
-            const intent = intents.get(stop.planIndex) ?? '—';
-            return `- stop ${String(stop.planIndex)} (${stop.tier}) ${stop.title} — ${intent}`;
-        });
-
-    return [
-        '# Route plan (fixed by the server)',
-        '',
-        'The plan is already accepted and its numbers are stable: `planIndex` is the number printed',
-        'here, written as a plain JSON number (stop 3 is `"planIndex": 3`, never `"03"`). Do not confuse',
-        'these stop numbers with the `file #` column of the changed files list, which lives in the shared',
-        'pull request file of this task.',
-        'Fill in the stops marked as your target and no others.',
-        '',
-        '| stop # | tier | title | |',
-        '|---|---|---|---|',
-        ...rows,
-        '',
-        '## Your target stops',
-        '',
-        // Пустая строка между блоками: иначе следующий заголовок липнет к цитате замысла.
-        targetBlocks.join('\n\n'),
-        '',
-        '## The other stops — context only, do not fill them in',
-        '',
-        ...(others.length === 0 ? ['- none'] : others),
-        '',
-        'Their lines belong to them: do not anchor the same range twice, and use `bridge` to hand the',
-        'reviewer over to the next stop in the order above.',
-    ].join('\n');
-}
-
-/** Роль стопа в задаче секции: заполняемый, соседний или синтетическое «Прочее» сервера. */
-function planRole(stop: RouteStop, targets: ReadonlySet<number>): string {
-    if (targets.has(stop.planIndex)) {
-        return '**your target**';
-    }
-    return stop.tier === 'other' ? 'synthetic, filled by the server' : 'other stop';
 }
 
 function row(cells: readonly string[]): string {

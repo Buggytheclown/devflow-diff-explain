@@ -8,6 +8,10 @@ import { mediumDiff, mediumRawResults } from './route/fixture-support.js';
 import { walkPatch } from './route/diff-index.js';
 import { startServer } from './server.js';
 import { databasePathFor } from './paths.js';
+import { openDatabase } from './db.js';
+import { MAX_RESULT_REJECTIONS, TaskQueue } from './queue.js';
+import { RouteStore } from './route-store.js';
+import { validateSkeleton } from './route/index.js';
 import type { SherpaServer } from './server.js';
 import { validateStorySection } from './story.js';
 import { get, postRaw, makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
@@ -28,8 +32,8 @@ describe('короткий рассказ', () => {
     let servers: SherpaServer[];
     beforeEach(async () => { dir = await makeTempSherpaDir(); servers = []; });
     afterEach(async () => { for (const server of servers) await server.close(); await removeTempSherpaDir(dir); });
-    async function start(presentation: 'story' | 'legacy' = 'story', prKey = 'fixture-medium') {
-        const server = await startServer({ prKey, sherpaDir: dir, presentation });
+    async function start(prKey = 'fixture-medium') {
+        const server = await startServer({ prKey, sherpaDir: dir });
         servers.push(server);
         server.workerRegistry.register('worker', 'codex', 'test');
         await server.route.warmup();
@@ -51,7 +55,7 @@ describe('короткий рассказ', () => {
     }
 
     it('малый ПР получает введение и одну задачу на весь рассказ без обязательных якорей', async () => {
-        const server = await start('story', 'fixture-small');
+        const server = await start('fixture-small');
         complete(server, outline);
         const partial = await read(server);
         expect(partial.smallPr).toBe(false);
@@ -92,18 +96,62 @@ describe('короткий рассказ', () => {
         expect((await read(restarted)).phase).toBe('ready');
     });
 
-    it('переход сохраняет старый snapshot, отзывает legacy-работу и не повторяет миграцию после рестарта', async () => {
-        const legacy = await start('legacy');
-        complete(legacy, mediumRawResults().skeleton);
-        const oldId = (await read(legacy)).snapshot?.snapshotId;
-        const leased = next(legacy);
-        const feedback = legacy.queue.enqueue({ type: 'review.feedback', priority: 'interactive', instructions: 'legacy', contextFiles: [] });
-        await legacy.close();
+    it('повторные прогревы и одновременные generate не дублируют задачи', async () => {
         const server = await start();
-        expect(server.queue.getTask(leased.id)?.status).toBe('cancelled');
+        await Promise.all([server.route.warmup(), server.route.warmup(), server.route.generate()]);
+        expect(server.queue.listTasks().filter((task) => task.type === 'route.skeleton')).toHaveLength(1);
+        complete(server, outline);
+        await server.route.warmup();
+        expect(await server.route.generate()).toBe('already_running');
+        expect(server.queue.listTasks().filter((task) => task.type === 'route.section')).toHaveLength(1);
+    });
+
+    it('отмена перестройки сохраняет готовое объяснение и не применяет поздний результат', async () => {
+        const server = await start();
+        complete(server, outline); complete(server, body);
+        const before = (await read(server)).snapshot;
+        expect(await server.route.generate()).toBe('started');
+        const task = next(server);
+        server.queue.cancel(task.id);
+        expect(server.queue.complete('worker', task.id, JSON.stringify(outline)).kind).toBe('noop');
+        const after = await read(server);
+        expect(after.phase).toBe('ready');
+        expect(after.snapshot).toEqual(before);
+    });
+
+    it('невалидный план не применяется, исчерпание пересдач видно как ошибка', async () => {
+        const server = await start();
+        const task = next(server);
+        for (let attempt = 0; attempt < MAX_RESULT_REJECTIONS; attempt += 1) {
+            expect(server.queue.complete('worker', task.id, '{}').kind).toBe('rejected');
+        }
+        expect((await read(server)).phase).toBe('failed');
+        expect((await read(server)).snapshot).toBeNull();
+        expect(server.queue.listTasks().filter((entry) => entry.status === 'queued')).toEqual([]);
+    });
+
+    it('старые задачи отзываются при обновлении, сохранённый snapshot читается без старого рантайма', async () => {
+        const initial = await start();
+        await initial.close();
+        const db = openDatabase(databasePathFor(dir, 'fixture-medium'));
+        const store = new RouteStore({ db });
+        const queue = new TaskQueue({ db });
+        for (const task of queue.listTasks()) queue.cancel(task.id);
+        const accepted = validateSkeleton(JSON.stringify(mediumRawResults().skeleton));
+        if (!accepted.ok) throw new Error(accepted.errors.join('\n'));
+        store.beginSkeleton({ locale: 'ru', presentation: 'legacy' });
+        store.acceptSkeleton({ skeleton: accepted.value, diff: mediumDiff(), snapshotId: 'saved-legacy',
+            previousSnapshotId: null, provenance: { harness: 'codex', model: 'test', locale: 'ru' } });
+        const legacy = queue.enqueue({ type: 'route.section', priority: 'background', instructions: 'old route', contextFiles: [] });
+        queue.next('previous-worker');
+        const feedback = queue.enqueue({ type: 'review.feedback', priority: 'interactive', instructions: 'old review', contextFiles: [] });
+        store.close(); db.close();
+
+        const server = await start();
+        expect(server.queue.getTask(legacy.id)?.status).toBe('cancelled');
         expect(server.queue.getTask(feedback.id)?.status).toBe('cancelled');
-        const response = await get(server.port, `${UI_ENDPOINTS.reviewRoute}?snapshot=${String(oldId)}`, server.token);
-        expect(uiReviewRouteResponseSchema.parse(await response.json()).route.snapshot?.snapshotId).toBe(oldId);
+        const response = await get(server.port, `${UI_ENDPOINTS.reviewRoute}?snapshot=saved-legacy`, server.token);
+        expect(uiReviewRouteResponseSchema.parse(await response.json()).route.snapshot?.summary).toBe(accepted.value.summary);
         complete(server, outline);
         await server.close();
         const restarted = await start();

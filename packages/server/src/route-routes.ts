@@ -24,7 +24,7 @@ import type { JsonResponse, RequestContext, Route } from './http.js';
 import { handlingRpcFailures, readJsonBody, readOptionalJsonBody } from './http.js';
 import type { IterationFeed } from './iteration-feed.js';
 import { routeRevisionOf, withStale } from './iteration-feed.js';
-import { optionalParam, parseQuery, respond } from './review-routes.js';
+import { optionalParam, parseQuery, respond } from './host-http.js';
 import type { RouteOrchestrator } from './route-orchestrator.js';
 import type { RouteStore } from './route-store.js';
 

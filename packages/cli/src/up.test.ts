@@ -150,7 +150,7 @@ describe('подъём сервера в `up`', () => {
 
         const prKey = argv[argv.indexOf('--pr') + 1];
         const sherpaDir = argv[argv.indexOf('--sherpa-dir') + 1];
-        const installDir = argv[argv.indexOf('--install-dir') + 1];
+        const installDir = argv.includes('--install-dir') ? argv[argv.indexOf('--install-dir') + 1] : undefined;
         const repoIndex = argv.indexOf('--repo');
         const repo = repoIndex === -1 ? null : argv[repoIndex + 1];
         const baseIndex = argv.indexOf('--base');
@@ -269,10 +269,10 @@ describe('подъём сервера в `up`', () => {
     });
 
     // Откуда установлен дистрибутив, знает только CLI: сервер получает это аргументом.
-    it('демон получает --install-dir — корень дистрибутива над bin/', async () => {
+    it('демон не получает путь установки для удалённой проверки обновлений', async () => {
         await up(await fakeServer(WORKING_SERVER));
 
-        expect((await readManifest(sherpaDir)).installDir).toBe(await fs.realpath(path.join(workDir, 'skill')));
+        expect((await readManifest(sherpaDir)).installDir).toBeUndefined();
     });
 
     // Каталог, базу и ветку знает только CLI — серверу они уезжают аргументами спавна.

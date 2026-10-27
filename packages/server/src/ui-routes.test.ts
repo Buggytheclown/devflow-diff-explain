@@ -67,7 +67,7 @@ describe('ручки UI', () => {
             development: true,
             sherpaDir,
             longPollSeconds: 0.3,
-            reviewHostFactory: () => null,
+            reviewSourceFactory: () => null,
             feedback: { env: {} },
         };
         const server = await startServer(
@@ -109,9 +109,7 @@ describe('ручки UI', () => {
             expect(state.tasks).toEqual([]);
             expect(state.feedback).toEqual({
                 available: false,
-                reason:
-                    'Нет OAuth-токена Трекера: в окружении сервера он не задан, а `ya` для его получения не найден. ' +
-                    'Фидбек можно отправить напрямую в очередь SHERPA или в чат Шерпы.',
+                reason: 'Отправка фидбека больше не поддерживается.',
             });
             // Хоста у этого набора нет — меты PR взяться неоткуда, и снапшот честно пуст.
             expect(state.pr).toBeNull();
@@ -291,7 +289,7 @@ describe('ручки UI', () => {
                 sherpaDir,
                 longPollSeconds: 30,
                 workerGapGraceSeconds: 0.3,
-                reviewHostFactory: () => null,
+                reviewSourceFactory: () => null,
             });
             servers.push(server);
             const stream = await openEvents(server);

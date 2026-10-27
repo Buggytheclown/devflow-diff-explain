@@ -11,10 +11,9 @@ describe('сервер объяснения подключает только н
     const host = makeFixtureHost('medium');
     const watch = vi.spyOn(host, 'watchThreads');
     const threads = vi.spyOn(host, 'getThreads');
-    const updateFetch = vi.fn<typeof fetch>();
     beforeEach(async () => {
         vi.clearAllMocks(); dir = await makeTempSherpaDir();
-        server = await startServer({ prKey: 'fixture-medium', sherpaDir: dir, presentation: 'story', reviewHostFactory: () => ({ name: 'fixture', host }), updateCheck: { fetch: updateFetch } });
+        server = await startServer({ prKey: 'fixture-medium', sherpaDir: dir, reviewSourceFactory: () => ({ name: 'fixture', host }) });
     });
     afterEach(async () => { await server.close(); await removeTempSherpaDir(dir); });
     it('SSE не запускает треды, ручки публикации/прогресса/фидбека отсутствуют, чтение доступно', async () => {
@@ -30,7 +29,6 @@ describe('сервер объяснения подключает только н
         expect((await get(server.port, UI_ENDPOINTS.prState, server.token)).status).toBe(404);
         expect((await get(server.port, UI_ENDPOINTS.reviewDiff, server.token)).status).toBe(200);
         expect((await postJson(server.port, UI_ENDPOINTS.updateCheck, {}, server.token)).status).toBe(404);
-        expect(updateFetch).not.toHaveBeenCalled();
     });
     it('ответ по строкам сохраняется в exchange без второй скрытой заметки', async () => {
         server.workerRegistry.register('test', 'codex', 'test');
@@ -53,7 +51,7 @@ describe('сервер объяснения подключает только н
 // Настоящий источник может предоставлять тот же контракт, что фикстура, но служебных ручек у него нет.
 it('echo-задачи отсутствуют вне режима разработки', async () => {
     const dir = await makeTempSherpaDir();
-    const server = await startServer({ prKey: 'arcanum-42', sherpaDir: dir, presentation: 'story', reviewHostFactory: () => null });
+    const server = await startServer({ prKey: 'arcanum-42', sherpaDir: dir, reviewSourceFactory: () => null });
     try {
         expect((await postJson(server.port, UI_ENDPOINTS.enqueue, { type: 'echo', text: 'test' }, server.token)).status).toBe(404);
     } finally { await server.close(); await removeTempSherpaDir(dir); }

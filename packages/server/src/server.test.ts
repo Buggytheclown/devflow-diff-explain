@@ -36,7 +36,7 @@ describe('startServer', () => {
         const server = await startServer({
             prKey,
             sherpaDir,
-            reviewHostFactory: () => null,
+            reviewSourceFactory: () => null,
             ...(host === undefined ? {} : { host }),
         });
         servers.push(server);
@@ -178,7 +178,7 @@ describe('startServer', () => {
 
             await expect(start()).rejects.toThrow(ServerAlreadyRunningError);
 
-            const error = await startServer({ prKey: PR_KEY, sherpaDir, reviewHostFactory: () => null }).catch(
+            const error = await startServer({ prKey: PR_KEY, sherpaDir, reviewSourceFactory: () => null }).catch(
                 (caught: unknown) => caught,
             );
             expect(error).toBeInstanceOf(ServerAlreadyRunningError);
@@ -187,9 +187,9 @@ describe('startServer', () => {
 
         it('одновременный старт нескольких серверов оставляет ровно один', async () => {
             const results = await Promise.allSettled([
-                startServer({ prKey: PR_KEY, sherpaDir, reviewHostFactory: () => null }),
-                startServer({ prKey: PR_KEY, sherpaDir, reviewHostFactory: () => null }),
-                startServer({ prKey: PR_KEY, sherpaDir, reviewHostFactory: () => null }),
+                startServer({ prKey: PR_KEY, sherpaDir, reviewSourceFactory: () => null }),
+                startServer({ prKey: PR_KEY, sherpaDir, reviewSourceFactory: () => null }),
+                startServer({ prKey: PR_KEY, sherpaDir, reviewSourceFactory: () => null }),
             ]);
 
             const started = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));

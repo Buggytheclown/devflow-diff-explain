@@ -7,12 +7,9 @@ import type {
     Locale,
     PrDiff,
     PrMeta,
-    ReviewHost,
     ReviewSource,
-    RouteCarriedZeroReason,
     RouteProvenance,
     RouteSnapshot,
-    Thread,
     UiRouteFillStopResponse,
     UiRouteGenerateResponse,
     WorkerStatus,
@@ -22,49 +19,18 @@ import { validateStorySkeleton, validateStorySection } from './story.js';
 import { RpcFailure } from './errors.js';
 import { resolveGenerationLocale } from './generation-locale.js';
 import type { IterationStore } from './iteration-store.js';
-import type { IterationMap } from './iterations/index.js';
-import { buildIterationMap, identityMap } from './iterations/index.js';
-import type { ProgressStore } from './progress-store.js';
 import type { EnqueueInput, TaskQueue, TaskRecord, TaskResultAcceptance } from './queue.js';
 import { RoutePayloadWriter } from './route-payload.js';
-import type { RouteRegenerationContext } from './route-regeneration.js';
 import type {
     RouteStopStatusUpdate,
     RouteStore,
     RouteTaskBinding,
-    SnapshotAcceptance,
 } from './route-store.js';
 import type { RouteStrings } from './route/index.js';
-import { routeStrings, validateSection, validateSkeleton } from './route/index.js';
+import { routeStrings } from './route/index.js';
 import type { SettingsStore } from './settings-store.js';
 import type { SharedPayloadStore } from './shared-payload.js';
 import type { WorkerRegistry } from './worker-registry.js';
-
-/**
- * Оркестрация маршрута: конечный автомат «нет маршрута → скелет → секции → готово».
- *
- * Один источник истины о том, что делать дальше, — состояние `RouteStore` рядом с состоянием
- * очереди. Переходы считаются сверкой (`reconcile`), а не запоминаются событиями: сверка
- * идемпотентна, поэтому рестарт сервера посреди генерации, смерть агента и вытеснение сессии
- * лечатся сами — ничего специального для них не кодится (docs/design/SPEC-elements.md §4.4).
- *
- * Приёмка результата подключается в очередь синхронным приёмщиком: валидация — внутри
- * транзакции `complete` (fail-closed, отказ оставляет аренду модели), запись принятого —
- * после её коммита.
- */
-
-/** Пороги маршрута и укрупнение секций: по замеру латентности батч оставлен в одну остановку. */
-export interface RouteConfig {
-    /** Изменённых строк (additions + deletions) не больше — PR малый, маршрут не нужен (docs/architecture.md §7.6). */
-    readonly smallPrMaxChangedLines: number;
-    /** Сколько стопов плана уходит в одну задачу `route.section`. */
-    readonly sectionBatchSize: number;
-}
-
-export const DEFAULT_ROUTE_CONFIG: RouteConfig = {
-    smallPrMaxChangedLines: 40,
-    sectionBatchSize: 1,
-};
 
 /**
  * Сколько раз в рамках одной генерации сервер ставит задачу на план. Обычно хватает одной:
@@ -83,43 +49,16 @@ const ROUTE_TASK_PREFIX = 'route.';
  */
 const WARMUP_DELAY_MS = 200;
 
-/** Часть `ProgressStore`, которая нужна оркестратору: перенос отметок на новый снапшот. */
-export type StopProgressCarry = Pick<ProgressStore, 'carryStopsInTransaction' | 'hasViewedMarks'>;
-
-/**
- * Идущая генерация: её итерация и всё, что нужно перенести прогресс на её снапшот.
- * Карта строится заранее (интердифф — сетевой вызов), потому что приёмщик результата синхронен.
- */
-interface GenerationContext {
-    readonly diff: PrDiff;
-    /** Снапшот, бывший текущим на старте генерации; null — маршрут строится впервые. */
-    readonly previousSnapshotId: string | null;
-    /** Отображение строк «итерация прошлого снапшота → итерация генерации»; null — интердиффа нет. */
-    readonly map: IterationMap | null;
-    /** Тот же срез патчами: он едет модели контекстным файлом. */
-    readonly interdiff: PrDiff | null;
-    /** Треды PR на старте генерации; null — прошлого снапшота нет, хост отказал или был рестарт. */
-    readonly threads: readonly Thread[] | null;
-}
-
 export interface RouteOrchestratorOptions {
-    readonly presentation?: 'legacy' | 'story' | undefined;
     readonly store: RouteStore;
     readonly queue: TaskQueue;
     readonly registry: WorkerRegistry;
     /** Ревью-хост PR; `null` — маршрут этому серверу негде взять. */
     readonly host: ReviewSource | null;
-    /** Прежний режим ревью может добавить контекст тредов отдельно. */
-    readonly threads?: Pick<ReviewHost, 'getThreads'> | null;
     /** Каталог, которым единолично владеет `RoutePayloadWriter` (`routePayloadDirOf`). */
     readonly payloadDir: string;
     /** Общий контекст PR: методичка и дифф едут по стабильному пути, а не копией на задачу. */
     readonly shared: SharedPayloadStore;
-    /**
-     * Прогресс чтения: отметки остановок нового снапшота ставит перенос при его приёмке.
-     * `null` — переносить некуда (тесты без прогресса).
-     */
-    readonly progress?: StopProgressCarry | null;
     /** Локальное хранилище патчей итераций; `null` — сохранять дифф генерации некуда (тесты без БД). */
     readonly iterations?: IterationStore | null;
     /**
@@ -127,33 +66,25 @@ export interface RouteOrchestratorOptions {
      * `null` — настроек нет, лестница падает на подсказку агента и русский.
      */
     readonly settings?: Pick<SettingsStore, 'read'> | null;
-    readonly config?: Partial<RouteConfig>;
     /** Задержка прогрева после старта; в тестах прогрев зовётся явно (`warmup`). */
     readonly warmupDelayMs?: number;
 }
 
 export class RouteOrchestrator {
     private readonly flow: FlowCoordinator;
-    private readonly presentation: 'legacy' | 'story';
     private readonly store: RouteStore;
     private readonly queue: TaskQueue;
     private readonly registry: WorkerRegistry;
     private readonly host: ReviewSource | null;
-    private readonly threads: Pick<ReviewHost, 'getThreads'> | null;
     private readonly payload: RoutePayloadWriter;
-    private readonly progress: StopProgressCarry | null;
     private readonly iterations: IterationStore | null;
     private readonly settings: Pick<SettingsStore, 'read'> | null;
-    private readonly config: RouteConfig;
     private readonly warmupDelayMs: number;
 
     /**
-     * Контекст генерации, идущей в этом процессе: приёмщик секций синхронный, а `getDiff`
-     * и интердифф — сетевые вызовы. Итерация генерации фиксируется на старте и не меняется,
-     * даже если автор запушит (генерация доходит до конца, снапшот
-     * рождается уже stale).
+     * Дифф фиксируется на старте: после пуша идущая генерация заканчивается на своей итерации.
      */
-    private generation: GenerationContext | null = null;
+    private generation: PrDiff | null = null;
     /**
      * Последний дифф активной итерации: с него начинается следующая генерация. Диффом идущей
      * он не становится — её итерацию называет привязка задачи, а после рестарта только она.
@@ -174,25 +105,20 @@ export class RouteOrchestrator {
 
     constructor(options: RouteOrchestratorOptions) {
         this.flow = new FlowCoordinator({ store: options.store, queue: options.queue, host: options.host, dir: `${options.payloadDir}-flow`, shared: options.shared, loadDiff: (id) => this.ensureDiff(id) });
-        this.presentation = options.presentation ?? 'legacy';
         this.store = options.store;
         this.queue = options.queue;
         this.registry = options.registry;
         this.host = options.host;
-        // Старые тесты/клиенты передают полный адаптер; объяснение никогда не берёт его треды.
-        this.threads = this.presentation === 'story' ? null : options.threads ?? (options.host !== null && 'getThreads' in options.host ? options.host as ReviewSource & Pick<ReviewHost, 'getThreads'> : null);
         this.payload = new RoutePayloadWriter({ payloadDir: options.payloadDir, shared: options.shared });
-        this.progress = options.progress ?? null;
         this.iterations = options.iterations ?? null;
         this.settings = options.settings ?? null;
-        this.config = resolveConfig(options.config);
         this.warmupDelayMs = options.warmupDelayMs ?? WARMUP_DELAY_MS;
     }
 
     /** Подписки автомата и разовый прогрев. Зовётся один раз при сборке сервера. */
     start(): void {
         this.flow.start();
-        if (this.presentation === 'story' && this.store.generationPresentation() === 'story' && this.store.generationTaskEpoch() !== 2) {
+        if (this.store.generationPresentation() === 'story' && this.store.generationTaskEpoch() !== 2) {
             const phase = this.store.read().phase;
             if (phase === 'reading' || phase === 'filling' || this.hasOpenRouteTask()) {
                 this.cancelOpenRouteTasks();
@@ -259,10 +185,7 @@ export class RouteOrchestrator {
             return;
         }
 
-        this.store.setSmallPr(this.presentation === 'legacy' && isSmallPr(diff, this.config));
-        if (this.store.read().smallPr) {
-            return;
-        }
+        this.store.setSmallPr(false);
 
         // Починка прерванной генерации идёт до автопостановки: фаза `filling` без задач — это
         // рестарт сервера, а не повод строить маршрут заново.
@@ -274,20 +197,16 @@ export class RouteOrchestrator {
             return;
         }
 
-        const context = await this.generationContextFor(diff);
-        // Пока считался срез, генерацию мог начать соседний прогрев или ручка: второй старт
-        // отменил бы её задачу и начал план заново.
         if (this.isClosed() || this.store.read().phase !== 'none' || this.hasOpenRouteTask()) {
             return;
         }
         // Автопостановку затеял сервер: локаль ему никто не называл, работает лестница.
-        this.startSkeleton(context, this.resolveLocale(undefined));
+        this.startSkeleton(diff, this.resolveLocale(undefined));
     }
 
     /**
      * Ручка `review/route/generate`: запуск и перезапуск генерации. Из `ready` старый маршрут
-     * остаётся читаемым до приёмки нового скелета, а его прогресс переезжает на новый снапшот
-     * переносом при приёмке.
+     * остаётся читаемым до приёмки нового скелета.
      *
      * `requestedLocale` — эффективный язык вкладки, которая нажала кнопку. Без него
      * язык выбирает лестница `resolveGenerationLocale`.
@@ -301,23 +220,14 @@ export class RouteOrchestrator {
         }
 
         const diff = await this.loadDiff();
-        this.store.setSmallPr(this.presentation === 'legacy' && isSmallPr(diff, this.config));
-        if (this.store.read().smallPr) {
-            return 'small_pr';
-        }
+        this.store.setSmallPr(false);
 
         const phase = this.store.read().phase;
         if (phase === 'reading' || phase === 'filling') {
             return 'already_running';
         }
 
-        const context = await this.generationContextFor(diff);
-        // Пока считался срез, генерацию мог начать прогрев или соседний запрос ручки.
-        const phaseNow = this.store.read().phase;
-        if (phaseNow === 'reading' || phaseNow === 'filling') {
-            return 'already_running';
-        }
-        this.startSkeleton(context, this.resolveLocale(requestedLocale));
+        this.startSkeleton(diff, this.resolveLocale(requestedLocale));
         return 'started';
     }
 
@@ -389,7 +299,7 @@ export class RouteOrchestrator {
         }
 
         const locale = this.skeletonLocale();
-        const validation = this.store.generationPresentation() === 'story' ? validateStorySkeleton(result, diff, locale) : validateSkeleton(result, locale);
+        const validation = validateStorySkeleton(result, diff, locale);
         if (!validation.ok) {
             return { kind: 'rejected', errors: validation.errors };
         }
@@ -401,11 +311,9 @@ export class RouteOrchestrator {
             onCommitted: () => {
                 const previous = this.store.current();
                 const snapshotId = randomUUID();
-                // Перенос отметок здесь не считается: якорей у стопов ещё нет, а `carried` с нулём
-                // прочитался бы баннером как «0 из 7». Числа появляются при заморозке (`markReady`).
                 this.store.acceptSkeleton({
                     skeleton,
-                    presentation: this.store.generationPresentation(),
+                    presentation: 'story',
                     diff,
                     provenance,
                     snapshotId,
@@ -430,16 +338,8 @@ export class RouteOrchestrator {
             return this.deferUntilDiff();
         }
 
-        const generation = this.acceptanceContext(diff, snapshot.previousSnapshotId);
-        // Секция говорит на языке скелета: снапшот целиком одноязычен.
         const locale = snapshotLocale(snapshot);
-        const validation = snapshot.presentation === 'story'
-            ? validateStorySection(result, binding.planIndexes, diff, locale, snapshot.stops, snapshot.storyContractVersion)
-            : validateSection(result, snapshot.stops, binding.planIndexes, diff, {
-            locale,
-            map: generation.map,
-            knownThreadIds: new Set((generation.threads ?? []).map((thread) => thread.id)),
-        });
+        const validation = validateStorySection(result, binding.planIndexes, diff, locale, snapshot.stops, snapshot.storyContractVersion);
         if (!validation.ok) {
             return { kind: 'rejected', errors: validation.errors };
         }
@@ -557,100 +457,9 @@ export class RouteOrchestrator {
             if (snapshot.presentation === 'story' && stops.some((stop) => stop.status === 'failed')) {
                 this.store.fail('Рассказ не завершён. Повторите построение.', null);
             } else {
-                this.markReadyCarryingProgress();
+                this.store.markReady();
             }
         }
-    }
-
-    /**
-     * Заморозка снапшота вместе с переносом отметок остановок: якоря появляются только
-     * с заполненными секциями, поэтому перенос считается здесь, а не на приёмке скелета.
-     */
-    private markReadyCarryingProgress(): void {
-        const snapshot = this.store.read().snapshot;
-        if (snapshot?.presentation === 'story') { this.store.markReady(); return; }
-        const previousId = snapshot?.previousSnapshotId ?? null;
-        const previous = previousId === null ? null : this.store.getSnapshot(previousId);
-        if (snapshot === null || previous === null || this.progress === null) {
-            this.store.markReady();
-            return;
-        }
-
-        const diff = this.diffOf(snapshot.diffId);
-        const map = diff === null ? null : this.acceptanceContext(diff, previousId).map;
-        this.store.markReady((ready) => this.carryProgressInto(ready, previous, map));
-    }
-
-    /**
-     * Контекст приёмки: карта, подготовленная стартом генерации, а после рестарта — из кэша
-     * срезов. Пара «прошлый снапшот → итерация генерации» обязана совпасть, иначе карта чужая.
-     */
-    private acceptanceContext(diff: PrDiff, previousSnapshotId: string | null): GenerationContext {
-        const prepared = this.generation;
-        if (
-            prepared !== null &&
-            prepared.diff.diffId === diff.diffId &&
-            prepared.previousSnapshotId === previousSnapshotId
-        ) {
-            return prepared;
-        }
-        // Контекст генерации потерян вместе с процессом: прошлый снапшот берётся по id, потому
-        // что текущим к этому моменту может быть уже новый.
-        return this.cachedContextFor(
-            diff,
-            previousSnapshotId === null ? null : this.store.getSnapshot(previousSnapshotId),
-        );
-    }
-
-    /**
-     * Перенос прогресса на снапшот внутри транзакции его записи. `carried` считает переносом
-     * отмеченные остановки против остановок с якорями (баннер второго захода, docs/design/README.md §9):
-     * синтетическое «Прочее» и незаполненные стопы перенос накрыть не может — им не место
-     * в знаменателе. При нулевом переносе туда же едет его причина.
-     */
-    private carryProgressInto(
-        snapshot: RouteSnapshot,
-        previous: RouteSnapshot | null,
-        map: IterationMap | null,
-    ): SnapshotAcceptance {
-        const progress = this.progress;
-        const total = snapshot.stops.filter((stop) => stop.anchors.length > 0).length;
-        if (previous === null || progress === null) {
-            // Первый снапшот PR: переносить не от чего.
-            return { carried: null };
-        }
-
-        const diff = this.diffOf(snapshot.diffId);
-        if (map === null || diff === null) {
-            process.stderr.write(
-                `sherpa-server: перенос отметок невозможен: нет интердиффа ${previous.diffId}→${snapshot.diffId}\n`,
-            );
-            const keptBefore = snapshot.carried?.kept ?? 0;
-            // Отсутствие среза виновато только там, где было что переносить.
-            const zeroReason = zeroCarryReason(keptBefore, progress, previous.diffId, 'no_interdiff');
-            return { carried: { kept: keptBefore, total, zeroReason } };
-        }
-
-        const carried = progress.carryStopsInTransaction({
-            snapshotId: snapshot.snapshotId,
-            diffId: snapshot.diffId,
-            stops: snapshot.stops,
-            diff,
-        });
-        // Отметки могли переехать в несколько приёмов (заморозка, дозаполнение стопа).
-        const kept = (snapshot.carried?.kept ?? 0) + carried.kept;
-        const zeroReason = zeroCarryReason(kept, progress, previous.diffId, 'no_overlap');
-        return {
-            carried: { kept, total, zeroReason },
-            afterCommit: () => {
-                carried.afterCommit();
-                process.stderr.write(
-                    `sherpa-server: снапшот ${snapshot.snapshotId}: перенесено ${String(kept)} из ` +
-                        `${String(total)} остановок с ${previous.snapshotId}` +
-                        `${zeroCarryNote(zeroReason)}\n`,
-                );
-            },
-        };
     }
 
     /** Фаза `reading`: живём ровно до судьбы задачи скелета. */
@@ -697,155 +506,28 @@ export class RouteOrchestrator {
     }
 
     /** Новая генерация: прежние задачи отменяются, живой снапшот остаётся до приёмки нового. */
-    private startSkeleton(context: GenerationContext, locale: Locale): void {
-        this.generation = context;
+    private startSkeleton(diff: PrDiff, locale: Locale): void {
+        this.generation = diff;
         // Язык — в хранилище, а не в поле: задачу скелета может принять уже следующий процесс.
         this.cancelOpenRouteTasks();
         this.store.clearBindings();
-        this.store.beginSkeleton({ locale, presentation: this.presentation });
+        this.store.beginSkeleton({ locale, presentation: 'story' });
         // Payload прошлой генерации больше никому не нужен: её задачи только что отменены.
-        // Контекст перегенерации пишется здесь один раз — он общий для скелета и всех секций.
-        this.payload.beginGeneration(this.regenerationOf(context));
+        this.payload.beginGeneration();
         this.startSkeletonTask();
-    }
-
-    /**
-     * Контекст генерации: карта строк от итерации текущего снапшота к итерации новой генерации.
-     * Считается заранее — интердифф это сетевой вызов, а приёмка результата синхронна.
-     * Срез не добыт — генерация всё равно идёт, только отметки остановок не перенесутся.
-     */
-    private async generationContextFor(diff: PrDiff): Promise<GenerationContext> {
-        const previous = this.store.current();
-        if (this.presentation === 'story') return { diff, previousSnapshotId: previous?.snapshotId ?? null, map: null, interdiff: null, threads: null };
-        if (previous === null) {
-            return { diff, previousSnapshotId: null, map: null, interdiff: null, threads: null };
-        }
-
-        // Треды нужны только перегенерации: они объясняют, почему автор тронул стоп. Запрос идёт
-        // рядом со срезом, а не после него: генерация ждёт обоих, и складывать задержки незачем.
-        const threads = this.loadThreads();
-        const base = async (): Promise<Pick<GenerationContext, 'diff' | 'previousSnapshotId' | 'threads'>> => ({
-            diff,
-            previousSnapshotId: previous.snapshotId,
-            threads: await threads,
-        });
-        if (previous.diffId === diff.diffId) {
-            // Перегенерация на той же итерации: строки не двигались.
-            return { ...(await base()), map: identityMap(), interdiff: null };
-        }
-
-        const host = this.host;
-        const iterations = this.iterations;
-        if (host === null || iterations === null) {
-            return { ...(await base()), map: null, interdiff: null };
-        }
-        try {
-            const interdiff = await iterations.getInterdiff(previous.diffId, diff.diffId, () =>
-                host.getDiff({ base: previous.diffId, head: diff.diffId }),
-            );
-            return {
-                ...(await base()),
-                interdiff,
-                map: buildIterationMap({
-                    interdiff,
-                    fromBaseCommit: previous.baseCommit,
-                    toBaseCommit: diff.baseCommit,
-                }),
-            };
-        } catch (error) {
-            process.stderr.write(
-                `sherpa-server: срез ${previous.diffId}→${diff.diffId} не получен: ${messageOf(error)}\n`,
-            );
-            return { ...(await base()), map: null, interdiff: null };
-        }
-    }
-
-    /** Треды PR для контекста перегенерации; отказ хоста генерацию не рушит — файла просто не будет. */
-    private async loadThreads(): Promise<Thread[] | null> {
-        const host = this.threads;
-        if (host === null) {
-            return null;
-        }
-        try {
-            return await host.getThreads();
-        } catch (error) {
-            process.stderr.write(
-                `sherpa-server: треды для контекста перегенерации не получены: ${messageOf(error)}\n`,
-            );
-            return null;
-        }
-    }
-
-    /**
-     * Контекст генерации без похода в хост: карта берётся из кэша срезов, иначе её нет.
-     * Прошлый снапшот называет вызывающий — он не всегда текущий.
-     */
-    private cachedContextFor(diff: PrDiff, previous: RouteSnapshot | null): GenerationContext {
-        if (previous === null) {
-            return { diff, previousSnapshotId: null, map: null, interdiff: null, threads: null };
-        }
-        if (previous.diffId === diff.diffId) {
-            return {
-                diff,
-                previousSnapshotId: previous.snapshotId,
-                map: identityMap(),
-                interdiff: null,
-                threads: null,
-            };
-        }
-
-        if (this.store.generationPresentation() === 'story') return { diff, previousSnapshotId: previous.snapshotId, map: null, interdiff: null, threads: null };
-        const interdiff = this.iterations?.peekInterdiff(previous.diffId, diff.diffId) ?? null;
-        return {
-            diff,
-            previousSnapshotId: previous.snapshotId,
-            interdiff,
-            // Треды сетевые: восстановленный контекст живёт без них, ссылки модели на них
-            // приёмка вырежет.
-            threads: null,
-            map:
-                interdiff === null
-                    ? null
-                    : buildIterationMap({
-                          interdiff,
-                          fromBaseCommit: previous.baseCommit,
-                          toBaseCommit: diff.baseCommit,
-                      }),
-        };
-    }
-
-    /**
-     * Контекст перегенерации для payload: прошлый снапшот и всё, чем задача объясняет пуш.
-     * null — прошлого маршрута нет, и задача собирается как при первой генерации.
-     */
-    private regenerationOf(context: GenerationContext | null): RouteRegenerationContext | null {
-        if (this.store.generationPresentation() === 'story') return null;
-        const previousId = context?.previousSnapshotId ?? null;
-        const previous = previousId === null ? null : this.store.getSnapshot(previousId);
-        if (context === null || previous === null) {
-            return null;
-        }
-        return {
-            previous,
-            interdiff: context.interdiff,
-            map: context.map,
-            threads: context.threads,
-        };
     }
 
     private startSkeletonTask(): void {
         // Перепостановка после рестарта начинает план заново и берёт активную итерацию: какой
         // была прежняя, знала привязка её задачи, а её к этому моменту уже нет.
-        const diff = this.generation?.diff ?? this.activeDiff;
+        const diff = this.generation ?? this.activeDiff;
         if (diff === null) {
             // Рестарт сервера застал фазу генерации: собирать payload не из чего, и постановка
             // ждёт диффа — прогрев доведёт её сам, его хвост зовёт сверку заново.
             this.warmupInBackground();
             return;
         }
-        // Рестарт сервера: контекст генерации потерян вместе с процессом, карта остаётся только
-        // та, что успела осесть в кэше срезов.
-        this.generation ??= this.cachedContextFor(diff, this.store.current());
+        this.generation ??= diff;
         this.enqueueRouteTask(
             'skeleton',
             diff.diffId,
@@ -854,17 +536,11 @@ export class RouteOrchestrator {
                 diff,
                 meta: this.meta,
                 locale: this.skeletonLocale(),
-                presentation: this.store.generationPresentation(),
-                regeneration: this.regenerationOf(this.generation),
             }),
         );
     }
 
-    /**
-     * Постановка секций — в порядке плана: спор за диапазон между результатами выигрывает
-     * сдавшийся первым (инвариант `planOccupancy` валидатора), поэтому очередь обязана
-     * предлагать стопы по возрастанию плановых номеров.
-     */
+    /** Все назначенные блоки пишутся одной задачей в порядке объяснения. */
     private enqueueSections(planIndexes: readonly number[]): void {
         const snapshot = this.store.read().snapshot;
         if (snapshot === null) {
@@ -882,17 +558,13 @@ export class RouteOrchestrator {
             meta: this.meta,
             // Секции продолжают скелет: их язык — язык снапшота, а не текущий выбор вкладки.
             locale: snapshotLocale(snapshot),
-            presentation: snapshot.presentation,
             introduction: snapshot.summary,
             introductionEvidence: snapshot.summaryEvidence,
-            regeneration: this.regenerationOf(this.acceptanceContext(diff, snapshot.previousSnapshotId)),
         };
         const ordered = [...planIndexes].sort((left, right) => left - right);
-        const batchSize = snapshot.presentation === 'story' ? ordered.length : this.config.sectionBatchSize;
-        for (let from = 0; from < ordered.length; from += batchSize) {
-            const batch = ordered.slice(from, from + batchSize);
-            const input = this.payload.sectionTask(context, batch, snapshot.stops, intents);
-            this.enqueueRouteTask('section', snapshot.diffId, batch, input);
+        if (ordered.length > 0) {
+            const input = this.payload.sectionTask(context, ordered, snapshot.stops, intents);
+            this.enqueueRouteTask('section', snapshot.diffId, ordered, input);
         }
     }
 
@@ -996,7 +668,7 @@ export class RouteOrchestrator {
 
     /** Дифф итерации: из памяти процесса, иначе из локального хранилища патчей. */
     private diffOf(diffId: HostId): PrDiff | null {
-        for (const candidate of [this.generation?.diff ?? null, this.activeDiff]) {
+        for (const candidate of [this.generation, this.activeDiff]) {
             if (candidate?.diffId === diffId) {
                 return candidate;
             }
@@ -1147,21 +819,6 @@ const STALE_GENERATION =
     'The route generation this task belongs to is no longer running: it was restarted or cancelled. ' +
     'Call `worker next` and work on the task it gives you.';
 
-/**
- * Порог маршрута (docs/architecture.md §7.6): крошечный PR читается целиком, маршрут для него — накладной расход.
- * Меряется только объёмом правки по всем файлам: один файл на пятьсот строк тоже требует маршрута.
- */
-export function isSmallPr(diff: PrDiff, config: RouteConfig): boolean {
-    const changedLines = diff.files.reduce((total, file) => total + file.additions + file.deletions, 0);
-    return changedLines <= config.smallPrMaxChangedLines;
-}
-
-function resolveConfig(overrides: Partial<RouteConfig> | undefined): RouteConfig {
-    const config = { ...DEFAULT_ROUTE_CONFIG, ...overrides };
-    // Нулевой батч — опечатка в конфиге, а не «ставить нечего»: постановка секций зациклилась бы.
-    return { ...config, sectionBatchSize: Math.max(1, Math.trunc(config.sectionBatchSize)) };
-}
-
 /** Статус стопа по состоянию задачи, которая его заполняет; пометки — на языке снапшота. */
 function stopStatusOf(task: TaskRecord, strings: RouteStrings): RouteStopStatusUpdate {
     switch (task.status) {
@@ -1176,41 +833,6 @@ function stopStatusOf(task: TaskRecord, strings: RouteStrings): RouteStopStatusU
         default:
             // Задача закрыта успешно, а слот пуст: модель сдала результат без этого стопа.
             return { status: 'failed', note: strings.stopMissingInResult };
-    }
-}
-
-/**
- * Почему перенос отметок дал ноль. Само «перенесено 0 из 8» читается как «всё изменилось», а
- * причин две и они разные: ревьюер на прошлой итерации ничего не отмечал — или отмечал, но
- * целиком просмотренной ни одна остановка не осталась.
- *
- * Спрашивается итерация-источник, а не приёмник: перенос мог не довезти ни строчки (интердифф
- * задел все диапазоны, консервативный режим, перегенерация на той же итерации), и «отметок
- * не было» стало бы неправдой в лицо ревьюеру, который их ставил.
- */
-function zeroCarryReason(
-    kept: number,
-    progress: StopProgressCarry,
-    sourceDiffId: HostId,
-    whenMarked: RouteCarriedZeroReason,
-): RouteCarriedZeroReason | null {
-    if (kept > 0) {
-        return null;
-    }
-    return progress.hasViewedMarks(sourceDiffId) ? whenMarked : 'no_marks';
-}
-
-/** Та же причина словами — хвост строки переноса в stderr. */
-function zeroCarryNote(reason: RouteCarriedZeroReason | null): string {
-    switch (reason) {
-        case null:
-            return '';
-        case 'no_marks':
-            return ' — отметок просмотра на прошлой итерации не было';
-        case 'no_overlap':
-            return ' — отметки прошлой итерации не покрыли целиком ни одной остановки';
-        case 'no_interdiff':
-            return ' — интердиффа между итерациями нет';
     }
 }
 
