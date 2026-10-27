@@ -46,6 +46,27 @@ test('описание → блок → полный дифф → файл/ст�
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
     await page.getByRole('button', { name: 'Раскрыть контекст файла', exact: true }).click();
     await expect(page.locator('.story-code [role=alert]')).toHaveCount(0);
+    const selectable = page.locator('.story-main .diff-row[data-key]');
+    const anchorRow = selectable.nth(20);
+    const earlierRow = selectable.nth(18);
+    const laterRow = selectable.nth(24);
+    await anchorRow.click();
+    await earlierRow.click({ modifiers: ['Shift'] });
+    await expect(page.locator('.story-main .diff-row.is-selected')).toHaveCount(3);
+    await laterRow.click({ modifiers: ['Shift'] });
+    await expect(page.locator('.story-main .diff-row.is-selected')).toHaveCount(5);
+    await anchorRow.click();
+    await expect(page.locator('.story-main .diff-row.is-selected')).toHaveCount(1);
+    await laterRow.click({ modifiers: ['Shift'] });
+    await expect(page.locator('.story-main .diff-row.is-selected')).toHaveCount(5);
+    await page.getByRole('button', { name: 'Спросить об этих строках', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Убрать диапазон из контекста', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
+    await page.locator('.story-topbar').getByRole('button', { name: 'Все изменения', exact: true }).click();
+    await expect(page.locator('.story-return')).toHaveText(`К рассказу · ${fixture.first.path}`);
+    await page.locator('.story-return').click();
+    await expect(page.locator('.story-code header code')).toHaveText(fixture.first.path);
+    await expect(page.locator('.story-main .diff-row.is-selected')).toHaveCount(5);
     await page.locator('.story-main .diff-row').nth(20).focus();
     await page.evaluate(() => { window.scrollBy(0, 250); });
     const point = await page.locator('.story-main').evaluate((root) => {

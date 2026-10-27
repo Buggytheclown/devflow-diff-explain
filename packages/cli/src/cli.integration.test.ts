@@ -63,7 +63,7 @@ describe('CLI против сервера', () => {
     }
 
     interface Overrides {
-        readonly extraEnv?: Record<string, string>;
+        readonly extraEnv?: Record<string, string | undefined>;
         readonly entry?: string;
         readonly ensureServer?: NonNullable<CliIo['ensureServer']>;
         readonly openBrowser?: NonNullable<CliIo['openBrowser']>;
@@ -527,7 +527,9 @@ describe('CLI против сервера', () => {
         expect(running.queue.getTask(taskId)?.progressText).toBe('читаю дифф');
 
         await fs.writeFile(resultFile, 'Готовый ответ.');
-        const completed = await sherpa('task', 'complete', String(taskId), '--file', resultFile);
+        const printed = issued.stdout.split('\n').find((line) => line.trimStart().startsWith('devflow-diff-explain task complete '));
+        expect(printed).toContain(`--pr ${PR_KEY}`);
+        const completed = await sherpaWith({ extraEnv: { SHERPA_PR: undefined } }, ...(printed?.trim().split(' ').slice(1) ?? []));
         expect(completed.code).toBe(0);
         expect(completed.stdout).toContain('accepted');
         expect(completed.stdout).toContain('devflow-diff-explain worker next');
@@ -596,7 +598,7 @@ describe('CLI против сервера', () => {
 
         expect(open.code).toBe(1);
         expect(open.stderr).toContain(`${root} is open to other users`);
-        expect(open.stderr).toContain('call `devflow-diff-explain worker next` again');
+        expect(open.stderr).toContain(`call \`devflow-diff-explain worker next --pr ${PR_KEY}\` again`);
         expect(running.queue.getTask(taskId)?.status).toBe('queued');
 
         await fs.rm(root, { recursive: true });
@@ -620,7 +622,7 @@ describe('CLI против сервера', () => {
 
         expect(result.code).toBe(1);
         expect(result.stderr).toContain('cannot prepare the directory for task results');
-        expect(result.stderr).toContain('call `devflow-diff-explain worker next` again');
+        expect(result.stderr).toContain(`call \`devflow-diff-explain worker next --pr ${PR_KEY}\` again`);
         expect(running.queue.getTask(taskId)?.status).toBe('queued');
     });
 
@@ -717,7 +719,7 @@ describe('CLI против сервера', () => {
 
         expect(result.code).toBe(1);
         expect(result.stderr).toContain(`Write the result to ${missing}`);
-        expect(result.stderr).toContain(`devflow-diff-explain task complete ${String(taskId)} --file ${missing}`);
+        expect(result.stderr).toContain(`devflow-diff-explain task complete ${String(taskId)} --file ${missing} --pr ${PR_KEY}`);
         expect(running.queue.getTask(taskId)).toMatchObject({ status: 'leased', result: null });
     });
 
@@ -726,7 +728,7 @@ describe('CLI против сервера', () => {
 
         expect(result.code).toBe(1);
         expect(result.stderr).toContain(`the Sherpa server for PR ${PR_KEY} is not found or not responding`);
-        expect(result.stderr).toContain('Run the Sherpa skill again');
+        expect(result.stderr).toContain('Run the Devflow Diff Explain skill again');
     });
 
     it('манифест есть, а сервер мёртв — та же ошибка', async () => {

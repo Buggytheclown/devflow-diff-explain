@@ -177,7 +177,7 @@ async function workerNext(command: Extract<Command, { kind: 'worker-next' }>, io
 
     switch (response.kind) {
         case 'task':
-            io.out(formatTask(response.task, taskResultFileFor(resultDir, response.task)));
+            io.out(formatTask(response.task, taskResultFileFor(resultDir, response.task), connection.prKey));
             return 0;
         case 'done':
             io.out(formatDone(response.message));
@@ -201,7 +201,7 @@ async function prepareResultDir(tmpRoot: string, sherpaDir: string, connection: 
         const detail = error instanceof Error ? error.message : String(error);
         throw new CliError(
             `devflow-diff-explain: cannot prepare the directory for task results ${dir} — ${detail}.\n` +
-                'Fix it or point TMPDIR to a private directory, then call `devflow-diff-explain worker next` again.',
+                `Fix it or point TMPDIR to a private directory, then call \`devflow-diff-explain worker next --pr ${connection.prKey}\` again.`,
         );
     }
     return dir;
@@ -246,25 +246,26 @@ async function awaitTask(connection: ServerConnection): Promise<Exclude<WorkerNe
 }
 
 async function taskComplete(command: Extract<Command, { kind: 'task-complete' }>, io: CliIo): Promise<number> {
-    const result = await readResultFile(command.file, command.taskId);
+    const prKey = await resolvePrKey(command.prKey, io.env, io.runCommand);
+    const result = await readResultFile(command.file, command.taskId, prKey);
 
-    const connection = await connect(command.prKey, io.env, io.runCommand);
+    const connection = await connect(prKey, io.env, io.runCommand);
     const response = await requestComplete(connection, command.taskId, result);
-    io.out(formatCompleteResponse(response, command.taskId, command.file));
+    io.out(formatCompleteResponse(response, command.taskId, command.file, connection.prKey));
     return 0;
 }
 
 async function taskProgress(command: Extract<Command, { kind: 'task-progress' }>, io: CliIo): Promise<number> {
     const connection = await connect(command.prKey, io.env, io.runCommand);
     const response = await requestProgress(connection, command.taskId, command.text);
-    io.out(formatProgressResponse(response, command.taskId));
+    io.out(formatProgressResponse(response, command.taskId, connection.prKey));
     return 0;
 }
 
 async function taskFail(command: Extract<Command, { kind: 'task-fail' }>, io: CliIo): Promise<number> {
     const connection = await connect(command.prKey, io.env, io.runCommand);
     const response = await requestFail(connection, command.taskId, command.reason);
-    io.out(formatFailResponse(response, command.taskId));
+    io.out(formatFailResponse(response, command.taskId, connection.prKey));
     return 0;
 }
 
@@ -272,19 +273,19 @@ async function taskFail(command: Extract<Command, { kind: 'task-fail' }>, io: Cl
  * Читает файл результата с пре-чеком размера: перебор лимита отбивается локально,
  * до отправки, — задача остаётся в аренде, и у модели есть попытка сократить результат.
  */
-export async function readResultFile(file: string, taskId: number): Promise<string> {
+export async function readResultFile(file: string, taskId: number, prKey: string): Promise<string> {
     const stats = await fs.stat(file).catch(() => null);
     if (stats === null) {
         throw new CliError(
             `devflow-diff-explain: there is no file ${file}.\nWrite the result to ${file} and call ` +
-                `\`devflow-diff-explain task complete ${String(taskId)} --file ${file}\` again.`,
+                `\`devflow-diff-explain task complete ${String(taskId)} --file ${file} --pr ${prKey}\` again.`,
         );
     }
     if (!stats.isFile()) {
         throw new CliError(`devflow-diff-explain: ${file} is not a file.\nPass the path of the file with the task result.`);
     }
     if (stats.size > RESULT_MAX_BYTES) {
-        throw new CliError(formatOversizedResult(taskId, file, stats.size));
+        throw new CliError(formatOversizedResult(taskId, file, stats.size, prKey));
     }
 
     let result: string;
@@ -298,7 +299,7 @@ export async function readResultFile(file: string, taskId: number): Promise<stri
     // Размер файла и длина строки расходятся на битой кодировке: считаем ещё раз по тому, что уйдёт в тело.
     const bytes = Buffer.byteLength(result, 'utf8');
     if (bytes > RESULT_MAX_BYTES) {
-        throw new CliError(formatOversizedResult(taskId, file, bytes));
+        throw new CliError(formatOversizedResult(taskId, file, bytes, prKey));
     }
     return result;
 }

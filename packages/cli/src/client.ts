@@ -304,6 +304,6 @@ function invalidRequest(details: readonly string[]): string {
 function contractMismatch(): string {
     return (
         'devflow-diff-explain: the server replied off-contract — most likely the CLI and the server versions diverged.\n' +
-        'Update the Sherpa skill together with the CLI and restart the server.'
+        'Update the Devflow Diff Explain skill together with the CLI and restart the server.'
     );
 }

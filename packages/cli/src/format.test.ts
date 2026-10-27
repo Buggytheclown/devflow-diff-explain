@@ -64,7 +64,7 @@ describe('итог up на локальном ревью', () => {
 
 describe('промпт-формат задачи', () => {
     it('содержит заголовок, инструкцию, контекст и команды сдачи', () => {
-        const output = formatTask(task, RESULT_FILE);
+        const output = formatTask(task, RESULT_FILE, 'arcanum-1');
 
         expect(output.startsWith('TASK sherpa/42 (echo), attempt 1')).toBe(true);
         expect(output).toContain('Return the contents of the file as is.');
@@ -72,14 +72,15 @@ describe('промпт-формат задачи', () => {
         expect(output).toContain(`Write the result to ${RESULT_FILE} and submit it:`);
         expect(output).toContain(`  devflow-diff-explain task complete 42 --file ${RESULT_FILE}`);
         expect(output).not.toContain('<path>');
+        expect(output.match(/--pr arcanum-1/g)).toHaveLength(3);
         expect(output).toContain('devflow-diff-explain task progress 42 --text');
         expect(output).toContain('devflow-diff-explain task fail 42 --reason');
     });
 
     it('без контекстных файлов пишет «none», схему результата — только когда она есть', () => {
-        expect(formatTask({ ...task, contextFiles: [] }, RESULT_FILE)).toContain('Context: none');
-        expect(formatTask(task, RESULT_FILE)).not.toContain('Result schema');
-        expect(formatTask({ ...task, resultSchemaFile: '/tmp/schema.json' }, RESULT_FILE)).toContain(
+        expect(formatTask({ ...task, contextFiles: [] }, RESULT_FILE, 'arcanum-1')).toContain('Context: none');
+        expect(formatTask(task, RESULT_FILE, 'arcanum-1')).not.toContain('Result schema');
+        expect(formatTask({ ...task, resultSchemaFile: '/tmp/schema.json' }, RESULT_FILE, 'arcanum-1')).toContain(
             'Result schema: /tmp/schema.json — the result is validated against it.',
         );
     });
@@ -95,6 +96,7 @@ describe('ответы на complete', () => {
             { kind: 'accepted', message: 'The result is accepted.' },
             42,
             RESULT_FILE,
+            'arcanum-1',
         );
 
         expect(output).toContain('The result is accepted.');
@@ -106,6 +108,7 @@ describe('ответы на complete', () => {
             { kind: 'rejected', errors: ['empty', 'no summary section'] },
             42,
             '/work/answer.md',
+            'arcanum-1',
         );
 
         expect(output).toContain('1. empty');
@@ -118,6 +121,7 @@ describe('ответы на complete', () => {
             { kind: 'noop', message: 'Task sherpa/42 is already finished.' },
             42,
             RESULT_FILE,
+            'arcanum-1',
         );
 
         expect(output).toContain('is already finished');
@@ -168,7 +172,7 @@ describe('ошибки', () => {
     });
 
     it('перебор лимита объясняется в килобайтах и оставляет задачу за воркером', () => {
-        const output = formatOversizedResult(42, '/tmp/answer.md', RESULT_MAX_BYTES * 2);
+        const output = formatOversizedResult(42, '/tmp/answer.md', RESULT_MAX_BYTES * 2, 'arcanum-1');
 
         expect(output).toContain('512 KB');
         expect(output).toContain('256 KB');

@@ -30,15 +30,19 @@ export function FlowDiagram({ flow }: { flow: FlowState | undefined }) {
         if (row !== undefined && row.length < 2 && row.at(-1)?.to === edge.from) row.push(edge);
         else rows.push([edge]);
     }
+    const shown = new Set<string>();
     const node = (nodeId: string) => {
         const entry = diagram.nodes.find((item) => item.id === nodeId);
-        return entry === undefined ? null : <div className={`story-flow-node story-flow--${entry.change}`}><span className="story-flow-status">{t[entry.change]}</span><strong>{entry.label}</strong>{entry.limitation === null ? null : <small>{entry.limitation}</small>}</div>;
+        if (entry === undefined) return null;
+        if (shown.has(nodeId)) return <div className={`story-flow-reference story-flow--${entry.change}`}><span aria-hidden="true">↳ </span><span className="visually-hidden">{t.continued}: </span>{entry.label}</div>;
+        shown.add(nodeId);
+        return <div className={`story-flow-node story-flow--${entry.change}`}><span className="story-flow-status">{t[entry.change]}</span><strong>{entry.label}</strong></div>;
     };
     return <section className="story-flow" aria-labelledby={id} data-reading="flow">
         <h3 id={id}>{diagram.title}</h3>
         <ul className="story-flow-legend" aria-label={t.title}>{(['existing', 'added', 'modified', 'unknown'] as const).map((change) => <li className={`story-flow--${change}`} key={change}>{t[change]}</li>)}</ul>
         <div className="story-flow-graph" role="list">{rows.map((row, i) => <div className={`story-flow-edge${row.length === 2 ? ' story-flow-edge--chain' : ''}`} role="listitem" key={i}>
-            {node(row[0]?.from ?? '')}{row.map((edge, j) => <Fragment key={j}><div className={`story-flow-arrow story-flow--${edge.change}`}><span>{edge.label}</span><span className="story-flow-line" aria-hidden="true">→</span><small>{t[edge.kind]} · {t[edge.change]}</small>{edge.limitation === null ? null : <small>{edge.limitation}</small>}</div>{node(edge.to)}</Fragment>)}
+            {node(row[0]?.from ?? '')}{row.map((edge, j) => <Fragment key={j}><div className={`story-flow-arrow story-flow--${edge.change}`}><span>{edge.label}</span><span className="story-flow-line" aria-hidden="true">→</span><small>{t[edge.kind]} · {t[edge.change]}</small></div>{node(edge.to)}</Fragment>)}
         </div>)}</div>
         {diagram.nodes.filter((entry) => !diagram.edges.some((edge) => edge.from === entry.id || edge.to === entry.id)).map((entry) => <div key={entry.id}>{node(entry.id)}</div>)}
         <details className="story-flow-sources"><summary>{t.sources}</summary>{[...diagram.nodes, ...diagram.edges].map((item, i) => <div key={i}><strong>{item.label}</strong>{item.limitation === null ? null : <p>{item.limitation}</p>}{item.sources.map((source, j) => {

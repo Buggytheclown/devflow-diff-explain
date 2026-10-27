@@ -113,7 +113,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
         const epoch = reading.begin();
         if (!showDiff && storyKey !== null) {
             const memory = reading.saved(storyKey);
-            reading.setOrigin({ storyKey, sectionId: sectionId ?? memory.position?.address.split(':')[0] ?? 'intro', focus: memory.focus });
+            reading.setOrigin({ storyKey, sectionId: sectionId ?? (guided ? guidePage : memory.position?.address.split(':')[0] ?? 'intro'), focus: memory.focus });
         }
         return epoch;
     };
@@ -198,7 +198,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
         </aside>
         <main ref={readingRoot} data-reading-scope={scope} className={`story-main${showDiff || guideFileId !== null ? ' story-main--diff' : ''}`}>
             <h1>{stream.state?.pr?.title ?? stream.state?.prKey ?? t.loading}</h1>
-            {showDiff && reading.origin !== null ? <button className="ctl story-return" onClick={backToStory}>{t.returnTo} · {reading.origin.sectionId === 'intro' ? t.introduction : snapshot?.stops.find((stop) => stop.id === reading.origin?.sectionId)?.title ?? t.introduction}</button> : null}
+            {showDiff && reading.origin !== null ? <button className="ctl story-return" onClick={backToStory}>{t.returnTo} · {reading.origin.sectionId === 'intro' ? t.introduction : snapshot?.stops.flatMap((stop) => stop.guidedFiles ?? []).find((file) => `file:${file.fileId}` === reading.origin?.sectionId)?.path ?? snapshot?.stops.find((stop) => stop.id === reading.origin?.sectionId)?.title ?? t.introduction}</button> : null}
             {showDiff && diffVersion !== active && active !== undefined ? <p><button className="ctl" onClick={() => { void goDiff(active); }}>{t.newDiff}</button></p> : null}
             {!showDiff && snapshot !== null && (snapshot.storyContractVersion ?? 0) < 3 && route?.stale == null ? <p className="story-notice">{snapshot.storyContractVersion === 2 ? gt.older : t.legacy} <button className="ctl" disabled={generating || !connected} onClick={generate}>{t.refresh}</button></p> : null}
             {snapshot === null ? null : <p className="story-provenance">{(showDiff ? diff?.headCommit ?? snapshot.commit : snapshot.commit).slice(0, 12)} · {snapshot.provenance.harness} · {snapshot.provenance.model}</p>}

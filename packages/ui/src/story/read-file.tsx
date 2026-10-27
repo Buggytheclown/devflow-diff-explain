@@ -13,6 +13,7 @@ import { useLocale } from '../i18n/index.js';
 import { storyCopy } from '../i18n/story.js';
 import type { StoryData } from './data.js';
 import { SelectionBar } from './selection-bar.tsx';
+import { useLineRange } from './line-range.js';
 
 export function ReadFile({ file, diffId, data, token, current, navigation, onAsk, onLayout, onMediaLayout, annotations = [] }: {
     file: FileDiff; diffId: string; data: StoryData; token: string; current: boolean;
@@ -22,6 +23,7 @@ export function ReadFile({ file, diffId, data, token, current, navigation, onAsk
     const t = storyCopy[useLocale()];
     const [model, setModel] = useState(() => data.file(diffId, file.fileId).model);
     const [selected, setSelected] = useState(() => data.file(diffId, file.fileId).selected);
+    const ranges = useLineRange(selected);
     const [error, setError] = useState<string | null>(null);
     const [attempt, setAttempt] = useState(0);
     const loadBlob = useCallback((id: string) => fetchBlob(token, id), [token]);
@@ -49,8 +51,20 @@ export function ReadFile({ file, diffId, data, token, current, navigation, onAsk
         return () => { alive = false; };
     }, [data, diffId, file, current, navigation, token, attempt, t.unavailable]);
     const pick = (range: UiChatAskAnchor | null): void => { data.updateFile(diffId, file.fileId, { selected: range }); layout.current(); setSelected(range); };
-    const select = (side: 'old' | 'new', start: number, end = start): void => {
-        pick({ diffId, fileId: file.fileId, path: side === 'old' ? file.oldPath ?? file.path : file.path, side, start, end });
+    const select = (range: Pick<CodeLocation, 'side' | 'start' | 'end'>): void => {
+        pick({ diffId, fileId: file.fileId, path: range.side === 'old' ? file.oldPath ?? file.path : file.path, ...range });
+    };
+    const selectLine = (target: EventTarget, extend: boolean): boolean => {
+        const element = target instanceof Element ? target : null;
+        const numbers = lineKeyNumbers(element?.closest<HTMLElement>('[data-key]')?.dataset.key ?? '');
+        if (numbers === null) return false;
+        const oldGutter = element?.closest('.diff-row__gutter:not(.diff-row__gutter--code)') != null;
+        const newGutter = element?.closest('.diff-row__gutter--code') != null;
+        const side = numbers.new === null || (numbers.old !== null && (oldGutter || (!newGutter && extend && selected?.side === 'old'))) ? 'old' : 'new';
+        const line = numbers[side];
+        if (line === null) return false;
+        select(ranges.choose(side, line, extend));
+        return true;
     };
     return <div className="story-code file-card" onLoadCapture={onMediaLayout} data-reading="file">
         {selected === null ? null : <SelectionBar selected={selected} onAsk={() => { onAsk(selected); }} onClear={() => { pick(null); }} />}
@@ -66,17 +80,26 @@ export function ReadFile({ file, diffId, data, token, current, navigation, onAsk
             }}>{t.expand}</button> : null}
         </header>
         {error === null ? null : <p role="alert">{error} <button className="ctl" onClick={() => { setAttempt((n) => n + 1); }}>{t.retrySource}</button></p>}
-        <div onMouseUp={() => {
+        <div onMouseDownCapture={(event) => {
+            if (event.button !== 0 || !event.shiftKey || !selectLine(event.target, true)) return;
+            // До focus: иначе фокус новой строки перезапишет первую границу диапазона.
+            event.preventDefault();
+            window.getSelection()?.removeAllRanges();
+        }} onClick={(event) => {
+            // Клик по уже сфокусированной строке тоже начинает новое выделение.
+            if (event.button === 0 && !event.shiftKey && window.getSelection()?.isCollapsed !== false) selectLine(event.target, false);
+        }} onMouseUp={(event) => {
+            if (event.shiftKey) return;
             const selection = window.getSelection();
             if (selection === null || selection.isCollapsed) return;
             const element = (node: Node | null): HTMLElement | null => (node instanceof Element ? node : node?.parentElement)?.closest<HTMLElement>('[data-key]') ?? null;
             const first = lineKeyNumbers(element(selection.anchorNode)?.dataset.key ?? '');
             const last = lineKeyNumbers(element(selection.focusNode)?.dataset.key ?? '');
-            if (first?.new != null && last?.new != null) select('new', Math.min(first.new, last.new), Math.max(first.new, last.new));
-            else if (first?.old != null && last?.old != null) select('old', Math.min(first.old, last.old), Math.max(first.old, last.old));
+            if (first?.new != null && last?.new != null) select(ranges.fromText('new', first.new, last.new));
+            else if (first?.old != null && last?.old != null) select(ranges.fromText('old', first.old, last.old));
         }}>
             {file.image != null ? <ImageBody file={file} image={file.image} loadBlob={loadBlob} /> : model === null ? error === null ? <p data-reading-wait>{t.loading}</p> : null
-                : model.content.kind !== 'text' ? <p>{t.noPatch}</p> : <DiffRows model={model} mode="unified" content={null} selection={selection} contextAvailable={false} renderAfterLine={(side, line) => annotations.filter((note) => note.side === side && note.end === line).map((note, index) => <aside className="story-inline-note" key={index} data-reading={`note:${side}:${String(line)}:${String(index)}`}><span>{side === 'old' ? '−' : '+'} {note.start}–{note.end}</span>{parseStopBlocks(note.text).map((part, i) => renderBlock(part, i))}</aside>)} onLineFocus={(side, line) => { select(side, line); }} />}
+                : model.content.kind !== 'text' ? <p>{t.noPatch}</p> : <DiffRows model={model} mode="unified" content={null} selection={selection} contextAvailable={false} renderAfterLine={(side, line) => annotations.filter((note) => note.side === side && note.end === line).map((note, index) => <aside className="story-inline-note" key={index} data-reading={`note:${side}:${String(line)}:${String(index)}`}><span>{side === 'old' ? '−' : '+'} {note.start}–{note.end}</span>{parseStopBlocks(note.text).map((part, i) => renderBlock(part, i))}</aside>)} onLineFocus={(side, line) => { select(ranges.choose(side, line)); }} />}
         </div>
     </div>;
 }

@@ -93,6 +93,7 @@ body:has(.story-app) { min-width: 0; }
 .story-flow-edge { display: grid; grid-template-columns: minmax(0, 1fr) minmax(7rem, .8fr) minmax(0, 1fr); gap: .75rem; align-items: center; }
 .story-flow-edge--chain { grid-template-columns: minmax(0, 1fr) minmax(5rem, .7fr) minmax(0, 1fr) minmax(5rem, .7fr) minmax(0, 1fr); }
 .story-flow-node { border: 1px solid var(--border-standard); padding: .7rem; border-radius: .4rem; display: grid; gap: .25rem; overflow-wrap: anywhere; }
+.story-flow-reference { border: 0; border-left: 2px solid var(--border-standard); padding: .3rem .6rem; color: var(--text-link-muted); font-size: var(--font-size-secondary); overflow-wrap: anywhere; }
 .story-flow-status, .story-flow small { font-size: var(--font-size-secondary); color: var(--text-link-muted); }
 .story-flow--added { border-color: var(--accent) !important; background: var(--accent-surface); }
 .story-flow--modified { border-color: var(--accent) !important; }

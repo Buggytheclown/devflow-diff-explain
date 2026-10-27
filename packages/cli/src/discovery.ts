@@ -98,7 +98,7 @@ function unclearWhichPr(hint: string): string {
     return (
         'devflow-diff-explain: it is unclear which PR to connect to.\n' +
         `Tried to detect it from the current directory: ${hint}.\n` +
-        'Run the command through the Sherpa skill (it fills the PR in), pass `--pr <pr key>`, ' +
+        'Run the command through the Devflow Diff Explain skill (it fills the PR in), pass `--pr <pr key>`, ' +
         'or run it from an arc checkout with the PR branch checked out.'
     );
 }
@@ -232,6 +232,6 @@ function isAlreadyExists(error: unknown): boolean {
 export function serverUnavailable(prKey: string): string {
     return (
         `devflow-diff-explain: the Sherpa server for PR ${prKey} is not found or not responding.\n` +
-        'Run the Sherpa skill again — it will start the server and write the manifest.'
+        'Run the Devflow Diff Explain skill again — it will start the server and write the manifest.'
     );
 }

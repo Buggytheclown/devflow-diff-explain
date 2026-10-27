@@ -29,22 +29,22 @@ describe('пре-чек размера результата', () => {
         const atLimit = await writeResult('at-limit.md', 'a'.repeat(RESULT_MAX_BYTES));
         const overLimit = await writeResult('over-limit.md', 'a'.repeat(RESULT_MAX_BYTES + 1));
 
-        await expect(readResultFile(atLimit, 42)).resolves.toHaveLength(RESULT_MAX_BYTES);
-        await expect(readResultFile(overLimit, 42)).rejects.toThrow('the limit is 256 KB');
+        await expect(readResultFile(atLimit, 42, 'arcanum-1')).resolves.toHaveLength(RESULT_MAX_BYTES);
+        await expect(readResultFile(overLimit, 42, 'arcanum-1')).rejects.toThrow('the limit is 256 KB');
     });
 
     it('размер считается в байтах, а не в символах', async () => {
         // Кириллица — два байта в UTF-8: по длине строки файл в лимит уложился бы.
         const file = await writeResult('utf8.md', 'я'.repeat(RESULT_MAX_BYTES / 2 + 1));
 
-        await expect(readResultFile(file, 42)).rejects.toThrow(CliError);
+        await expect(readResultFile(file, 42, 'arcanum-1')).rejects.toThrow(CliError);
     });
 
     it('нет файла или это каталог — понятная ошибка с подсказкой', async () => {
         const missing = path.join(workDir, 'нет.md');
-        await expect(readResultFile(missing, 42)).rejects.toThrow(
-            `Write the result to ${missing} and call \`devflow-diff-explain task complete 42 --file ${missing}\` again.`,
+        await expect(readResultFile(missing, 42, 'arcanum-1')).rejects.toThrow(
+            `Write the result to ${missing} and call \`devflow-diff-explain task complete 42 --file ${missing} --pr arcanum-1\` again.`,
         );
-        await expect(readResultFile(workDir, 42)).rejects.toThrow('is not a file');
+        await expect(readResultFile(workDir, 42, 'arcanum-1')).rejects.toThrow('is not a file');
     });
 });

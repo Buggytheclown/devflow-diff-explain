@@ -37,13 +37,17 @@ test('краткое пояснение и пример → полный диф�
     const diagram = await server.worker.next(); expect(diagram.type).toBe('route.diagram');
     expect((await server.worker.complete(diagram.taskId ?? 0, JSON.stringify({ contextRequests: [{ path: 'missing-context.ts', start: 1, end: 5 }], diagram: null, reason: null }))).stdout).not.toContain('rejected');
     const second = await server.worker.next(); expect(second.type).toBe('route.diagram');
-    expect((await server.worker.complete(second.taskId ?? 0, JSON.stringify({ contextRequests: [], diagram: fixture.diagram, reason: null }))).stdout).not.toContain('rejected');
+    expect((await server.worker.complete(second.taskId ?? 0, JSON.stringify({ contextRequests: [], diagram: { ...fixture.diagram, edges: [...fixture.diagram.edges, { from: fixture.diagram.nodes.at(-1)?.id, to: fixture.diagram.nodes[0]?.id, label: 'Обратная связь', kind: 'data', change: 'unknown', sources: [], limitation: 'В сохранённом коде эта связь не подтверждена.' }] }, reason: null }))).stdout).not.toContain('rejected');
     expect(await page.locator('.story-main .diff-row').allTextContents()).toEqual(rows);
     await page.locator('.story-nav').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
     await expect(page.locator('.story-flow h3')).toHaveText(fixture.diagram.title);
-    await expect(page.locator('.story-flow-arrow')).toHaveCount(2);
+    await expect(page.locator('.story-flow-arrow')).toHaveCount(3);
+    await expect(page.locator('.story-flow-node')).toHaveCount(fixture.diagram.nodes.length);
+    await expect(page.locator('.story-flow-reference')).toHaveCount(2);
+    await expect(page.locator('.story-flow-graph')).not.toContainText('В сохранённом коде эта связь не подтверждена.');
     await page.locator('.story-flow-sources summary').click();
     await expect(page.locator('.story-flow-sources')).toContainText(fixture.anchor.path);
+    await expect(page.locator('.story-flow-sources')).toContainText('В сохранённом коде эта связь не подтверждена.');
     await page.locator('.story-flow-sources summary').click();
     await page.screenshot({ path: test.info().outputPath('sherpa-readable-flow.png'), fullPage: true });
 

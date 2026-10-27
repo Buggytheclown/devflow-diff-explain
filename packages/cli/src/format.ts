@@ -15,7 +15,7 @@ import { CLI_VERSION } from './version.js';
  * инструкция, пути к контексту, выданный CLI файл результата и готовые команды сдачи —
  * тяжёлый контекст остаётся файлами.
  */
-export function formatTask(task: Task, resultFile: string): string {
+export function formatTask(task: Task, resultFile: string, prKey: string): string {
     const lines = [
         `TASK sherpa/${String(task.id)} (${task.type}), attempt ${String(task.attempt)}`,
         '',
@@ -31,9 +31,9 @@ export function formatTask(task: Task, resultFile: string): string {
     lines.push(
         '',
         `Write the result to ${resultFile} and submit it:`,
-        `  devflow-diff-explain task complete ${String(task.id)} --file ${resultFile}`,
-        `Interim status: devflow-diff-explain task progress ${String(task.id)} --text "..."`,
-        `Cannot do it: devflow-diff-explain task fail ${String(task.id)} --reason "..."`,
+        `  devflow-diff-explain task complete ${String(task.id)} --file ${resultFile} --pr ${prKey}`,
+        `Interim status: devflow-diff-explain task progress ${String(task.id)} --text "..." --pr ${prKey}`,
+        `Cannot do it: devflow-diff-explain task fail ${String(task.id)} --reason "..." --pr ${prKey}`,
     );
 
     return lines.join('\n');
@@ -89,39 +89,39 @@ export function formatDone(message: string): string {
 }
 
 /** `file` — путь, который воркер передал в `complete`: повтор команды идёт с ним же. */
-export function formatCompleteResponse(response: TaskCompleteResponse, taskId: number, file: string): string {
+export function formatCompleteResponse(response: TaskCompleteResponse, taskId: number, file: string, prKey: string): string {
     switch (response.kind) {
         case 'accepted':
-            return `${response.message}\nCall \`devflow-diff-explain worker next\` for the next task.`;
+            return `${response.message}\nCall \`devflow-diff-explain worker next --pr ${prKey}\` for the next task.`;
         case 'rejected':
             return [
                 `The result of task sherpa/${String(taskId)} was rejected:`,
                 ...response.errors.map((error, index) => `  ${String(index + 1)}. ${error}`),
-                `Fix it and call \`devflow-diff-explain task complete ${String(taskId)} --file ${file}\` again.`,
+                `Fix it and call \`devflow-diff-explain task complete ${String(taskId)} --file ${file} --pr ${prKey}\` again.`,
             ].join('\n');
         case 'noop':
-            return `${response.message}\nCall \`devflow-diff-explain worker next\` for the next task.`;
+            return `${response.message}\nCall \`devflow-diff-explain worker next --pr ${prKey}\` for the next task.`;
     }
 }
 
-export function formatProgressResponse(response: TaskAckResponse, taskId: number): string {
+export function formatProgressResponse(response: TaskAckResponse, taskId: number, prKey: string): string {
     switch (response.kind) {
         case 'accepted':
             return `Status for task sherpa/${String(taskId)} recorded — carry on.`;
         case 'noop':
-            return `${response.message}\nCall \`devflow-diff-explain worker next\` for the next task.`;
+            return `${response.message}\nCall \`devflow-diff-explain worker next --pr ${prKey}\` for the next task.`;
     }
 }
 
-export function formatFailResponse(response: TaskAckResponse, taskId: number): string {
+export function formatFailResponse(response: TaskAckResponse, taskId: number, prKey: string): string {
     switch (response.kind) {
         case 'accepted':
             return (
                 `The refusal of task sherpa/${String(taskId)} is accepted, the reviewer sees the reason.\n` +
-                'Call `devflow-diff-explain worker next` for the next task.'
+                `Call \`devflow-diff-explain worker next --pr ${prKey}\` for the next task.`
             );
         case 'noop':
-            return `${response.message}\nCall \`devflow-diff-explain worker next\` for the next task.`;
+            return `${response.message}\nCall \`devflow-diff-explain worker next --pr ${prKey}\` for the next task.`;
     }
 }
 
@@ -153,11 +153,11 @@ export function formatRpcError(error: RpcError['error'], role: CallRole): string
  * Локальный отказ до отправки: слишком большой результат сервер завершил бы задачу ошибкой,
  * а так задача остаётся в аренде и у модели есть попытка сократить файл.
  */
-export function formatOversizedResult(taskId: number, file: string, bytes: number): string {
+export function formatOversizedResult(taskId: number, file: string, bytes: number, prKey: string): string {
     return (
         `devflow-diff-explain: the result is ${kilobytes(bytes)} while the limit is ${kilobytes(RESULT_MAX_BYTES)} — ` +
         `too large to submit.\nShorten ${file} and call ` +
-        `\`devflow-diff-explain task complete ${String(taskId)} --file ${file}\` again. ` +
+        `\`devflow-diff-explain task complete ${String(taskId)} --file ${file} --pr ${prKey}\` again. ` +
         'The task stays yours, nothing is lost.'
     );
 }
@@ -226,7 +226,7 @@ function nextStepFor(code: RpcErrorCode, role: CallRole): string | undefined {
  * Формулировка «stop the loop» — маркер из SKILL.md, менять её в отрыве от него нельзя.
  */
 const WORKER_CONFLICT_STOP =
-    'This session is no longer the worker of this PR: stop the loop and do not call `sherpa` again — ' +
+    'This session is no longer the worker of this PR: stop the loop and do not call `devflow-diff-explain` again — ' +
     'another session has taken over.';
 
 /**
@@ -234,11 +234,11 @@ const WORKER_CONFLICT_STOP =
  * сервер уже сопровождает инструкцией — второй раз её не повторяем.
  */
 const NEXT_STEP_BY_CODE: Partial<Record<RpcErrorCode, string>> = {
-    unauthorized: 'The token from the manifest is stale — restart the Sherpa skill.',
+    unauthorized: 'The token from the manifest is stale — restart the Devflow Diff Explain skill.',
     bad_request: 'Check the command arguments and call it again.',
     result_too_large:
         'The task is closed and the reviewer sees why — call `devflow-diff-explain worker next` for the next one.',
-    internal: 'Repeat the command; if it keeps failing, restart the Sherpa skill.',
+    internal: 'Repeat the command; if it keeps failing, restart the Devflow Diff Explain skill.',
 };
 
 function kilobytes(bytes: number): string {
