@@ -6,8 +6,7 @@ export interface ReadingPosition { address: string; offset: number }
 
 export function readingTop(): number {
     const bar = document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0;
-    const selection = document.querySelector('.story-main .story-selection')?.getBoundingClientRect();
-    return Math.max(bar, selection !== undefined && selection.top <= bar + 1 ? selection.bottom : 0) + 12;
+    return bar + 12;
 }
 
 function addressed(root: HTMLElement): { element: HTMLElement; address: string }[] {
@@ -27,8 +26,7 @@ export function capturePosition(root: HTMLElement): ReadingPosition | null {
 export function restorePosition(root: HTMLElement, position: ReadingPosition): boolean {
     const target = addressed(root).find((entry) => entry.address === position.address)?.element;
     if (target === undefined) return false;
-    // Sticky-панель меняет границу чтения после первого скролла. Сходимся к ней,
-    // иначе каждый возврат теряет высоту панели выделения.
+    // После изменения раскладки сверяем положение по видимому тексту.
     for (let i = 0; i < 3; i += 1) {
         const delta = target.getBoundingClientRect().top - readingTop() - position.offset;
         if (Math.abs(delta) <= 1) break;

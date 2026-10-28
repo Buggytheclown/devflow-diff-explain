@@ -455,7 +455,12 @@
     margin: var(--space-inner-tight) 0;
     padding-left: var(--space-inner-tight);
     overflow: auto;
-    border-left: 2px solid var(--accent);
+    border-left: 2px solid var(--accent-border);
     font-size: var(--font-size-body);
     white-space: pre-wrap;
 }
+
+.chat-panel__selection { min-width: 0; }
+.chat-panel__selection summary { cursor: pointer; color: var(--text-muted); font-size: var(--font-size-secondary); }
+.chat-panel__selection .chat-panel__context-label { white-space: normal; overflow-wrap: anywhere; }
+.chat-panel__selection-quote { font-family: var(--font-mono); tab-size: 4; }

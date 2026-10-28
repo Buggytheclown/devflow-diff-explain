@@ -12,17 +12,17 @@ import { lineKey, lineKeyNumbers } from '../diff-view/selection.js';
 import { useLocale } from '../i18n/index.js';
 import { storyCopy } from '../i18n/story.js';
 import type { StoryData } from './data.js';
-import { SelectionBar } from './selection-bar.tsx';
+import { selectedCode, withCodeQuote } from './selected-code.js';
 import { useLineRange } from './line-range.js';
 
-export function ReadFile({ file, diffId, data, token, current, navigation, onAsk, onLayout, onMediaLayout, annotations = [] }: {
+export function ReadFile({ file, diffId, data, token, current, navigation, anchor = null, onSelect, onLayout, onMediaLayout, annotations = [] }: {
     file: FileDiff; diffId: string; data: StoryData; token: string; current: boolean;
     annotations?: readonly GuidedAnnotation[] | undefined;
-    navigation?: CodeLocation | undefined; onAsk: (anchor: UiChatAskAnchor) => void; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
+    navigation?: CodeLocation | undefined; anchor?: UiChatAskAnchor | null; onSelect: (anchor: UiChatAskAnchor, text: string | null) => void; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
 }) {
     const t = storyCopy[useLocale()];
     const [model, setModel] = useState(() => data.file(diffId, file.fileId).model);
-    const [selected, setSelected] = useState(() => data.file(diffId, file.fileId).selected);
+    const selected = data.file(diffId, file.fileId).highlight ?? (anchor?.diffId === diffId && anchor.fileId === file.fileId ? anchor : null);
     const ranges = useLineRange(selected);
     const [error, setError] = useState<string | null>(null);
     const [attempt, setAttempt] = useState(0);
@@ -50,9 +50,11 @@ export function ReadFile({ file, diffId, data, token, current, navigation, onAsk
         });
         return () => { alive = false; };
     }, [data, diffId, file, current, navigation, token, attempt, t.unavailable]);
-    const pick = (range: UiChatAskAnchor | null): void => { data.updateFile(diffId, file.fileId, { selected: range }); layout.current(); setSelected(range); };
     const select = (range: Pick<CodeLocation, 'side' | 'start' | 'end'>): void => {
-        pick({ diffId, fileId: file.fileId, path: range.side === 'old' ? file.oldPath ?? file.path : file.path, ...range });
+        const next = { diffId, fileId: file.fileId, path: range.side === 'old' ? file.oldPath ?? file.path : file.path, ...range };
+        const text = model === null ? null : selectedCode(model, next);
+        data.updateFile(diffId, file.fileId, { highlight: null });
+        onSelect(withCodeQuote(next, text), text);
     };
     const selectLine = (target: EventTarget, extend: boolean): boolean => {
         const element = target instanceof Element ? target : null;
@@ -67,7 +69,6 @@ export function ReadFile({ file, diffId, data, token, current, navigation, onAsk
         return true;
     };
     return <div className="story-code file-card" onLoadCapture={onMediaLayout} data-reading="file">
-        {selected === null ? null : <SelectionBar selected={selected} onAsk={() => { onAsk(selected); }} onClear={() => { pick(null); }} />}
         <header><code>{file.oldPath != null && file.oldPath !== file.path ? `${file.oldPath} → ` : ''}{file.path}</code><span className="story-file-stats"><span className="story-file-added">+{file.additions}</span> / <span className="story-file-deleted">−{file.deletions}</span></span>
             {current ? <button className="ctl" onClick={() => {
                 void fetchFileContent(token, file.fileId, diffId).then((content) => {

@@ -9,7 +9,8 @@ import { FlowDiagram, ExplanationExample } from '../../story/flow-diagram.tsx';
 import { OverviewSkeleton, Preparation } from '../../story/preparation.tsx';
 import { GuidedDocument } from '../../story/guided-document.tsx';
 import { ReadFile } from '../../story/read-file.tsx';
-import { SelectionBar, StoryDocument } from '../../story/app.tsx';
+import { StoryDocument } from '../../story/app.tsx';
+import { ChatSelectionContext } from '../../components/chat-panel.tsx';
 import type { GalleryState } from './states.tsx';
 
 const source = routeFixtures('medium')?.states.ready?.snapshot;
@@ -33,7 +34,7 @@ const modern: RouteSnapshot = { ...snapshot, summary, storyContractVersion: 2, s
 const data = { ...createStoryData('gallery'), diff: () => Promise.resolve(diff), parse: (_id: string, file: typeof diff.files[number]) => Promise.resolve(parseFileDiff(toParseRequest(file))) };
 const noop = (): void => undefined;
 
-const renderSource = (source: StorySource, section: string, index: number) => <EvidenceSource key={`${section}:${String(index)}`} source={source} diffId={diff.diffId} data={data} token="gallery" focusId={`${section}:${String(index)}`} onOpen={noop} onAsk={noop} onLayout={noop} />;
+const renderSource = (source: StorySource, section: string, index: number) => <EvidenceSource key={`${section}:${String(index)}`} source={source} diffId={diff.diffId} data={data} token="gallery" focusId={`${section}:${String(index)}`} onOpen={noop} onSelect={noop} onLayout={noop} />;
 
 export const STORY_STATES: readonly GalleryState[] = [
     { id: 'story-legacy', group: 'Рассказ', title: 'Прежний рассказ без связей тезисов с кодом',
@@ -48,8 +49,12 @@ export const STORY_STATES: readonly GalleryState[] = [
         render: () => <main className="story-main"><div className="story-code"><header><code>src/service.ts · После · 12–18</code></header><p role="alert">Не удалось загрузить источник. <button className="ctl">Повторить загрузку</button></p></div></main> },
     { id: 'story-return', group: 'Рассказ', title: 'Возврат к разделу из полного диффа',
         render: () => <main className="story-main"><button className="ctl story-return">К рассказу · Порядок записи</button><p className="story-provenance">сохранённая версия · codex</p></main> },
-    { id: 'story-selection', group: 'Рассказ', title: 'Действия по выделенному диапазону',
-        render: () => <SelectionBar selected={{ start: 14, end: 18 }} onAsk={noop} onClear={noop} /> },
+    { id: 'story-selection', group: 'Рассказ', title: 'Выделенный код в контексте чата',
+        render: () => <ChatSelectionContext anchor={{ ...sourceRef, diffId: diff.diffId }} text={'if (order.isEditable) {\n    return updateOrder(order);\n}'} onRemove={noop} /> },
+    { id: 'story-selection-unavailable', group: 'Рассказ', title: 'Строки контекста недоступны',
+        render: () => <ChatSelectionContext anchor={{ ...sourceRef, diffId: diff.diffId }} text={null} onRemove={noop} /> },
+    { id: 'story-selection-long', group: 'Рассказ', title: 'Большой диапазон · раскрытие полного кода',
+        render: () => <ChatSelectionContext anchor={{ ...sourceRef, diffId: diff.diffId, end: sourceRef.start + 39 }} text={'const result = updateOrder(order);\n'.repeat(40)} onRemove={noop} /> },
     { id: 'story-reading', group: 'Рассказ', title: 'Подготовка объяснения',
         render: () => <main className="story-main"><p className="story-notice" role="status">Готовлю короткое объяснение…</p></main> },
     { id: 'story-intro', group: 'Рассказ', title: 'Введение готово, основной текст строится',
@@ -69,7 +74,7 @@ function GuidedGallery({ page, pending = false, readableView = false }: { page: 
     return <main className="story-main story-main--diff"><GuidedDocument snapshot={view} page={page} onVisit={noop} onAsk={noop} renderFile={(id) => {
         const file = guided.diff.files.find((entry) => entry.fileId === id);
         const notes = view.stops.flatMap((stop) => stop.guidedFiles ?? []).find((entry) => entry.fileId === id)?.annotations;
-        return file === undefined ? null : <ReadFile file={file} diffId={guided.diff.diffId} data={data} token="gallery" current={false} annotations={notes} onAsk={noop} onLayout={noop} />;
+        return file === undefined ? null : <ReadFile file={file} diffId={guided.diff.diffId} data={data} token="gallery" current={false} annotations={notes} onSelect={noop} onLayout={noop} />;
     }} /></main>;
 }
 const readable = readableStoryFixture();

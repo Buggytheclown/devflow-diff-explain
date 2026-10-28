@@ -26,6 +26,7 @@ export interface ChatPanelProps {
     readonly error: string | null;
     readonly reconnectCommand: string;
     readonly anchor: UiChatAskAnchor | null;
+    readonly anchorText?: string | null;
     readonly focusRequest: number;
     /**
      * Подставить текст в композер (docs/spec.md §10): вопрос не уходит — его читает, правит и
@@ -122,6 +123,20 @@ export function chatAnchorLabel(anchor: UiChatAskAnchor): string {
 
 function chatAnchorTitle(anchor: UiChatAskAnchor): string {
     return `${anchor.path}:${String(anchor.start)}–${String(anchor.end)}`;
+}
+
+/** Один видимый контекст черновика; закрытие удаляет и выделение в документе. */
+export function ChatSelectionContext({ anchor, text, onRemove }: { anchor: UiChatAskAnchor; text: string | null; onRemove: () => void }) {
+    const t = useT();
+    return <div className="chat-panel__selection">
+        <div className="chat-panel__contexts"><span className="chat-panel__context chat-panel__context--anchor" title={chatAnchorTitle(anchor)}>
+            <span className="chat-panel__context-label">{anchor.path}:{anchor.start}–{anchor.end} · {t(anchor.side === 'old' ? 'chat.selection.before' : 'chat.selection.after')}</span>
+            <button type="button" aria-label={t('chat.anchor.remove')} onClick={onRemove}>×</button>
+        </span></div>
+        {text === null ? <p role="alert">{t('chat.selection.unavailable')}</p> : <details key={`${anchor.diffId ?? ''}:${anchor.fileId}:${anchor.side}:${String(anchor.start)}:${String(anchor.end)}`} open={text.length <= 600 && text.split('\n').length <= 5}>
+            <summary>{t('chat.selection.code')}</summary><pre className="chat-panel__selection-quote"><code>{text || ' '}</code></pre>
+        </details>}
+    </div>;
 }
 
 export function ChatPanel(props: ChatPanelProps) {
@@ -385,22 +400,7 @@ export function ChatPanel(props: ChatPanelProps) {
             </div>
 
             <div className="chat-panel__composer">
-                {anchor === null ? null : (
-                    <div className="chat-panel__contexts">
-                        <span
-                            className="chat-panel__context chat-panel__context--anchor"
-                            title={chatAnchorTitle(anchor)}
-                        >
-                            <span className="chat-panel__context-label">{chatAnchorLabel(anchor)}</span>
-                            <button type="button" aria-label={t('chat.anchor.remove')} onClick={onRemoveAnchor}>
-                                ×
-                            </button>
-                        </span>
-                    </div>
-                )}
-                {anchor?.selectedText === undefined ? null : (
-                    <blockquote className="chat-panel__selection-quote">{anchor.selectedText}</blockquote>
-                )}
+                {anchor === null ? null : <ChatSelectionContext anchor={anchor} text={props.anchorText === undefined ? anchor.selectedText ?? null : props.anchorText} onRemove={() => { onRemoveAnchor(); focusComposerEnd(); }} />}
                 <textarea
                     ref={textareaRef}
                     className="chat-panel__textarea"

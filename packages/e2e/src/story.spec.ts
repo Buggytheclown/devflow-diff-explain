@@ -61,16 +61,14 @@ test('рассказ → явный вопрос → ответ; старое р
         expect(box?.y).toBeGreaterThan(54);
         expect(box?.y).toBeLessThan(900);
     }).toPass();
-    const toolbar = page.getByRole('toolbar', { name: 'Выбраны строки' });
-    const toolbarBox = await toolbar.boundingBox();
-    expect(toolbarBox?.y).toBeGreaterThanOrEqual(50);
-    expect(toolbarBox?.y).toBeLessThan(900);
+    await expect(page.getByRole('toolbar', { name: 'Выбраны строки' })).toHaveCount(0);
     const topbarBox = await page.locator('.story-topbar').boundingBox();
     expect(topbarBox?.y).toBe(0);
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toBeInViewport();
     await page.screenshot({ path: test.info().outputPath('sherpa-fixes-code-jump.png') });
-    await toolbar.getByRole('button', { name: 'Спросить об этих строках', exact: true }).click();
-    await expect(page.locator('.chat-panel__composer')).toContainText(`${String(jumpStart)}–${String(codeReference.end)}`);
+    // Переход по ответу только подсвечивает код. Явное выделение прикрепляет его к черновику.
+    await target.click();
+    await expect(page.locator('.chat-panel__composer')).toContainText(`${String(jumpStart)}–${String(jumpStart)}`);
 
     await page.getByRole('button', { name: 'Дифф', exact: true }).click();
     await expect(page.locator('.story-code')).toBeVisible();

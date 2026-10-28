@@ -27,7 +27,7 @@ const storyTab = (page: Page) => page.locator('.story-topbar nav button').first(
 const diffTab = (page: Page) => page.getByRole('button', { name: 'Дифф', exact: true });
 async function visibleLine(page: Page) {
     return page.locator('.story-main').evaluate((root) => {
-        const top = (document.querySelector('.story-selection')?.getBoundingClientRect().bottom ?? 54) + 12;
+        const top = (document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 54) + 12;
         const line = [...root.querySelectorAll<HTMLElement>('.diff-row[data-key]')].find((row) => row.getBoundingClientRect().bottom > top);
         return { key: line?.dataset.key ?? '', y: line?.getBoundingClientRect().top ?? -1 };
     });

@@ -9,7 +9,7 @@ import { useLocale } from '../i18n/index.js';
 import { storyCopy } from '../i18n/story.js';
 import { StopMarkdown } from '../markdown/markdown.tsx';
 import type { StoryData } from './data.js';
-import { SelectionBar } from './selection-bar.tsx';
+import { selectedCode, withCodeQuote } from './selected-code.js';
 import { useLineRange } from './line-range.js';
 
 export function evidenceLines(model: DiffFileModel, source: Extract<StorySource, { kind: 'lines' }>): DiffLine[] | null {
@@ -39,15 +39,15 @@ export function EvidenceDisclosure({ evidence, open, onToggle, children, legacy 
     </div>;
 }
 
-export function EvidenceSource({ source, diffId, data, token, focusId, onOpen, onAsk, onLayout, onMediaLayout }: {
+export function EvidenceSource({ source, diffId, data, token, focusId, onOpen, onSelect, anchor = null, onLayout, onMediaLayout }: {
     source: StorySource; diffId: string; data: StoryData; token: string; focusId: string;
-    onOpen: (fileId: string, location?: CodeLocation) => void; onAsk: (anchor: UiChatAskAnchor) => void; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
+    onOpen: (fileId: string, location?: CodeLocation) => void; onSelect: (anchor: UiChatAskAnchor, text: string | null) => void; anchor?: UiChatAskAnchor | null; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
 }) {
     const t = storyCopy[useLocale()];
     const [loaded, setLoaded] = useState<{ file: FileDiff; model: DiffFileModel } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [attempt, setAttempt] = useState(0);
-    const [selected, setSelected] = useState<UiChatAskAnchor | null>(null);
+    const selected = anchor?.diffId === diffId && anchor.fileId === source.fileId && source.kind === 'lines' && anchor.side === source.side ? anchor : null;
     const ranges = useLineRange(selected);
     const loadBlob = useCallback((id: string) => fetchBlob(token, id), [token]);
     const layout = useRef(onLayout); useLayoutEffect(() => { layout.current = onLayout; });
@@ -66,6 +66,11 @@ export function EvidenceSource({ source, diffId, data, token, focusId, onOpen, o
         return () => { alive = false; };
     }, [data, diffId, source, attempt, t.unavailable]);
     const lines = loaded === null || source.kind !== 'lines' ? null : evidenceLines(loaded.model, source);
+    const select = (range: Pick<CodeLocation, 'side' | 'start' | 'end'>): void => {
+        const next = { diffId, fileId: source.fileId, path: source.path, ...range };
+        const text = loaded === null ? null : selectedCode(loaded.model, next);
+        onSelect(withCodeQuote(next, text), text);
+    };
     return <div className="story-code story-source" onLoadCapture={onMediaLayout} data-source-side={source.kind === 'lines' ? source.side : 'file'}>
         <header><code>{source.path}{source.kind === 'lines' ? ` · ${source.side === 'old' ? t.before : t.after} · ${String(source.start)}–${String(source.end)}` : ''}</code>
             <button className="ctl" data-reading-focus={focusId} onClick={() => { onOpen(source.fileId, source.kind === 'lines' ? source : undefined); }}>{t.open} ↗</button>
@@ -76,21 +81,20 @@ export function EvidenceSource({ source, diffId, data, token, focusId, onOpen, o
                     {loaded.model.modeChange === null ? '' : ` · ${loaded.model.modeChange.from} → ${loaded.model.modeChange.to}`}{loaded.file.binary ? ` · ${t.binary}` : ''}</p>
                 {loaded.file.image === null ? null : <ImageBody key={attempt} file={loaded.file} image={loaded.file.image} loadBlob={loadBlob} />}
             </> : lines === null ? <p role="alert">{t.unavailable}</p> : <>
-                {selected === null ? null : <SelectionBar selected={selected} onAsk={() => { onAsk(selected); }} onClear={() => { setSelected(null); }} />}
                 <div className="story-source-lines" onMouseUp={(event) => {
                     if (event.shiftKey) return;
                     const selection = window.getSelection();
                     if (selection === null || selection.isCollapsed) return;
                     const number = (node: Node | null): number => Number((node instanceof Element ? node : node?.parentElement)?.closest<HTMLElement>('[data-source-line]')?.dataset.sourceLine);
                     const first = number(selection.anchorNode); const last = number(selection.focusNode);
-                    if (first > 0 && last > 0) setSelected({ ...source, diffId, ...ranges.fromText(source.side, first, last) });
+                    if (first > 0 && last > 0) select(ranges.fromText(source.side, first, last));
                 }}>{lines.map((line) => {
                     const number = (source.side === 'old' ? line.oldLine : line.newLine) ?? 0;
                     return <div className={`story-source-line story-source-line--${line.kind}${selected !== null && number >= selected.start && number <= selected.end ? ' is-selected' : ''}`} key={number} data-source-line={number} data-reading={`${focusId}:line:${String(number)}`}>
                         <button className="ctl story-source-number" aria-label={`${source.side === 'old' ? t.before : t.after} ${String(number)}`} onMouseDown={(event) => {
                             if (event.shiftKey) event.preventDefault();
                         }} onClick={(event) => {
-                            setSelected({ ...source, diffId, ...ranges.choose(source.side, number, event.shiftKey) });
+                            select(ranges.choose(source.side, number, event.shiftKey));
                         }}>{number}</button>
                         <code>{lineSegments(line).map((segment, index) => <span key={index} className={segment.kind === null ? undefined : `syntax-${segment.kind}`}>{segment.text}</span>)}</code>
                     </div>;

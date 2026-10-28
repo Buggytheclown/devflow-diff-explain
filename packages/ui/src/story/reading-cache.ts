@@ -5,7 +5,7 @@ const guide = z.object({ kind: z.literal('guide'), snapshotId: z.string(), page:
 const diff = z.object({ kind: z.literal('diff'), diffId: z.string(), fileId: z.string() });
 const readerSchema = z.object({
     snapshotId: z.string().nullable(), draft: z.string(),
-    anchor: uiChatAskAnchorSchema.nullable().optional(), explanation: chatExplanationSchema.optional(), contextTitle: z.string().optional(), chatOpen: z.boolean().optional(),
+    anchor: uiChatAskAnchorSchema.nullable().optional(), anchorText: z.string().nullable().optional(), explanation: chatExplanationSchema.optional(), contextTitle: z.string().optional(), chatOpen: z.boolean().optional(),
     navigation: z.object({ address: z.union([guide, diff]).nullable(), guide: guide.nullable(), returnTo: guide.nullable(), resume: guide.nullable(),
         location: codeLocationSchema.safeExtend({ diffId: z.string() }).nullable(), epoch: z.number().int().nonnegative() }),
 });

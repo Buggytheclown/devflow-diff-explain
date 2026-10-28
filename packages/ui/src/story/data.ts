@@ -1,15 +1,13 @@
 import type { FileDiff, PrDiff, UiChatAskAnchor } from '@sherpa/protocol';
 
 import { fetchReviewDiff } from '../api.js';
-import { uiChatAskAnchorSchema } from '@sherpa/protocol';
-import { readCache, writeCache } from './reading-cache.js';
 import type { DiffClient } from '../diff/client.js';
 import { createDiffClient } from '../diff/client.js';
 import type { DiffFileModel } from '../diff/model.js';
 import { toParseRequest } from '../diff/model.js';
 import type { DiffMemory } from './reading-state.js';
 
-export interface SavedFile { model: DiffFileModel | null; selected: UiChatAskAnchor | null }
+export interface SavedFile { model: DiffFileModel | null; highlight: UiChatAskAnchor | null }
 export function createStoryData(token: string) {
     let client: DiffClient | null = null;
     const diffs = new Map<string, Promise<PrDiff>>();
@@ -31,7 +29,8 @@ export function createStoryData(token: string) {
         file: (diffId: string, fileId: string): SavedFile => {
             const key = `${diffId}:${fileId}`;
             let state = files.get(key);
-            if (state === undefined) { state = { model: null, selected: readCache(`selection:${key}`, uiChatAskAnchorSchema) ?? null }; files.set(key, state); }
+            // Выделение вопроса хранится один раз в reader; здесь только подсветка навигации.
+            if (state === undefined) { state = { model: null, highlight: null }; files.set(key, state); }
             return state;
         },
         view: (diffId: string): DiffMemory => {
@@ -41,8 +40,7 @@ export function createStoryData(token: string) {
         },
         updateFile: (diffId: string, fileId: string, patch: Partial<SavedFile>) => {
             const key = `${diffId}:${fileId}`;
-            files.set(key, { model: null, selected: null, ...files.get(key), ...patch });
-            if ('selected' in patch) writeCache(`selection:${key}`, patch.selected);
+            files.set(key, { model: null, highlight: null, ...files.get(key), ...patch });
         },
         updateView: (diffId: string, patch: Partial<DiffMemory>) => {
             views.set(diffId, { fileId: null, query: '', ...views.get(diffId), ...patch });
