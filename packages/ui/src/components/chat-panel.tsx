@@ -1,4 +1,4 @@
-import type { AgentNote, ChatAnchor, ChatExchange, CodeLocation, UiChatAskAnchor, UiTask, WorkerStatus } from '@sherpa/protocol';
+import type { AgentNote, ChatAnchor, ChatExplanation, ChatExchange, CodeLocation, UiChatAskAnchor, UiTask, WorkerStatus } from '@sherpa/protocol';
 import type { KeyboardEvent, RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -6,7 +6,6 @@ import type { MessageKey, Translate } from '../i18n/index.js';
 import { useT } from '../i18n/index.js';
 import { Markdown } from '../markdown/markdown.tsx';
 import { NOTE_LOST_ANCHOR_REASON, noteAnchorForIteration, noteVisibleInIteration } from '../notes/model.js';
-import { CHAT_EXAMPLE_QUESTIONS } from './chat-prompts.js';
 import { CommandBox } from './command-box.tsx';
 import './chat-panel.css';
 
@@ -27,6 +26,10 @@ export interface ChatPanelProps {
     readonly reconnectCommand: string;
     readonly anchor: UiChatAskAnchor | null;
     readonly anchorText?: string | null;
+    readonly fileAttachment?: ChatExplanation['file'] | undefined;
+    readonly attachmentStale?: boolean;
+    readonly onOpenAttachment?: (() => void) | undefined;
+    readonly contextCommit?: string | undefined;
     readonly focusRequest: number;
     /**
      * Подставить текст в композер (docs/spec.md §10): вопрос не уходит — его читает, правит и
@@ -242,16 +245,6 @@ export function ChatPanel(props: ChatPanelProps) {
         focusComposerEnd();
     }, [focusComposerEnd, prefillRequest]);
 
-    // Пример подставляется обработчиком, и его текст доезжает до DOM только следующим рендером.
-    const exampleCaret = useRef(false);
-    useEffect(() => {
-        if (!exampleCaret.current) {
-            return;
-        }
-        exampleCaret.current = false;
-        focusComposerEnd();
-    });
-
     useEffect(() => {
         if (scrollRequest !== null) {
             const target =
@@ -333,10 +326,8 @@ export function ChatPanel(props: ChatPanelProps) {
         // `data-tour="chat"` — цель шага 06 тура первого захода.
         <aside className="chat-panel" aria-label={t('chat.aria')} data-tour="chat">
             <header className="chat-panel__header">
-                <div>
-                    <div className="chat-panel__title">Agent</div>
-                    <div className="chat-panel__identity">{workerIdentity(worker, t)}</div>
-                </div>
+                <details className="chat-panel__details"><summary className="chat-panel__title">{t('chat.title')}</summary><div className="chat-panel__identity">{workerIdentity(worker, t)}{props.contextCommit === undefined ? '' : ` · ${props.contextCommit.slice(0, 12)}`}</div></details>
+                {connected ? null : <details className="chat-panel__connect"><summary>{t('chat.connect')}</summary><p>{t('chat.disconnected')}</p><CommandBox command={props.reconnectCommand} hint={t('command.hint')} /></details>}
                 <div className="chat-panel__header-actions">
                     {notes.length === 0 ? null : (
                         <span className="chat-panel__notes">{t('chat.notes', notes.length)}</span>
@@ -346,12 +337,6 @@ export function ChatPanel(props: ChatPanelProps) {
                     </button>
                 </div>
             </header>
-
-            {queued === null ? null : (
-                <div className="chat-panel__queue" ref={queueRef} role="status">
-                    {t(queued)}
-                </div>
-            )}
 
             <div className="chat-panel__feed" ref={feedRef}>
                 <div className="chat-panel__feed-content">
@@ -365,14 +350,12 @@ export function ChatPanel(props: ChatPanelProps) {
                             {t('chat.history.failed', error)}
                         </p>
                     )}
-                    {!loading && error === null && activity === 'empty' ? (
-                        <EmptyChat suggestions={props.suggestions ?? true}
-                            onPick={(question) => {
-                                exampleCaret.current = true;
-                                setText(question);
-                            }}
-                        />
-                    ) : null}
+                    {queued === null ? null : (
+                        <div className="chat-panel__queue" ref={queueRef} role="status">
+                            {t(queued)}
+                        </div>
+                    )}
+
                     {feed.map(({ exchange, note }) => (
                         <ChatExchangeView
                             key={exchange.id}
@@ -390,16 +373,12 @@ export function ChatPanel(props: ChatPanelProps) {
                             longRunning={running?.id === exchange.id && longRunning}
                         />
                     ))}
-                    {activity === 'disconnected' ? (
-                        <div className="chat-panel__disconnected">
-                            <p>{t('chat.disconnected')}</p>
-                            <CommandBox command={props.reconnectCommand} hint={t('command.hint')} />
-                        </div>
-                    ) : null}
                 </div>
             </div>
 
             <div className="chat-panel__composer">
+                {props.attachmentStale === true ? <p className="chat-panel__attachment-warning" role="status">{t('chat.context.stale')}{props.onOpenAttachment === undefined ? null : <button className="ctl" onClick={props.onOpenAttachment}>{t('chat.context.open')}</button>}</p> : null}
+                {props.fileAttachment === undefined ? null : <div className="chat-panel__contexts"><span className="chat-panel__context" title={props.fileAttachment.path}><span className="chat-panel__context-label">{props.fileAttachment.path}</span><button type="button" aria-label={t('chat.file.remove')} onClick={() => { onRemoveAnchor(); focusComposerEnd(); }}>×</button></span></div>}
                 {anchor === null ? null : <ChatSelectionContext anchor={anchor} text={props.anchorText === undefined ? anchor.selectedText ?? null : props.anchorText} onRemove={() => { onRemoveAnchor(); focusComposerEnd(); }} />}
                 <textarea
                     ref={textareaRef}
@@ -419,7 +398,7 @@ export function ChatPanel(props: ChatPanelProps) {
                     }}
                 />
                 <div className="chat-panel__composer-footer">
-                    <span className="chat-panel__composer-hint">
+                    <span className="chat-panel__composer-hint visually-hidden">
                         <span>{t('chat.composer.hint.send')}</span>
                         <span>{t('chat.composer.hint.newline')}</span>
                     </span>
@@ -492,8 +471,9 @@ function ChatExchangeView({
     return (
         <article className="chat-message-pair" data-exchange={exchange.id}>
             <div className="chat-message chat-message--you">
-                <div className="chat-message__author">you</div>
+                <div className="chat-message__author visually-hidden">you</div>
                 <div className="chat-message__body chat-message__body--plain">{exchange.question}</div>
+                {exchange.explanation?.file === undefined ? null : <span className="chat-message__anchor" title={exchange.explanation.file.path}>↳ {exchange.explanation.file.path}</span>}
                 {exchange.anchor === null ? null : (
                     <button
                         type="button"
@@ -512,7 +492,7 @@ function ChatExchangeView({
 
             {exchange.status === 'done' && exchange.answer !== null ? (
                 <div className="chat-message chat-message--agent">
-                    <div className="chat-message__author">agent</div>
+                    <div className="chat-message__author visually-hidden">agent</div>
                     <div className="chat-message__body">
                         <Markdown text={exchange.answer} profile="comment" onCodeLink={onNavigateCode === undefined || (exchange.explanation?.diffId ?? exchange.anchor?.diffId) === undefined ? undefined : (location) => {
                             const diffId = exchange.explanation?.diffId ?? exchange.anchor?.diffId;
@@ -546,7 +526,7 @@ function ChatExchangeView({
                 </div>
             ) : exchange.status === 'running' ? (
                 <div className="chat-message chat-message--agent" role="status">
-                    <div className="chat-message__author">agent</div>
+                    <div className="chat-message__author visually-hidden">agent</div>
                     {typingVisible ? (
                         <div className="chat-message__activity">
                             <span className="chat-message__typing" aria-hidden="true">
@@ -573,7 +553,7 @@ function ChatExchangeView({
                 </div>
             ) : exchange.status === 'failed' || exchange.status === 'cancelled' ? (
                 <div className="chat-message chat-message--agent chat-message--failed" ref={errorRef} role="alert">
-                    <div className="chat-message__author">agent</div>
+                    <div className="chat-message__author visually-hidden">agent</div>
                     <div className="chat-message__body chat-message__body--plain">
                         {exchange.status === 'failed'
                             ? (exchange.error ?? t('chat.answer.missing'))
@@ -606,34 +586,8 @@ function ChatExchangeView({
 }
 
 /**
- * Пустое состояние (docs/spec.md). Примеры кликабельны: клик подставляет вопрос в композер и
- * ничего не отправляет. Состояние `empty` бывает только у подключённого агента, поэтому
- * кликабельного обещания при отключённом агенте здесь не возникает.
+ * Идентичность исполнителя раскрывается по запросу, не занимает постоянную шапку.
  */
-function EmptyChat({ onPick, suggestions }: { readonly onPick: (question: string) => void; readonly suggestions: boolean }) {
-    const t = useT();
-    return (
-        <div className="chat-panel__empty">
-            <p>{t('chat.empty')}</p>
-            <ul>
-                {(suggestions ? CHAT_EXAMPLE_QUESTIONS : []).map((key) => (
-                    <li key={key}>
-                        <button
-                            type="button"
-                            className="ctl ctl--link-muted chat-panel__example"
-                            onClick={() => {
-                                onPick(t(key));
-                            }}
-                        >
-                            {t(key)}
-                        </button>
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-}
-
 function workerIdentity(worker: WorkerStatus, t: Translate): string {
     if (worker.kind === 'never') {
         return t('chat.worker.never');

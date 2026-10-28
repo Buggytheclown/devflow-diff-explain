@@ -10,7 +10,7 @@ import { OverviewSkeleton, Preparation } from '../../story/preparation.tsx';
 import { GuidedDocument } from '../../story/guided-document.tsx';
 import { ReadFile } from '../../story/read-file.tsx';
 import { StoryDocument } from '../../story/app.tsx';
-import { ChatSelectionContext } from '../../components/chat-panel.tsx';
+import { ChatPanel, ChatSelectionContext } from '../../components/chat-panel.tsx';
 import type { GalleryState } from './states.tsx';
 
 const source = routeFixtures('medium')?.states.ready?.snapshot;
@@ -36,7 +36,20 @@ const noop = (): void => undefined;
 
 const renderSource = (source: StorySource, section: string, index: number) => <EvidenceSource key={`${section}:${String(index)}`} source={source} diffId={diff.diffId} data={data} token="gallery" focusId={`${section}:${String(index)}`} onOpen={noop} onSelect={noop} onLayout={noop} />;
 
+function QuietChatGallery({ attached = false, offline = false }: { attached?: boolean; offline?: boolean }) {
+    return <div style={{ height: 560, maxWidth: 550 }}><ChatPanel
+        worker={offline ? { kind: 'never' } : { kind: 'connected', workerId: 'gallery', harness: 'codex', model: 'gpt', registeredAt: '2026-10-28T10:00:00Z', lastSeenAt: '2026-10-28T10:00:00Z' }}
+        tasks={[]} exchanges={[]} notes={[]} loading={false} error={null} reconnectCommand="devflow-diff-explain worker next --pr fixture-medium"
+        anchor={null} fileAttachment={attached ? { fileId: sourceRef.fileId, path: sourceRef.path } : undefined} contextCommit={snapshot.commit}
+        focusRequest={0} scrollRequest={null} onScrollRequestHandled={noop} onClose={noop} onRemoveAnchor={noop}
+        onAsk={() => Promise.reject(new Error('Gallery only'))} onCancel={() => Promise.resolve()} onRetry={() => Promise.resolve()} onNavigate={noop} onNavigateToNote={noop}
+    /></div>;
+}
+
 export const STORY_STATES: readonly GalleryState[] = [
+    { id: 'chat-quiet-empty', group: 'Чат', title: 'Пустой чат · вопрос по всему PR', render: () => <QuietChatGallery /> },
+    { id: 'chat-explicit-file', group: 'Чат', title: 'Явно прикреплённый файл возле ввода', render: () => <QuietChatGallery attached /> },
+    { id: 'chat-quiet-offline', group: 'Чат', title: 'Отключение · команда скрыта до запроса', render: () => <QuietChatGallery offline /> },
     { id: 'story-legacy', group: 'Рассказ', title: 'Прежний рассказ без связей тезисов с кодом',
         render: () => <main className="story-main"><p className="story-notice">Этот рассказ создан без связей тезисов с источниками. Можно обновить его вручную.</p><StoryDocument snapshot={snapshot} onAsk={noop} renderSource={renderSource} /></main> },
     { id: 'story-v2-collapsed', group: 'Рассказ', title: 'Новый рассказ · основания свёрнуты',
@@ -80,6 +93,7 @@ function GuidedGallery({ page, pending = false, readableView = false }: { page: 
 const readable = readableStoryFixture();
 const architecture = architectureStoryFixture();
 export const GUIDED_STORY_STATES: readonly GalleryState[] = [
+    { id: 'overview-compact-ready', group: 'По диффу', title: 'Готовность · компактная строка с подробностями', render: () => <Preparation route={{ phase: 'ready', smallPr: false, snapshot: architecture.snapshot, failure: null, stale: null }} connected /> },
     { id: 'architecture-contrast', group: 'По диффу', title: 'Архитектура · контраст при конфликтующих цветах модели', render: () => <main className="story-main"><FlowDiagram flow={{ status: 'ready', contexts: [], diagram: { ...architecture.diagram, mermaid: architecture.diagram.mermaid + '\nclassDef faint fill:#ffffff,color:#eeeeee,stroke:#ffffff\nclass request,handler,rule,saved,rejected faint' } }} /></main> },
     { id: 'architecture-overview', group: 'По диффу', title: 'Архитектура · развилки, группы и связь с блоками', render: () => <main className="story-main"><GuidedDocument snapshot={architecture.snapshot} page="intro" onVisit={noop} onAsk={noop} renderFile={() => null} /></main> },
     { id: 'architecture-files-pending', group: 'По диффу', title: 'Два этапа · обзор готов, файлы ещё разбираются', render: () => <main className="story-main"><Preparation route={{ phase: 'filling', smallPr: false, snapshot: { ...architecture.snapshot, stops: architecture.snapshot.stops.map((block) => ({ ...block, status: 'queued', guidedFiles: block.guidedFiles?.map((file) => ({ ...file, explanation: null, status: 'queued' })) })) }, failure: null, stale: null }} connected /><FlowDiagram flow={architecture.snapshot.flow} blocks={architecture.snapshot.stops} /></main> },

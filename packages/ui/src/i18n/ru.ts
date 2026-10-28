@@ -33,6 +33,11 @@ export const ru = {
     'command.manual': 'Команда выделена — скопируй вручную',
     'command.aria': 'Команда запуска Шерпы',
 
+    'chat.title': 'Чат',
+    'chat.connect': 'Подключить агента',
+    'chat.file.remove': 'Убрать файл из контекста',
+    'chat.context.open': 'Открыть версию вложения',
+    'chat.context.stale': 'Вложение относится к другой версии кода.',
     'chat.aria': 'Чат с агентом',
     'chat.notes': (notes: number) => `Заметки ${num(notes)}`,
     'chat.history.loading': 'Загружаю историю чата…',
@@ -44,7 +49,7 @@ export const ru = {
     'chat.selection.code': 'Выделенный код',
     'chat.selection.unavailable': 'Выбранные строки недоступны. Раскройте код и выделите их снова.',
     'chat.composer.aria': 'Вопрос агенту',
-    'chat.composer.placeholder': 'Спросить агента',
+    'chat.composer.placeholder': 'Спросить о PR или прикреплённом коде',
     'chat.composer.hint.send': 'Enter — отправить',
     'chat.composer.hint.newline': 'Shift+Enter — новая строка',
     'chat.composer.send': 'Отправить',
@@ -175,7 +180,7 @@ export type Dictionary = {
 
 export type MessageKey = keyof typeof ru;
 
-export const storyRu = {
+export const storyRu = { attachFile: 'В чат',
         showChange: 'Показать изменение', hideChange: 'Скрыть изменение', fragments: 'Фрагменты кода', hideFragments: 'Скрыть фрагменты',
         before: 'До', after: 'После', retrySource: 'Повторить загрузку', loadingSource: 'Загружаю источник…', binary: 'Бинарный файл',
         returnTo: 'К рассказу', newDiff: 'Открыть новый дифф', legacy: 'Этот рассказ создан без связей тезисов с источниками. Можно обновить его вручную.',
@@ -194,6 +199,6 @@ export const storyRu = {
         incomplete: 'Часть диффа не поместилась в контекст агента. Объяснение может быть неполным.',
         unknown: 'Не удалось загрузить данные.', selected: 'Выбраны строки',
 } as const;
-export const guidedRu = { blocks: 'Разбор по блокам', allChanges: 'Все изменения', arcanum: 'Стиль Arcanum', route: 'Маршрут по ПРу', readingOrder: 'Файлы в порядке чтения', openFile: 'Открыть полный дифф', nextStep: 'Следующий шаг', description: 'Описание ПРа', start: 'К первому блоку', next: 'Дальше', previous: 'Назад', file: 'Полный дифф файла', pending: 'Пояснение готовится. Полный дифф уже можно читать.', failed: 'Пояснение не готово. Полный дифф доступен.', related: 'Связанные файлы', ask: 'Вопрос об этом', block: 'К блоку', retry: 'Повторить пояснение', older: 'Прежний формат рассказа. Обновите, чтобы пройти по файлам.' };
+export const guidedRu = { attachFile: 'В чат', blocks: 'Разбор по блокам', allChanges: 'Все изменения', arcanum: 'Стиль Arcanum', route: 'Маршрут по ПРу', readingOrder: 'Файлы в порядке чтения', openFile: 'Открыть полный дифф', nextStep: 'Следующий шаг', description: 'Описание ПРа', start: 'К первому блоку', next: 'Дальше', previous: 'Назад', file: 'Полный дифф файла', pending: 'Пояснение готовится. Полный дифф уже можно читать.', failed: 'Пояснение не готово. Полный дифф доступен.', related: 'Связанные файлы', ask: 'Вопрос об этом', block: 'К блоку', retry: 'Повторить пояснение', older: 'Прежний формат рассказа. Обновите, чтобы пройти по файлам.' };
 
 export const flowRu = { orientation: 'Направление схемы', vertical: 'Вертикально', horizontal: 'Горизонтально', continued: 'Продолжение', title: 'Как проходит поток', pending: 'Готовлю схему потока… Рассказ уже можно читать.', sources: 'На чём основана схема', exampleSources: 'Основание примера', example: 'Например', illustrative: 'Иллюстрация, не результат запуска', data: 'данные', control: 'управление', existing: 'Без изменений', added: 'Добавлено', modified: 'Изменено', unknown: 'Не подтверждено', affected: 'Влияет на поведение', renderError: 'Не удалось отобразить архитектурную схему. Описание и дифф доступны. ', retry: 'Повторить схему' };

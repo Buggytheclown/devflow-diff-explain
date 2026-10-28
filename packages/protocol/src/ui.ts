@@ -409,7 +409,8 @@ export const uiChatAskRequestSchema = z.object({
     anchor: uiChatAskAnchorSchema.optional(),
     /** Язык ответа — та же лестница и тот же запасной путь, что у `uiRouteGenerateRequestSchema.locale`. */
     locale: localeSchema.optional(),
-});
+}).refine((value) => value.anchor === undefined || value.explanation?.file === undefined,
+    'Attach either one file or one line range.');
 export type UiChatAskRequest = z.infer<typeof uiChatAskRequestSchema>;
 
 export const uiChatAskResponseSchema = z.object({ exchange: chatExchangeSchema });

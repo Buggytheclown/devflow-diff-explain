@@ -15,7 +15,8 @@ import type { StoryData } from './data.js';
 import { selectedCode, withCodeQuote } from './selected-code.js';
 import { useLineRange } from './line-range.js';
 
-export function ReadFile({ file, diffId, data, token, current, navigation, anchor = null, onSelect, onLayout, onMediaLayout, annotations = [] }: {
+export function ReadFile({ file, diffId, data, token, current, navigation, anchor = null, onSelect, onLayout, onMediaLayout, annotations = [], onAttach }: {
+    onAttach?: (() => void) | undefined;
     file: FileDiff; diffId: string; data: StoryData; token: string; current: boolean;
     annotations?: readonly GuidedAnnotation[] | undefined;
     navigation?: CodeLocation | undefined; anchor?: UiChatAskAnchor | null; onSelect: (anchor: UiChatAskAnchor, text: string | null) => void; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
@@ -70,6 +71,7 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
     };
     return <div className="story-code file-card" onLoadCapture={onMediaLayout} data-reading="file">
         <header><code>{file.oldPath != null && file.oldPath !== file.path ? `${file.oldPath} → ` : ''}{file.path}</code><span className="story-file-stats"><span className="story-file-added">+{file.additions}</span> / <span className="story-file-deleted">−{file.deletions}</span></span>
+            {onAttach === undefined ? null : <button className="ctl" onClick={onAttach}>{t.attachFile}</button>}
             {current ? <button className="ctl" onClick={() => {
                 void fetchFileContent(token, file.fileId, diffId).then((content) => {
                     const base = data.file(diffId, file.fileId).model;

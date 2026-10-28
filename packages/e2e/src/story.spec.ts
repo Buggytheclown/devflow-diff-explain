@@ -16,7 +16,7 @@ test('рассказ → явный вопрос → ответ; старое р
     const submitted = await server.worker.complete(plan.taskId ?? 0, JSON.stringify(outline));
     expect(submitted.stdout).not.toContain('rejected');
     await expect(page.locator('.story-document')).toContainText(outline.summary);
-    await expect(page.getByRole('progressbar')).toBeVisible();
+    await expect(page.locator('[role=progressbar]')).toBeVisible();
     await expect(page.locator('.story-document section')).toHaveCount(1);
     await page.getByRole('button', { name: 'Показать изменение', exact: true }).click();
     await expect(page.locator('.story-source-line')).not.toHaveCount(0);
@@ -29,12 +29,12 @@ test('рассказ → явный вопрос → ответ; старое р
     await expect(page.locator('[data-story-section="intro"] [aria-expanded="true"]')).toHaveCount(1);
     await expect(page.locator('.review-action-bar, .route-toolbar, .thread-list')).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Вопрос об этом', exact: true }).nth(1).click();
+    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Почему уведомление идёт после записи?');
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
     await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toHaveValue('Почему уведомление идёт после записи?');
-    await expect(page.locator('.story-chat-context')).toContainText('Запись до уведомления');
+    await expect(page.locator('.story-chat-context')).toHaveCount(0);
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).press('Enter');
     await expect(page.locator('.chat-message--you')).toContainText('Почему уведомление');
     const question = await server.worker.next();

@@ -9,7 +9,7 @@ test('два этапа: контрастная вертикальная арх�
     await fs.writeFile(`${server.sherpaDir}/settings.json`, JSON.stringify({ theme: 'light', arcanum: false, locale: 'en' }));
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto(server.url);
-    await expect(page.getByRole('progressbar')).toBeVisible();
+    await expect(page.locator('[role=progressbar]')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'arcanum-dark');
     await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
     await expect(page.locator('.story-topbar select')).toHaveCount(0);
@@ -79,7 +79,7 @@ test('два этапа: контрастная вертикальная арх�
     const assignment = files.stdout.split('\n').find((line) => line.endsWith('-plan.md'));
     expect(await fs.readFile(assignment?.trim() ?? '', 'utf8')).toContain('Accepted architecture');
     expect((await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body))).stdout).not.toContain('rejected');
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
     await expect(page.locator('.story-inline-note')).not.toHaveCount(0);
     expect(await page.locator('.story-code .diff-row').allTextContents()).toEqual(rows);
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -98,10 +98,10 @@ test('ошибка Mermaid не даёт 100%; повтор схемы сохр�
     const files = await server.worker.next(); expect(files.type).toBe('route.section');
     await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('.story-preparation')).toContainText('Разбор подготовлен частично');
-    await expect(page.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow', '100');
+    await expect(page.locator('[role=progressbar]')).not.toHaveAttribute('aria-valuenow', '100');
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();
     const retry = await server.worker.next(); expect(retry.type).toBe('route.diagram');
     expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify(fixture.outline))).stdout).not.toContain('rejected');
     await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
 });

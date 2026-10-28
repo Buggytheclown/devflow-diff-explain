@@ -104,36 +104,6 @@
     color: var(--error-text);
 }
 
-.chat-panel__empty {
-    margin: auto 0;
-    padding: 20px 14px;
-    border: 1px solid var(--border-standard);
-    border-radius: var(--radius-popover);
-    background: var(--surface-panel-deep);
-}
-
-.chat-panel__empty p {
-    margin: 0;
-    color: var(--text-body);
-    font-size: var(--font-size-ui);
-    line-height: 1.6;
-}
-
-.chat-panel__empty ul {
-    display: grid;
-    gap: 7px;
-    margin: 14px 0 0;
-    padding-left: 19px;
-    color: var(--text-muted);
-    font-size: var(--font-size-secondary);
-    line-height: 1.5;
-}
-
-/* Пример вопроса — кнопка, но читается строкой списка: клик подставляет текст, а не отправляет. */
-.chat-panel__example {
-    text-align: left;
-}
-
 .chat-message-pair {
     display: grid;
     gap: 17px;
@@ -464,3 +434,15 @@
 .chat-panel__selection summary { cursor: pointer; color: var(--text-muted); font-size: var(--font-size-secondary); }
 .chat-panel__selection .chat-panel__context-label { white-space: normal; overflow-wrap: anywhere; }
 .chat-panel__selection-quote { font-family: var(--font-mono); tab-size: 4; }
+
+/* Одна шапка и одно явное вложение; основной объём панели занимает переписка. */
+.chat-panel__header { min-height: 42px; padding-block: 6px; position: relative; }
+.chat-panel__details summary, .chat-panel__connect summary { cursor: pointer; }
+.chat-panel__details > .chat-panel__identity, .chat-panel__connect[open] { position: absolute; top: 100%; right: .7rem; left: .7rem; padding: .8rem; background: var(--surface-panel-deep); border: 1px solid var(--border-standard); border-radius: .4rem; z-index: 4; }
+.chat-panel__connect { font-size: var(--font-size-secondary); }
+.chat-panel__connect[open] { top: .5rem; }
+.chat-panel__composer-footer { justify-content: flex-end; }
+.chat-message--you { padding: .7rem .8rem; background: var(--surface-panel-deep); border-radius: .5rem; }
+.chat-message--agent { line-height: 1.65; }
+.chat-panel__attachment-warning { color: var(--text-link-muted); font-size: var(--font-size-secondary); }
+.chat-panel__selection-quote { max-height: 8rem; overflow: auto; }

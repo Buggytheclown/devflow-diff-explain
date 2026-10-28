@@ -111,16 +111,17 @@ export class ChatOrchestrator {
         explanation?: ChatExplanation,
     ): Promise<ChatExchange> {
         if (explanation !== undefined) {
+            const focus = explanation.file === undefined ? explanation.sectionId : `file:${explanation.file.fileId}`;
             const shown = explanation.snapshotId === null ? null : this.route.getSnapshot(explanation.snapshotId);
             if ((explanation.snapshotId !== null && (shown?.presentation !== 'story' || shown.diffId !== explanation.diffId ||
-                shown.commit !== explanation.commit || explanation.text !== explanationText(shown, explanation.sectionId))) ||
+                shown.commit !== explanation.commit || explanation.text !== explanationText(shown, focus))) ||
                 (explanation.snapshotId === null && (explanation.text !== '' || explanation.sectionId !== undefined)) ||
                 (requested?.diffId !== undefined && requested.diffId !== explanation.diffId)) {
                 throw new RpcFailure('bad_request', 'Рассказ изменился. Обновите контекст вопроса и отправьте его снова.');
             }
             const { evidence: suppliedEvidence, ...pinned } = explanation;
             void suppliedEvidence;
-            const evidence = shown === null ? undefined : explanationEvidence(shown, explanation.sectionId);
+            const evidence = shown === null ? undefined : explanationEvidence(shown, focus);
             explanation = { ...pinned, ...(evidence === undefined ? {} : { evidence }) };
         }
         const context = await this.loadPrContext(requested, explanation?.diffId);
@@ -128,6 +129,10 @@ export class ChatOrchestrator {
             throw new RpcFailure('bad_request', 'Не удалось получить код показанной версии ПР.');
         }
         const anchor = resolveAskAnchor(requested, context.diff);
+        const attached = explanation?.file;
+        if (attached !== undefined && (requested !== null || !context.diff?.files.some((file) => file.fileId === attached.fileId && file.path === attached.path))) {
+            throw new RpcFailure('bad_request', 'Прикреплённый файл недоступен в выбранной версии ПР.');
+        }
         const locale = this.resolveLocale(requestedLocale);
         const taskDir = questionDirIn(this.payloadDir);
         this.reservedDirs.add(taskDir);

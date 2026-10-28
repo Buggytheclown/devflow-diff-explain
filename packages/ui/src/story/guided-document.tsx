@@ -9,7 +9,8 @@ import { FlowDiagram, ExplanationExample } from './flow-diagram.tsx';
 import { guidedCopy } from '../i18n/story.js';
 import { Skeleton } from './preparation.tsx';
 
-export function GuidedDocument({ snapshot, page, onVisit, onAsk, renderFile, renderDescription, onRetry, onBack, returnLabel, onRetryDiagram, connected, onDiagramFailure }: {
+export function GuidedDocument({ snapshot, page, onVisit, onAsk, renderFile, renderDescription, onRetry, onBack, returnLabel, onRetryDiagram, connected, onDiagramFailure, onAttachFile }: {
+    onAttachFile?: ((fileId: string) => void) | undefined;
     snapshot: RouteSnapshot; page: string; onVisit: (page: string, remember?: boolean) => void; onAsk: (sectionId: string) => void;
     onBack?: (() => void) | undefined; returnLabel?: string | undefined;
     renderFile: (fileId: string) => ReactNode; renderDescription?: ReactNode; onRetry?: (id: string) => void;
@@ -35,15 +36,14 @@ export function GuidedDocument({ snapshot, page, onVisit, onAsk, renderFile, ren
             : <><nav className="story-breadcrumb" aria-label={t.block}><button className="ctl" onClick={() => { onVisit('intro'); }}>{t.description}</button><span> / </span><button className="ctl" onClick={() => { onVisit(block.id); }}>{block.title}</button></nav>
                 <h2 data-reading="heading" tabIndex={-1} data-reading-focus="guide-heading">{file?.path ?? block.title}</h2>
                 {file === undefined ? <>{block.paragraph === null ? <Skeleton label={t.pending} /> : text(block.paragraph, block.id)}<ExplanationExample example={block.example} />
-                    <button className="ctl story-ask" data-reading-focus="ask-block" onClick={() => { onAsk(block.id); }}>{t.ask}</button>
                     <h3 className="story-file-list-title">{t.readingOrder}</h3>
                     <ol className="story-block-list story-file-list" data-reading={`block-list:${page}`}>{block.guidedFiles?.map((entry) => <li key={entry.fileId}>
-                        <header><button className="ctl" title={t.openFile} data-reading-focus={`file-link:${entry.fileId}`} onClick={() => { onVisit(`file:${entry.fileId}`); }}>{entry.path}</button><span aria-hidden="true">↗</span></header>
+                        <header><button className="ctl" title={t.openFile} data-reading-focus={`file-link:${entry.fileId}`} onClick={() => { onVisit(`file:${entry.fileId}`); }}>{entry.path}</button><span aria-hidden="true">↗</span>{onAttachFile === undefined ? null : <button className="ctl" onClick={() => { onAttachFile(entry.fileId); }}>{t.attachFile}</button>}</header>
                         {entry.explanation === null ? entry.status === 'failed' ? <p>{entry.failure ?? t.failed}</p> : <Skeleton label={t.pending} /> : text(entry.explanation, `preview:${entry.fileId}`)}
                     </li>)}</ol>
                     {(block.relatedFiles?.length ?? 0) === 0 ? null : <div className="story-related"><p>{t.related}</p>{block.relatedFiles?.map((entry) => <button className="ctl" key={entry.fileId} data-reading-focus={`related:${entry.fileId}`} onClick={() => { onVisit(`file:${entry.fileId}`, true); }}>{entry.path} ↗</button>)}</div>}
                 </> : <>{file.explanation === null ? file.status === 'failed' ? <p role="alert">{file.failure ?? t.failed}</p> : <Skeleton label={t.pending} /> : text(file.explanation, `file:${file.fileId}`)}<ExplanationExample example={file.example} />
-                    <button className="ctl story-ask" data-reading-focus="ask-file" onClick={() => { onAsk(`file:${file.fileId}`); }}>{t.ask}</button></>}
+</>}
                 {block.status === 'ready' ? null : <p className="story-notice" role={block.status === 'failed' ? 'alert' : 'status'}>{block.status === 'failed' ? t.failed : t.pending}{block.status === 'failed' && onRetry !== undefined ? <button className="ctl" onClick={() => { onRetry(block.id); }}>{t.retry}</button> : null}</p>}
                 {file === undefined ? null : renderFile(file.fileId)}
             </>}

@@ -53,6 +53,8 @@ export const chatExplanationSchema = z.object({
     diffId: hostIdSchema,
     commit: z.string().min(1),
     sectionId: z.string().min(1).optional(),
+    /** Явно прикреплённый файл; версия задаётся diffId/commit всего вопроса. */
+    file: z.object({ fileId: hostIdSchema, path: z.string().min(1) }).strict().optional(),
     text: z.string().max(40_000),
     evidence: storyExplanationEvidenceSchema.optional(),
 });
@@ -63,7 +65,7 @@ export const chatExchangeSchema = z.object({
     id: chatExchangeIdSchema,
     /** Вопрос ревьюера как введён (plain text). */
     question: z.string().min(1),
-    /** null — вопрос ко всему PR (Ask AI), не к выделению. */
+    /** null — без диапазона; явный файл может быть прикреплён в explanation.file. */
     anchor: chatAnchorSchema.nullable(),
     status: chatExchangeStatusSchema,
     /**

@@ -4,14 +4,14 @@ import { test, expect } from './sherpa-fixture.js';
 const fixture = overviewStoryFixture();
 test('обзор первым → ссылки на полный дифф → локальный повтор схемы → перезагрузка и новая подготовка', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium'); await page.goto(server.url);
-    await expect(page.getByRole('progressbar')).toBeVisible();
+    await expect(page.locator('[role=progressbar]')).toBeVisible();
     await expect(page.locator('.story-overview-content')).toBeVisible();
     await server.worker.register('codex', 'ru');
     const plan = await server.worker.next();
     const summary = fixture.outline.summary;
     const outline = { ...fixture.outline, evidence: { claims: [{ quote: summary, sources: [{ kind: 'lines', path: fixture.anchor.path, side: fixture.anchor.side, start: fixture.anchor.start, end: fixture.anchor.start }], limitation: null }] } };
     expect((await server.worker.complete(plan.taskId ?? 0, JSON.stringify(outline))).stdout).not.toContain('rejected');
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(Math.floor(100 / (4 + fixture.diff.files.length))));
+    await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', String(Math.floor(100 / (4 + fixture.diff.files.length))));
     await page.locator('.story-source-links summary').click();
     await expect(page.locator('.story-evidence-toggle')).toHaveCount(0);
     await page.locator('.story-source-links button').first().click();
@@ -25,7 +25,7 @@ test('обзор первым → ссылки на полный дифф → л
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();
     const retry = await server.worker.next(); expect(retry.type).toBe('route.diagram');
     await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ contextRequests: [], diagram: fixture.diagram, reason: null }));
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
     await page.screenshot({ path: test.info().outputPath('overview-ready.png'), fullPage: true });
     await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();

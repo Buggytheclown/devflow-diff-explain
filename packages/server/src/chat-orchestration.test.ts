@@ -205,6 +205,38 @@ describe('вопросы об объяснении и коде', () => {
         });
     });
 
+    it('файл прикрепляется без готового рассказа; полный патч и фокус сохраняются при повторе', async () => {
+        const server = await start(PR);
+        const diff = await makeFixtureHost('medium').getDiff();
+        const file = diff.files.find((entry) => entry.patch !== null);
+        if (file === undefined) throw new Error('Need a text file');
+        const explanation = { snapshotId: null, diffId: diff.diffId, commit: diff.headCommit, text: '', file: { fileId: file.fileId, path: file.path } };
+        const response = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk, { text: 'Почему изменили этот файл?', explanation }, server.token);
+        expect(response.status).toBe(200);
+        const exchange = uiChatAskResponseSchema.parse(await response.json()).exchange;
+        expect(exchange.anchor).toBeNull(); expect(exchange.explanation?.file).toEqual(explanation.file);
+        const taskId = leaseChat(server);
+        const patch = server.queue.getTask(taskId)?.contextFiles.find((name) => name.includes('attached-file-patch-'));
+        expect(patch).toBeDefined(); expect(fsSync.readFileSync(patch ?? '', 'utf8')).toContain(file.patch);
+        server.queue.fail(WORKER, taskId, 'Синтетический сбой');
+        const retry = await postJson(server.port, UI_ENDPOINTS.reviewChatRetry, { exchangeId: exchange.id }, server.token);
+        expect(retry.status).toBe(200);
+        const next = leaseChat(server);
+        expect(server.queue.getTask(next)?.contextFiles).toContain(patch);
+        expect((await readChat(server)).exchanges[0]?.explanation?.file).toEqual(explanation.file);
+    });
+
+    it('отклоняет подмену файла и одновременное вложение файла со строками', async () => {
+        const server = await start(PR);
+        const diff = await makeFixtureHost('medium').getDiff();
+        const file = diff.files[0]; if (file === undefined) throw new Error('Need a file');
+        const explanation = { snapshotId: null, diffId: diff.diffId, commit: diff.headCommit, text: '', file: { fileId: file.fileId, path: 'wrong.ts' } };
+        const response = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk, { text: 'Файл?', explanation }, server.token);
+        expect(response.status).toBe(400);
+        const both = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk, { text: 'Файл?', anchor: ANCHOR, explanation: { ...explanation, file: { ...explanation.file, path: file.path } } }, server.token);
+        expect(both.status).toBe(400); expect((await readChat(server)).exchanges).toHaveLength(0);
+    });
+
     it('ask атомарно создаёт queued-обмен и interactive-задачу с полным payload', async () => {
         const server = await start();
         const exchange = await ask(server, 'Объясни порядок записи', ANCHOR);

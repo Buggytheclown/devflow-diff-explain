@@ -30,6 +30,11 @@ export const en: Dictionary = {
     'command.manual': 'The command is selected — copy it manually',
     'command.aria': 'Sherpa launch command',
 
+    'chat.title': 'Chat',
+    'chat.connect': 'Connect agent',
+    'chat.file.remove': 'Remove attached file',
+    'chat.context.open': 'Open attachment version',
+    'chat.context.stale': 'Attachment refers to a different code version.',
     'chat.aria': 'Chat with the agent',
     'chat.notes': (notes: number) => `Notes ${num(notes)}`,
     'chat.history.loading': 'Loading the chat history…',
@@ -161,7 +166,7 @@ export const en: Dictionary = {
     'time.justNow': 'just now',
 };
 
-export const storyEn = {
+export const storyEn = { attachFile: 'Attach to chat',
         showChange: 'Show change', hideChange: 'Hide change', fragments: 'Code fragments', hideFragments: 'Hide fragments',
         before: 'Before', after: 'After', retrySource: 'Retry loading', loadingSource: 'Loading source…', binary: 'Binary file',
         returnTo: 'Back to explanation', newDiff: 'Open new diff', legacy: 'This explanation has no claim-to-source links. You can update it manually.',
@@ -180,6 +185,6 @@ export const storyEn = {
         incomplete: 'Part of the diff exceeded the agent context budget. The explanation may be incomplete.',
         unknown: 'Could not load data.', selected: 'Selected lines',
 } as const;
-export const guidedEn = { blocks: 'Walkthrough', allChanges: 'All changes', arcanum: 'Arcanum style', route: 'Reading route', readingOrder: 'Files in reading order', openFile: 'Open full diff', nextStep: 'Next step', description: 'PR description', start: 'Start walkthrough', next: 'Next', previous: 'Previous', file: 'Complete file diff', pending: 'Explanation is being prepared. The complete diff is available.', failed: 'Explanation is unavailable. The complete diff is available.', related: 'Related files', ask: 'Ask about this', block: 'Back to block', retry: 'Retry explanation', older: 'Older explanation format. Refresh for a file walkthrough.' };
+export const guidedEn = { attachFile: 'Attach to chat', blocks: 'Walkthrough', allChanges: 'All changes', arcanum: 'Arcanum style', route: 'Reading route', readingOrder: 'Files in reading order', openFile: 'Open full diff', nextStep: 'Next step', description: 'PR description', start: 'Start walkthrough', next: 'Next', previous: 'Previous', file: 'Complete file diff', pending: 'Explanation is being prepared. The complete diff is available.', failed: 'Explanation is unavailable. The complete diff is available.', related: 'Related files', ask: 'Ask about this', block: 'Back to block', retry: 'Retry explanation', older: 'Older explanation format. Refresh for a file walkthrough.' };
 
 export const flowEn = { orientation: 'Diagram direction', vertical: 'Vertical', horizontal: 'Horizontal', continued: 'Continued', title: 'How the flow works', pending: 'Preparing the flow diagram… The explanation is ready to read.', sources: 'Diagram sources', exampleSources: 'Example sources', example: 'For example', illustrative: 'Illustration, not an execution result', data: 'data', control: 'control', existing: 'Unchanged', added: 'Added', modified: 'Modified', unknown: 'Unconfirmed', affected: 'Behaviour affected', renderError: 'Could not display the architecture diagram. The description and diff remain available. ', retry: 'Retry diagram' };

@@ -533,28 +533,27 @@ describe('подстановка вопроса в композер', () => {
     });
 });
 
-describe('примеры вопросов в пустом состоянии', () => {
-    it('клик подставляет текст в композер и ничего не отправляет', () => {
-        const onAsk = vi.fn(() => Promise.resolve(exchange(99, 'queued')));
-        const { host } = mountPanel({ onAsk });
-
-        const example = host.querySelector<HTMLButtonElement>('.chat-panel__example');
-        expect(example?.textContent).toBe('Какие изменения здесь самые рискованные?');
-        act(() => {
-            example?.click();
-        });
-
-        const textarea = host.querySelector<HTMLTextAreaElement>('textarea');
-        expect(textarea?.value).toBe('Какие изменения здесь самые рискованные?');
-        expect(textarea?.selectionStart).toBe('Какие изменения здесь самые рискованные?'.length);
-        expect(onAsk).not.toHaveBeenCalled();
-    });
-
-    it('при отключённом агенте примеров нет: кликабельного обещания панель не даёт', () => {
-        const { host } = mountPanel({ worker: { kind: 'never' } });
-
+describe('компактный чат', () => {
+    it('пустая панель оставляет поле ввода, без вводной карточки и примеров', () => {
+        const { host } = mountPanel();
+        expect(host.querySelector('.chat-panel__empty')).toBeNull();
         expect(host.querySelector('.chat-panel__example')).toBeNull();
-        expect(host.textContent).toContain('Агент отключён. Новые вопросы недоступны.');
+        expect(host.querySelector('textarea')?.placeholder).toContain('PR');
+        expect(host.querySelector('.chat-panel__header')?.textContent).toContain('Чат');
+    });
+    it('файл можно удалить, не меняя текст вопроса', () => {
+        const onRemoveAnchor = vi.fn();
+        const { host } = mountPanel({ fileAttachment: { fileId: 'one', path: 'src/cache.ts' }, composerText: 'Почему?', onRemoveAnchor });
+        const remove = host.querySelector<HTMLButtonElement>('[aria-label="Убрать файл из контекста"]');
+        act(() => { remove?.click(); });
+        expect(onRemoveAnchor).toHaveBeenCalledOnce();
+        expect(host.querySelector('textarea')?.value).toBe('Почему?');
+    });
+    it('отключение не закрывает историю и раскрывает команду только по запросу', () => {
+        const { host } = mountPanel({ worker: { kind: 'never' }, exchanges: [exchange(1, 'done')] });
+        expect(host.querySelector('.chat-panel__connect')?.hasAttribute('open')).toBe(false);
+        expect(host.querySelector('textarea')?.disabled).toBe(true);
+        expect(host.querySelector('.chat-message--agent')?.textContent).toContain('Ответ');
     });
 });
 

@@ -97,9 +97,13 @@ export function buildChatPayload(context: ChatPayloadContext, options: ChatPaylo
 
     if (context.anchor === null) {
         const diff = sharedPrDiff(context, sharedBudgetBytes);
+        const attached = context.explanation?.file;
+        const file = attached === undefined ? undefined : context.diff?.files.find((file) => file.fileId === attached.fileId);
+        const attachment: SharedChatContext[] = file === undefined ? [] : [{ kind: 'guide', name: 'attached-file-patch',
+            content: `# Explicitly attached file: ${file.path}\n\nPinned commit: ${context.diff?.headCommit ?? 'unknown'}\nChange: ${file.changeType}\nPrevious path: ${file.oldPath ?? file.path}\n\n${file.patch ?? '[No text patch; metadata-only or binary change.]'}` }];
         return {
             instructions: chatInstructions(locale),
-            shared: diff === null ? [guide] : [guide, diff],
+            shared: [...(diff === null ? [guide] : [guide, diff]), ...attachment],
             files: fitOwnFiles(prPayloadSpecs(context), budgetBytes),
         };
     }
@@ -233,7 +237,8 @@ function prPayloadSpecs(context: ChatPayloadContext): PayloadFileSpec[] {
     const file = focus?.startsWith('file:') ? context.diff?.files.find((entry) => `file:${entry.fileId}` === focus) : undefined;
     return [
         ...(file === undefined || context.diff === null ? [] : [flexibleSpec('reading-file.patch.md', 0, prDiffContext({ diff: { ...context.diff, files: [file] }, meta: null }, CONTEXT_BUDGET_BYTES))]),
-        fixedSpec('question.md', 0, questionContext(context.question, null, context.pr, context.diff !== null)),
+        fixedSpec('question.md', 0, questionContext(context.question, null, context.pr, context.diff !== null) +
+            (context.explanation?.file === undefined ? '' : `\n\nExplicit focus: the attached file ${context.explanation.file.path}. Read its complete saved attached-file-patch context; use the whole PR to understand its role.`)),
         flexibleSpec('route-context.md', 1, context.explanation === null || context.explanation === undefined ? prRouteContext(context.route.snapshot) : explanationContext(context.explanation)),
         ...evidenceSpecs(context),
         flexibleSpec('history.md', 2, historyContext(context.history)),
