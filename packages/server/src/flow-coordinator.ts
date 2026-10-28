@@ -1,14 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { FlowContext, FlowDiagram, FlowState, PrDiff, ReviewSource, RouteSnapshot } from '@sherpa/protocol';
+import type { FlowState, PrDiff, ReviewSource, RouteSnapshot } from '@sherpa/protocol';
 import { flowDiagramResultSchema, generateJsonSchemas } from '@sherpa/protocol';
 import type { TaskQueue, TaskRecord, TaskResultAcceptance } from './queue.js';
 import type { RouteStore } from './route-store.js';
-import { savedPatchIndex } from './saved-patch.js';
+import { diagramSourceErrors } from './diagram-sources.js';
+export { diagramSourceErrors } from './diagram-sources.js';
 import { CONTEXT_BUDGET_BYTES, prDiffPayload } from './route-payload.js';
 import type { SharedPayloadStore } from './shared-payload.js';
 import { diffKeyOf } from './shared-payload.js';
+import { architectureGuide, validateArchitectureOverview } from './architecture-story.js';
 
 interface Options {
     store: RouteStore; queue: TaskQueue; host: ReviewSource | null; dir: string; shared: SharedPayloadStore;
@@ -47,7 +49,7 @@ export class FlowCoordinator {
             }
             if (replacing || store.generation()?.status === 'cancelled') return;
             if (snapshot?.storyContractVersion !== 5 && store.read().phase === 'ready' && snapshot?.flow === undefined) return;
-            if ((snapshot?.storyContractVersion !== 4 && snapshot?.storyContractVersion !== 5) || (snapshot.flow !== undefined && snapshot.flow.status !== 'pending')) return;
+            if ((snapshot?.storyContractVersion !== 4 && snapshot?.storyContractVersion !== 5 && snapshot?.storyContractVersion !== 6) || (snapshot.flow !== undefined && snapshot.flow.status !== 'pending')) return;
             const state: Extract<FlowState, {status: 'pending'}> = snapshot.flow ?? { status: 'pending', taskId: null, round: 0, requests: [], contexts: [], missing: [] };
             if (state.taskId !== null) {
                 const task = queue.listTasks().find((entry) => entry.id === state.taskId);
@@ -93,6 +95,16 @@ export class FlowCoordinator {
         if (this.options.store.read().phase === 'reading' || snapshot === null || state?.status !== 'pending' || state.taskId !== task.id) return { kind: 'rejected', errors: ['This diagram belongs to an obsolete explanation.'] };
         const diff = this.diffs.get(snapshot.diffId);
         if (diff === undefined) { void this.options.loadDiff(snapshot.diffId).then((value) => { this.diffs.set(value.diffId, value); }).catch(() => undefined); return { kind: 'deferred', errors: ['Saved diff is loading. Retry completion.'] }; }
+        if (snapshot.storyContractVersion === 6) {
+            const parsed = validateArchitectureOverview(result, diff);
+            if (!parsed.ok) return { kind: 'rejected', errors: parsed.errors };
+            const checked = parsed.value;
+            const identity = (blocks: readonly { title: string; paragraph: string | null; nodeIds?: string[] | undefined; guidedFiles?: readonly { path: string }[] | undefined }[]) => JSON.stringify(blocks.map((block) => ({ title: block.title, paragraph: block.paragraph, nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path) })));
+            if (checked.summary !== snapshot.summary || identity(checked.stops) !== identity(snapshot.stops)) return { kind: 'rejected', errors: ['A local diagram retry must preserve the accepted description, blocks, node mappings and file order.'] };
+            const flow = checked.flow;
+            if (flow === undefined) return { kind: 'rejected', errors: ['Return the architecture flow.'] };
+            return { kind: 'accepted', onCommitted: () => { if (this.current(snapshot.snapshotId, task.id)) this.options.store.setFlow(snapshot.snapshotId, flow); } };
+        }
         let raw: unknown;
         try { raw = JSON.parse(result); } catch { return { kind: 'rejected', errors: ['Return valid JSON.'] }; }
         const parsed = flowDiagramResultSchema.safeParse(raw);
@@ -118,6 +130,14 @@ export class FlowCoordinator {
         fs.writeFileSync(context, JSON.stringify({ snapshotId: snapshot.snapshotId, revision: diff.headCommit, description: snapshot.summary, blocks: snapshot.stops.map((stop) => ({ title: stop.title, files: stop.guidedFiles?.map((file) => file.path) })), contextRoundsRemaining: 2 - state.round, contexts: state.contexts, unavailable: state.missing }), { mode: 0o600 });
         const key = diffKeyOf(diff);
         const prDiff = shared.prDiff(key, prDiffPayload({ diff, meta: null }, CONTEXT_BUDGET_BYTES).content);
+        if (snapshot.storyContractVersion === 6) {
+            const overview = path.join(dir, 'accepted-overview.json');
+            fs.writeFileSync(overview, JSON.stringify({ summary: snapshot.summary, blocks: snapshot.stops.map((block) => ({ title: block.title, paragraph: block.paragraph, nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path), relatedFiles: block.relatedFiles?.map((file) => file.path) })) }), { mode: 0o600 });
+            fs.writeFileSync(schema, JSON.stringify(generateJsonSchemas().architectureOverviewResult), { mode: 0o600 });
+            return { type: 'route.diagram' as const, priority: 'background' as const,
+                instructions: 'Retry only the diagram. Preserve the accepted description, blocks, node IDs and file assignments. Return the overview result schema.',
+                contextFiles: [shared.guide('architecture-overview', architectureGuide('overview', snapshot.provenance.locale ?? 'ru')), prDiff, overview], resultSchemaFile: schema };
+        }
         const guide = shared.guide('flow-diagram', `Explain the overall data flow in ${snapshot.provenance.locale === 'ru' ? 'Russian' : 'English'}.
 Draw a small meaningful source -> transformation -> consumer flow. Order edges along that understandable path, keeping related transitions consecutive. Include necessary unchanged/external context so the change makes sense, not the whole architecture. Usually 3–6 nodes are enough; add only context needed to understand this PR. Use plain short node and arrow labels, ideally 2–5 words. Do not repeat the prose or put caveats in labels: keep precise evidence limits in limitation, which the UI shows in expandable diagram sources. Reuse a node id when a path branches or cycles; never duplicate a node to lay out the picture. Nodes are static; no navigation fields.
 Every node AND edge has change: existing, added, modified, or unknown. Mark only what this PR demonstrably changes. Every edge has kind: data or control, and a label saying what passes or what starts. Runtime wiring must be confirmed, not inferred from executors/exports alone. Retry permission is not guaranteed retry.
@@ -128,25 +148,6 @@ Return contextRequests with diagram:null to request context; otherwise return co
     }
 }
 
-/** Проверяем наличие всех строк, а не только попадание концов в разные ханки. */
-export function diagramSourceErrors(diagram: FlowDiagram, diff: PrDiff, contexts: readonly FlowContext[]): string[] {
-    const errors: string[] = [];
-    const index = savedPatchIndex(diff);
-    for (const item of [...diagram.nodes, ...diagram.edges]) {
-        let changed = false;
-        for (const source of item.sources) {
-            if (source.kind === 'context') {
-                if (!contexts.some((entry) => entry.id === source.id && entry.revision === diff.headCommit)) errors.push(`Unknown saved context: ${source.id}`);
-                continue;
-            }
-            const lines = index.range(index.file(source.path, source.side), source);
-            if (lines === null) errors.push(`Unavailable saved patch lines: ${source.path}:${String(source.start)}-${String(source.end)}`);
-            changed ||= lines?.some((line) => line.changed) ?? false;
-        }
-        if ((item.change === 'added' || item.change === 'modified') && !changed) errors.push('PR changes need supporting changed patch lines.');
-    }
-    return errors;
-}
 
 function bounded<T>(promise: Promise<T>): Promise<T> {
     let timer: NodeJS.Timeout;

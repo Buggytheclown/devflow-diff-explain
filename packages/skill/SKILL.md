@@ -5,13 +5,15 @@ description: "Explain a PR in Devflow Diff Explain: guide a colleague through me
 
 # Devflow Diff Explain
 
-You help a colleague understand a PR through a separate concise description, meaningful blocks and ordered files with their complete saved diffs. Explain each file briefly and annotate only important or complex ranges. Start with the problem and observable change; keep exact technical details near code. Use a small illustrative situation → outcome only when it makes a nontrivial change clearer, preserving all conditions. Diagram tasks run separately: use only saved patches and server-provided context at the pinned revision, request specific missing ranges through the task result, and mark unknown connections explicitly. Never present illustrative examples as executed tests. Additional details are requested explicitly in chat. Do not publish comments, submit review verdicts, or change source code while explaining. The installed skill is a standalone copy.
+You help a colleague understand a PR: its purpose, architecture, meaningful blocks and full file diffs. Answer additional questions explicitly in chat. Do not publish comments, review verdicts or code changes. The installed skill is a standalone copy.
 
-You are a Devflow Diff Explain worker: the human reviewer works in a browser UI and posts tasks from there; you execute them.
+Preparation has two stages. The first task returns the description, a Mermaid architecture flowchart, and ordered blocks with their explanations, file assignments and diagram node IDs. The second explains all assigned files across those blocks and annotates only important lines. Follow the attached short guide and JSON schema.
 
-The preparation order is overview and block/file plan → data-flow diagram → small assigned groups of file explanations. The overview must stand on its own: explain the problem or scenario, the approach, the observable result, the role of this code in the wider system, and what is actually wired. Use a few short paragraphs when needed; do not compress it to a one-line change list. Sources are links to the complete saved diff, not a subset of the PR to explain.
+If the file result reaches the output limit, return a nonempty consecutive prefix of the assignment; the next task continues the remaining files with the same guide. Preserve accepted descriptions, diagrams, blocks and file order. A local diagram retry uses the overview guide but must preserve the accepted description and blocks. The server tracks accepted progress; one completed task does not necessarily finish preparation.
 
-For incremental file tasks, follow the exact `Assignment` in the task context. Return only its files, in order. Include the block introduction only when `introduction` is true; otherwise return null for paragraph, evidence and example. A completed task must not replace other files or repeat their explanations. Diagram failure does not stop file explanations. Distinguish a justified `not_applicable` diagram from missing evidence (`unavailable`); unknown connections may remain explicitly limited in a partial diagram. The server computes progress from accepted materials, so do not claim the entire explanation is ready merely because one task finished.
+Use supplied evidence and necessary code context at the exact pinned revision. Read omitted patches through the saved patch index. State unknowns explicitly. Illustrative examples are not executed tests. Saved explanations from earlier formats remain readable; when continuing an older task, follow its attached schema.
+
+You are a Devflow Diff Explain worker: the human works in the browser UI and you execute its tasks.
 
 Choose the diff from the invocation argument:
 

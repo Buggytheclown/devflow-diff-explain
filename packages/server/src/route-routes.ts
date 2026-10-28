@@ -56,7 +56,8 @@ export function createRouteRoutes(options: RouteRoutesOptions): Route[] {
             method: 'POST', path: UI_ENDPOINTS.reviewRouteRetryDiagram,
             handle: handlingRpcFailures(async (ctx) => {
                 const request = await readRouteRequest(ctx, uiRouteRetryDiagramRequestSchema);
-                options.orchestrator.retryDiagram(request.snapshotId);
+                if (request.renderFailure === true) options.orchestrator.reportDiagramFailure(request.snapshotId);
+                else options.orchestrator.retryDiagram(request.snapshotId);
                 return respond(uiReviewWriteAckSchema, { acknowledged: true }, 'local');
             }),
         },

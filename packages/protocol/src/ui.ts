@@ -302,7 +302,7 @@ export const uiRouteStateSchema = z.object({
     stale: uiRouteStaleSchema.nullable(),
 });
 export type UiRouteState = z.infer<typeof uiRouteStateSchema>;
-export const uiRouteRetryDiagramRequestSchema = z.object({ snapshotId: z.string().min(1) }).strict();
+export const uiRouteRetryDiagramRequestSchema = z.object({ snapshotId: z.string().min(1), renderFailure: z.literal(true).optional() }).strict();
 export const uiRouteCancelGenerationRequestSchema = z.object({ generationId: z.string().min(1) }).strict();
 
 /** Без `snapshot` — текущее состояние маршрута; с ним — прошлый снапшот в `snapshot`, фаза как у него была. */

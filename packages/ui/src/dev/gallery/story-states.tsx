@@ -1,4 +1,4 @@
-import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixture } from '@sherpa/fixtures';
+import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixture, architectureStoryFixture } from '@sherpa/fixtures';
 import type { RouteSnapshot, StorySource } from '@sherpa/protocol';
 
 import { createStoryData } from '../../story/data.js';
@@ -78,7 +78,10 @@ function GuidedGallery({ page, pending = false, readableView = false }: { page: 
     }} /></main>;
 }
 const readable = readableStoryFixture();
+const architecture = architectureStoryFixture();
 export const GUIDED_STORY_STATES: readonly GalleryState[] = [
+    { id: 'architecture-overview', group: 'По диффу', title: 'Архитектура · развилки, группы и связь с блоками', render: () => <main className="story-main"><GuidedDocument snapshot={architecture.snapshot} page="intro" onVisit={noop} onAsk={noop} renderFile={() => null} /></main> },
+    { id: 'architecture-files-pending', group: 'По диффу', title: 'Два этапа · обзор готов, файлы ещё разбираются', render: () => <main className="story-main"><Preparation route={{ phase: 'filling', smallPr: false, snapshot: { ...architecture.snapshot, stops: architecture.snapshot.stops.map((block) => ({ ...block, status: 'queued', guidedFiles: block.guidedFiles?.map((file) => ({ ...file, explanation: null, status: 'queued' })) })) }, failure: null, stale: null }} connected /><FlowDiagram flow={architecture.snapshot.flow} blocks={architecture.snapshot.stops} /></main> },
     { id: 'overview-scaffold', group: 'По диффу', title: 'Первый кадр · постоянный каркас обзора', render: () => <main className="story-main"><Preparation route={{ phase: 'reading', smallPr: false, snapshot: null, failure: null, stale: null }} connected /><OverviewSkeleton /></main> },
     { id: 'overview-progress', group: 'По диффу', title: 'Общий прогресс · файлы готовы, схема недоступна', render: () => <main className="story-main"><Preparation route={{ phase: 'ready', smallPr: false, snapshot: { ...readable.snapshot, storyContractVersion: 5, flow: { status: 'unavailable', reason: 'Не удалось получить контекст.' } }, failure: null, stale: null }} connected /><FlowDiagram flow={{ status: 'unavailable', reason: 'Не удалось получить контекст.' }} onRetry={noop} connected /></main> },
     { id: 'overview-previous', group: 'По диффу', title: 'Перестройка · предыдущий разбор остаётся открыт', render: () => <main className="story-main"><Preparation route={{ phase: 'reading', smallPr: false, snapshot: readable.snapshot, generation: { id: 'new', commit: 'next', snapshotId: null, previousSnapshotId: readable.snapshot.snapshotId, status: 'running' }, failure: null, stale: null }} displayedId={readable.snapshot.snapshotId} connected={false} /><GuidedGallery page="intro" readableView /></main> },

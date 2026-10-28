@@ -120,7 +120,7 @@ export class RouteOrchestrator {
     /** Подписки автомата и разовый прогрев. Зовётся один раз при сборке сервера. */
     start(): void {
         this.flow.start();
-        if (this.store.generationPresentation() === 'story' && ![2, 3].includes(this.store.generationTaskEpoch())) {
+        if (this.store.generationPresentation() === 'story' && ![2, 3, 4].includes(this.store.generationTaskEpoch())) {
             const phase = this.store.read().phase;
             if (phase === 'reading' || phase === 'filling' || this.hasOpenRouteTask()) {
                 this.cancelOpenRouteTasks();
@@ -267,11 +267,19 @@ export class RouteOrchestrator {
         return 'started';
     }
 
+    reportDiagramFailure(snapshotId: string): void {
+        const snapshot = this.store.current();
+        if (snapshot?.snapshotId !== snapshotId || snapshot.storyContractVersion !== 6 || snapshot.flow?.status !== 'ready' || !('mermaid' in snapshot.flow.diagram)) return;
+        this.store.setFlow(snapshotId, { status: 'unavailable', reason: snapshotLocale(snapshot) === 'ru'
+            ? 'Не удалось отобразить архитектурную схему. Описание, блоки и дифф доступны.'
+            : 'Could not display the architecture diagram. The description, blocks and diff remain available.' });
+    }
+
     retryDiagram(snapshotId: string): void {
         const snapshot = this.store.current();
         if (snapshot?.snapshotId !== snapshotId) throw new RpcFailure('bad_request', 'Этот разбор уже сменился. Откройте текущий результат.');
         if (this.store.read().phase === 'reading') throw new RpcFailure('bad_request', 'Сейчас готовится новый разбор. Дождитесь описания.');
-        if (snapshot.flow?.status !== 'unavailable') return;
+        if (snapshot.flow?.status !== 'unavailable' && !(snapshot.storyContractVersion === 6 && snapshot.flow?.status === 'ready')) return;
         this.store.setGenerationStatus('running');
         this.store.setFlow(snapshotId, { status: 'pending', taskId: null, round: 0, requests: [], contexts: [], missing: [] });
     }
@@ -287,7 +295,7 @@ export class RouteOrchestrator {
         for (const file of snapshot?.stops.flatMap((block) => block.guidedFiles ?? []) ?? []) {
             if (file.explanation === null) updates.set(file.fileId, { status: 'failed', note: 'Подготовка остановлена.' });
         }
-        if (snapshot?.storyContractVersion === 5) this.store.setFileStatuses(updates);
+        if ((snapshot?.storyContractVersion ?? 0) >= 5) this.store.setFileStatuses(updates);
         if (snapshot?.flow?.status === 'pending') this.store.setFlow(snapshot.snapshotId, { status: 'unavailable', reason: 'Подготовка схемы остановлена.' });
         this.store.fail('Подготовка остановлена. Готовые материалы сохранены.', null);
     }
@@ -448,6 +456,10 @@ export class RouteOrchestrator {
         }
 
         const snapshot = state.snapshot;
+        if (snapshot.storyContractVersion === 6) {
+            this.reconcileAllFiles(snapshot);
+            return;
+        }
         if (snapshot.storyContractVersion === 5) {
             this.reconcileFiles(snapshot);
             return;
@@ -539,6 +551,41 @@ export class RouteOrchestrator {
         }
     }
 
+    /** Один проход по всем блокам; неполный результат продолжает тот же список оставшихся файлов. */
+    private reconcileAllFiles(snapshot: RouteSnapshot): void {
+        const assignments = new Map<string, TaskRecord>();
+        for (const { record, binding } of this.routeTasks()) for (const file of binding.assignment?.files ?? []) assignments.set(file, record);
+        const pending: string[] = [];
+        const targets: number[] = [];
+        const updates = new Map<string, RouteStopStatusUpdate>();
+        const strings = routeStrings(snapshotLocale(snapshot));
+        for (const block of snapshot.stops) {
+            for (const file of block.guidedFiles ?? []) {
+                if (file.explanation !== null) continue;
+                const task = assignments.get(file.path);
+                if (task === undefined || task.status === 'done') {
+                    pending.push(file.path);
+                    if (!targets.includes(block.planIndex)) targets.push(block.planIndex);
+                    updates.set(file.fileId, { status: 'queued' });
+                } else updates.set(file.fileId, stopStatusOf(task, strings));
+            }
+        }
+        this.store.setFileStatuses(updates);
+        if (pending.length > 0) {
+            const diff = this.diffOf(snapshot.diffId);
+            if (diff === null) { this.awaitOrAbandonDiff(snapshot.diffId); return; }
+            const assignment = { files: pending, introduction: false };
+            const input = this.payload.sectionTask({ diff, meta: this.meta, locale: snapshotLocale(snapshot), version: 6,
+                introduction: snapshot.summary, introductionEvidence: snapshot.summaryEvidence, flow: snapshot.flow, assignment },
+                targets, snapshot.stops, this.store.stopIntents());
+            this.enqueueRouteTask('section', snapshot.diffId, targets, input, assignment);
+            return;
+        }
+        const current = this.store.current();
+        if (current?.stops.every((block) => block.status === 'ready')) this.store.markReady();
+        else if (!current?.stops.flatMap((block) => block.guidedFiles ?? []).some((file) => file.status === 'queued' || file.status === 'filling')) this.store.fail('Часть пояснений не готова. Повторите незавершённый блок.', null);
+    }
+
     /** Фаза `reading`: живём ровно до судьбы задачи скелета. */
     private reconcileSkeleton(): void {
         const skeletons = this.routeTasks().filter((task) => task.binding.kind === 'skeleton');
@@ -588,7 +635,7 @@ export class RouteOrchestrator {
         // Язык — в хранилище, а не в поле: задачу скелета может принять уже следующий процесс.
         this.cancelOpenRouteTasks();
         this.store.clearBindings();
-        this.store.beginSkeleton({ locale, presentation: 'story', version: 5, commit: diff.headCommit });
+        this.store.beginSkeleton({ locale, presentation: 'story', version: 6, commit: diff.headCommit });
         // Payload прошлой генерации больше никому не нужен: её задачи только что отменены.
         this.payload.beginGeneration();
         this.startSkeletonTask();
@@ -613,6 +660,7 @@ export class RouteOrchestrator {
                 diff,
                 meta: this.meta,
                 locale: this.skeletonLocale(),
+                version: this.store.generationTaskEpoch() >= 4 ? 6 : 5,
             }),
         );
     }

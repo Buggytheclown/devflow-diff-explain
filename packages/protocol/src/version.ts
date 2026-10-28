@@ -4,7 +4,7 @@ import { z } from 'zod';
  * Версия протокола сессия↔сервер (`docs/protocol.md §9`).
  * Канон совместимости: в линии 0.x минор считается ломающим; с 1.0 достаточно совпадения мажора.
  */
-export const PROTOCOL_VERSION = '0.18.0';
+export const PROTOCOL_VERSION = '0.19.0';
 
 /** Строка semver без пре-релизов и метаданных — для версий протокола, CLI и сервера. */
 export const semverSchema = z.string().regex(/^\d+\.\d+\.\d+$/, 'ожидается версия вида X.Y.Z');

@@ -92,8 +92,8 @@ export async function fetchReviewRoute(
     return get(withQuery(UI_ENDPOINTS.reviewRoute, { snapshot: snapshotId }), token, uiReviewRouteResponseSchema);
 }
 
-export async function retryRouteDiagram(token: string, snapshotId: string): Promise<void> {
-    await post(UI_ENDPOINTS.reviewRouteRetryDiagram, token, { snapshotId }, uiReviewWriteAckSchema);
+export async function retryRouteDiagram(token: string, snapshotId: string, renderFailure?: true): Promise<void> {
+    await post(UI_ENDPOINTS.reviewRouteRetryDiagram, token, { snapshotId, ...(renderFailure === true ? { renderFailure } : {}) }, uiReviewWriteAckSchema);
 }
 
 export async function cancelRouteGeneration(token: string, generationId: string): Promise<void> {

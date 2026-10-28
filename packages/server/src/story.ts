@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ExplanationBlock, ReadableExample, GuidedFile, Locale, PrDiff, StoryEvidenceBlock, SectionAssignment } from '@sherpa/protocol';
+import type { ExplanationBlock, ReadableExample, GuidedFile, Locale, PrDiff, StoryEvidenceBlock, SectionAssignment, FlowState } from '@sherpa/protocol';
 import { overviewSkeletonResultSchema, progressiveSectionResultSchema, readableSkeletonResultSchema, readableSectionResultSchema, guidedSkeletonResultSchema, guidedSectionResultSchema, storySkeletonResultSchema, storySectionResultSchema } from '@sherpa/protocol';
 
 import { savedPatchIndex } from './saved-patch.js';
@@ -9,10 +9,12 @@ import { markupErrors, paragraphMarkupErrors } from './route/paragraph-markup.js
 import { parseResult } from './route/raw-result.js';
 import type { RouteValidation } from './route/types.js';
 import { voiceErrors } from './route/voice.js';
+import { validateArchitectureOverview, validateAllFiles } from './architecture-story.js';
+import { stripCodeFence } from './route/raw-result.js';
 
 /** Принятый план и заполнение не зависят от модели ревью. */
 export interface AcceptedExplanation {
-    summary: string; storyContractVersion: 2 | 3 | 4 | 5; summaryEvidence: StoryEvidenceBlock;
+    summary: string; storyContractVersion: 2 | 3 | 4 | 5 | 6; summaryEvidence: StoryEvidenceBlock; flow?: FlowState;
     stops: ExplanationBlock[]; tourOrder: string[]; intents: Map<number, string>;
 }
 export interface ExplanationFilling {
@@ -21,6 +23,7 @@ export interface ExplanationFilling {
 }
 
 export function validateStorySkeleton(raw: string, diff: PrDiff, locale: Locale): RouteValidation<AcceptedExplanation> {
+    try { if ((JSON.parse(stripCodeFence(raw)) as { contractVersion?: unknown }).contractVersion === 6) return validateArchitectureOverview(raw, diff); } catch { /* Общий разбор ниже возвращает точную ошибку JSON. */ }
     const parsed = parseResult(raw, z.union([overviewSkeletonResultSchema, readableSkeletonResultSchema, guidedSkeletonResultSchema, storySkeletonResultSchema]), 'story outline');
     if (!parsed.ok) return parsed;
     const evidence = storyEvidenceResolver(diff)(parsed.value.evidence, parsed.value.summary);
@@ -60,6 +63,7 @@ export function validateStorySkeleton(raw: string, diff: PrDiff, locale: Locale)
 export function validateStorySection(
     raw: string, targets: readonly number[], diff: PrDiff, locale: Locale, plannedStops?: readonly ExplanationBlock[], expectedVersion?: number, assignment?: SectionAssignment,
 ): RouteValidation<ExplanationFilling[]> {
+    if (expectedVersion === 6) return validateAllFiles(raw, diff, plannedStops ?? [], assignment);
     const parsed = parseResult(raw, z.union([progressiveSectionResultSchema, readableSectionResultSchema, guidedSectionResultSchema, storySectionResultSchema]), 'story');
     if (!parsed.ok) return parsed;
     const errors: string[] = [];

@@ -2,10 +2,11 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { ExplanationBlock, FileDiff, Locale, PrDiff, PrMeta, RouteStop, StoryEvidenceBlock, UiGenerationCap, SectionAssignment } from '@sherpa/protocol';
+import type { FlowState, ExplanationBlock, FileDiff, Locale, PrDiff, PrMeta, RouteStop, StoryEvidenceBlock, UiGenerationCap, SectionAssignment } from '@sherpa/protocol';
 import { generateJsonSchemas } from '@sherpa/protocol';
 
 import { storyGuide } from './story.js';
+import { architectureGuide } from './architecture-story.js';
 import type { EnqueueInput } from './queue.js';
 import { walkPatch } from './route/diff-index.js';
 import type { SharedPayloadStore } from './shared-payload.js';
@@ -55,6 +56,7 @@ export interface RouteTaskContext extends RoutePayloadContext {
     readonly locale: Locale;
     readonly introduction?: string;
     readonly introductionEvidence?: StoryEvidenceBlock | undefined;
+    readonly flow?: FlowState | undefined;
     readonly version?: number;
     readonly assignment?: SectionAssignment;
 }
@@ -96,13 +98,13 @@ export class RoutePayloadWriter {
         return {
             type: 'route.skeleton',
             priority: 'background',
-            instructions: 'Read the guide and PR context. Plan a concise coherent explanation. Return JSON matching the attached schema.',
+            instructions: context.version === 6 ? 'Explain the PR, draw its architecture and plan its blocks. Follow the guide and result schema.' : 'Read the guide and PR context. Plan a concise coherent explanation. Return JSON matching the attached schema.',
             // Своего у скелета нет: и методичка, и дифф — общие пути.
             contextFiles: [
-                this.shared.guide('skeleton-guide', storyGuide('skeleton', locale)),
+                this.shared.guide('skeleton-guide', context.version === 6 ? architectureGuide('overview', locale) : storyGuide('skeleton', locale)),
                 prDiff.file,
             ],
-            resultSchemaFile: this.writeSchema('overviewSkeleton'),
+            resultSchemaFile: this.writeSchema(context.version === 6 ? 'architectureOverview' : 'overviewSkeleton'),
         };
     }
 
@@ -133,13 +135,13 @@ export class RoutePayloadWriter {
         return {
             type: 'route.section',
             priority: 'background',
-            instructions: `Write every assigned section (${planIndexes.join(', ')}) as one coherent concise explanation, continuing the introduction without repeating it. Follow the guide and attached result schema.`,
+            instructions: context.version === 6 ? 'Explain all assigned files in accepted block order. Follow the guide and result schema.' : `Write every assigned section (${planIndexes.join(', ')}) as one coherent concise explanation, continuing the introduction without repeating it. Follow the guide and attached result schema.`,
             contextFiles: [
-                this.shared.guide('section-guide', storyGuide('section', locale, context.version === 5 ? 5 : 4)),
+                this.shared.guide('section-guide', context.version === 6 ? architectureGuide('files', locale) : storyGuide('section', locale, context.version === 5 ? 5 : 4)),
                 prDiff.file,
                 plan,
             ],
-            resultSchemaFile: this.writeSchema(context.version === 5 ? 'progressiveSection' : 'readableSection'),
+            resultSchemaFile: this.writeSchema(context.version === 6 ? 'allFiles' : context.version === 5 ? 'progressiveSection' : 'readableSection'),
         };
     }
 
@@ -224,7 +226,7 @@ export class RoutePayloadWriter {
     }
 
     /** Схема результата файлом (docs/protocol.md §4): канон — zod, JSON Schema — производная. */
-    private writeSchema(kind: 'overviewSkeleton' | 'readableSkeleton' | 'readableSection' | 'progressiveSection'): string {
+    private writeSchema(kind: 'architectureOverview' | 'allFiles' | 'overviewSkeleton' | 'readableSkeleton' | 'readableSection' | 'progressiveSection'): string {
         const key = `${kind}Result`;
         const schema = generateJsonSchemas()[key];
         return this.writeFile(`route-${kind}-result.schema.json`, `${JSON.stringify(schema, null, 2)}\n`);
@@ -256,11 +258,13 @@ function explanationPlanContext(
     const blocks = stops.filter((stop) => planIndexes.includes(stop.planIndex)).map((stop) => ({
         planIndex: stop.planIndex, title: stop.title, intent: intents.get(stop.planIndex),
         files: stop.guidedFiles?.filter((file) => context.assignment === undefined || context.assignment.files.includes(file.path)), relatedFiles: stop.relatedFiles,
+        paragraph: stop.paragraph, nodeIds: stop.nodeIds,
     }));
     return [
         '## Assignment', JSON.stringify(context.assignment ?? null),
         '## Accepted blocks and ordered file assignments', JSON.stringify(blocks),
         '## Already shown introduction', context.introduction ?? '',
+        ...(context.flow === undefined ? [] : ['## Accepted architecture', JSON.stringify(context.flow)]),
         '## Accepted introduction evidence', JSON.stringify(context.introductionEvidence ?? null), '',
     ].join('\n\n');
 }

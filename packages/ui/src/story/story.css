@@ -211,6 +211,19 @@ body:has(.story-app) { min-width: 0; }
 .story-file-added { color: var(--diff-add-text); }
 .story-file-deleted { color: var(--diff-del-text); }
 
+.story-architecture-scroll { overflow: auto; max-width: 100%; padding: 1rem 0; }
+.story-architecture-scroll svg { display: block; margin: 0 auto; max-width: none; }
+.story-architecture-scroll .node { cursor: pointer; }
+.story-architecture-scroll .node > :is(rect, polygon, circle, ellipse, path) { fill: var(--surface-panel) !important; stroke: var(--border-standard) !important; }
+.story-architecture-scroll .architecture-node--modified > :is(rect, polygon, circle, ellipse, path) { fill: var(--accent-surface) !important; stroke: var(--accent) !important; stroke-width: 2px !important; }
+.story-architecture-scroll .architecture-node--added > :is(rect, polygon, circle, ellipse, path) { fill: var(--ownership-mine-surface) !important; stroke: var(--success-text) !important; stroke-width: 2px !important; }
+.story-architecture-scroll .architecture-node--affected > :is(rect, polygon, circle, ellipse, path) { fill: var(--accent-surface) !important; stroke: var(--accent) !important; stroke-dasharray: 5 3 !important; }
+.story-architecture-scroll .architecture-node--unknown > :is(rect, polygon, circle, ellipse, path) { stroke-dasharray: 3 4 !important; }
+.story-architecture-scroll .node:is(.is-architecture-active, :focus-visible) > :is(rect, polygon, circle, ellipse, path) { stroke: var(--accent-text-bright) !important; stroke-width: 4px !important; }
+.story-architecture-selection { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; border-top: 1px solid var(--border-standard); padding-top: .75rem; }
+.story-architecture-selection p { flex-basis: 100%; margin: 0; }
+.story-flow--affected { border-style: dashed !important; border-color: var(--accent) !important; }
+
 @media (min-width: 1101px) {
     .story-topbar nav { gap: 1rem; }
 }

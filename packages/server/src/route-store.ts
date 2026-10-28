@@ -251,8 +251,8 @@ export class RouteStore {
             this.setGenerationLocale(generation.locale);
             this.setGenerationPresentation(generation.presentation);
             this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                .run(generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
-            if (generation.version === 5) this.writeGeneration({ id: randomUUID(), commit: generation.commit ?? null,
+                .run(generation.version === 6 ? '4' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
+            if ((generation.version ?? 0) >= 5) this.writeGeneration({ id: randomUUID(), commit: generation.commit ?? null,
                 snapshotId: null, previousSnapshotId: this.state.snapshot?.snapshotId ?? null, status: 'running' });
             else this.db.prepare("DELETE FROM meta WHERE key='preparation_generation'").run();
             return {};
@@ -285,6 +285,7 @@ export class RouteStore {
             summary: input.skeleton.summary,
             ...(input.skeleton.storyContractVersion === undefined ? {} : { storyContractVersion: input.skeleton.storyContractVersion }),
             ...(input.skeleton.summaryEvidence === undefined ? {} : { summaryEvidence: input.skeleton.summaryEvidence }),
+            ...('flow' in input.skeleton ? { flow: input.skeleton.flow } : {}),
             stops: input.skeleton.stops.map((stop) => 'tier' in stop ? stop : reviewProjection(stop)),
             tourOrder: input.skeleton.tourOrder,
             contentHash: null,
@@ -556,7 +557,12 @@ export class RouteStore {
     private deleteSectionBindingsFor(planIndex: number): void {
         for (const [taskId, binding] of this.bindings()) {
             if (binding.kind === 'section' && binding.planIndexes.includes(planIndex)) {
-                this.db.prepare('DELETE FROM route_tasks WHERE task_id = ?').run(taskId);
+                const retained = binding.planIndexes.filter((index) => index !== planIndex);
+                if (binding.assignment !== undefined && retained.length > 0) {
+                    const paths = new Set(this.state.snapshot?.stops.find((block) => block.planIndex === planIndex)?.guidedFiles?.map((file) => file.path));
+                    const assignment = { ...binding.assignment, files: binding.assignment.files.filter((file) => !paths.has(file)) };
+                    this.db.prepare('UPDATE route_tasks SET plan_indexes = ?, assignment = ? WHERE task_id = ?').run(JSON.stringify(retained), JSON.stringify(assignment), taskId);
+                } else this.db.prepare('DELETE FROM route_tasks WHERE task_id = ?').run(taskId);
             }
         }
     }

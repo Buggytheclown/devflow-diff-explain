@@ -22,7 +22,7 @@ export function preparationProgress(route: {
     const diagramReady = current?.flow?.status === 'ready' || current?.flow?.status === 'not_applicable';
     const total = current === null ? null : 2 + blocks.length + files.length;
     const completed = current === null ? 0 : 1 + Number(diagramReady) + readyBlocks + readyFiles;
-    const legacy = current !== null && current.storyContractVersion !== 5;
+    const legacy = current !== null && (current.storyContractVersion ?? 0) < 5;
     const status: 'legacy' | 'cancelled' | 'partial' | 'failed' | 'ready' | 'planning' | 'preparing' | 'idle' = legacy ? 'legacy' : generation?.status === 'cancelled' ? 'cancelled'
         : generation?.status === 'failed' || (route.phase === 'failed' && current?.flow?.status !== 'pending') ? (completed > 0 ? 'partial' : 'failed')
         : total !== null && completed === total ? 'ready'

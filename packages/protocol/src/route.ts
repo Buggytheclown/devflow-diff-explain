@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { relativeCodePathSchema } from './code-link.js';
-import { flowStateSchema, flowText } from './flow-diagram.js';
+import { architectureDiagramSchema, flowStateSchema, flowText } from './flow-diagram.js';
 import { localeSchema } from './locale.js';
 import { rawStoryEvidenceBlockSchema, storyEvidenceBlockSchema } from './story-evidence.js';
 import { hostIdSchema } from './review.js';
@@ -157,6 +157,7 @@ export const routeStopSchema = z.object({
     guidedFiles: z.array(guidedFileSchema).optional(),
     example: readableExampleSchema.nullable().optional(),
     relatedFiles: z.array(z.object({ fileId: hostIdSchema, path: relativeCodePathSchema })).optional(),
+    nodeIds: z.array(z.string().min(1)).optional(),
     tests: z.array(routeTestClaimSchema),
     /** Сколько утверждений дайджеста отбросил валидатор («2 claims dropped — no matching test»). */
     droppedClaims: z.number().int().min(0),
@@ -198,7 +199,7 @@ export type RouteCarried = z.infer<typeof routeCarriedSchema>;
  */
 const routeSnapshotBase = z.object({
     presentation: z.enum(['legacy', 'story']).optional(),
-    storyContractVersion: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional(),
+    storyContractVersion: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]).optional(),
     summaryEvidence: storyEvidenceBlockSchema.optional(),
     flow: flowStateSchema.optional(),
     snapshotId: z.string().min(1),
@@ -227,12 +228,12 @@ const routeSnapshotBase = z.object({
 
 /** Общие инварианты объяснения для собственного хранения и совместимой HTTP-проекции. */
 export function checkExplanationSnapshot(snapshot: {
-    storyContractVersion?: 2 | 3 | 4 | 5 | undefined;
+    storyContractVersion?: 2 | 3 | 4 | 5 | 6 | undefined;
     presentation?: 'story' | 'legacy' | undefined;
     summaryEvidence?: z.infer<typeof storyEvidenceBlockSchema> | undefined;
     flow?: z.infer<typeof flowStateSchema> | undefined;
     commit: string;
-    stops: readonly Pick<RouteStop, 'status' | 'storyEvidence' | 'guidedFiles'>[];
+    stops: readonly Pick<RouteStop, 'status' | 'storyEvidence' | 'guidedFiles' | 'nodeIds'>[];
 }, ctx: z.RefinementCtx): void {
     if (snapshot.storyContractVersion === undefined) return;
     if (snapshot.presentation !== 'story' || snapshot.summaryEvidence === undefined) {
@@ -248,7 +249,10 @@ export function checkExplanationSnapshot(snapshot: {
         }
     }
     const owners = new Set<string>();
+    const architectureIds = snapshot.flow?.status === 'ready' && 'mermaid' in snapshot.flow.diagram
+        ? new Set(snapshot.flow.diagram.nodes.map((node) => node.id)) : null;
     snapshot.stops.forEach((stop, index) => {
+        if (architectureIds !== null && stop.nodeIds?.some((id) => !architectureIds.has(id))) ctx.addIssue({ code: 'custom', path: ['stops', index, 'nodeIds'], message: 'Block references an unknown architecture node.' });
         if (stop.status === 'ready' && stop.storyEvidence === undefined) {
             ctx.addIssue({ code: 'custom', path: ['stops', index, 'storyEvidence'], message: 'A ready story section needs evidence.' });
         }
@@ -397,7 +401,7 @@ export const readableSectionResultSchema = z.object({ contractVersion: z.literal
 export const overviewSkeletonResultSchema = readableSkeletonResultSchema.extend({
     contractVersion: z.literal(5), summary: z.string().trim().min(1).max(20_000),
 });
-export const sectionAssignmentSchema = z.object({ files: z.array(relativeCodePathSchema).min(1).max(3), introduction: z.boolean() }).strict();
+export const sectionAssignmentSchema = z.object({ files: z.array(relativeCodePathSchema).min(1).max(10_000), introduction: z.boolean() }).strict();
 export type SectionAssignment = z.infer<typeof sectionAssignmentSchema>;
 export const progressiveSectionResultSchema = z.object({
     contractVersion: z.literal(5),
@@ -415,6 +419,27 @@ export const progressiveSectionResultSchema = z.object({
 }).strict();
 
 export type StorySkeletonResult = z.infer<typeof storySkeletonResultSchema>;
+
+/** Первый этап: цельная картина PR; второй — только пояснения файлов принятого плана. */
+export const architectureOverviewResultSchema = z.object({
+    contractVersion: z.literal(6), summary: z.string().trim().min(1).max(20_000), evidence: rawStoryEvidenceBlockSchema,
+    flow: z.union([
+        z.object({ status: z.literal('ready'), diagram: architectureDiagramSchema }).strict(),
+        z.object({ status: z.enum(['not_applicable', 'unavailable']), reason: z.string().trim().min(1).max(400) }).strict(),
+    ]),
+    stops: z.array(z.object({
+        title: z.string().trim().min(1).max(160), paragraph: z.string().trim().min(1).max(2000), evidence: rawStoryEvidenceBlockSchema,
+        nodeIds: z.array(z.string().min(1)).max(120), files: z.array(relativeCodePathSchema).min(1),
+        relatedFiles: z.array(relativeCodePathSchema).max(100),
+    }).strict()).min(1).max(100),
+}).strict();
+export const allFilesResultSchema = z.object({
+    contractVersion: z.literal(6),
+    stops: z.array(z.object({ planIndex: z.number().int().positive(), files: z.array(z.object({
+        path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(840),
+        example: rawReadableExampleSchema.nullable().optional(), annotations: z.array(guidedAnnotationSchema).max(12),
+    }).strict()).min(1) }).strict()).min(1).max(100),
+}).strict();
 export type StorySectionResult = z.infer<typeof storySectionResultSchema>;
 
 /** Точный текст для контекста вопроса; одинаковое представление на сервере и в UI. */

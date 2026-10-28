@@ -49,3 +49,4 @@ export type { FixtureData, FixtureInterdiff, FixtureIteration, FixtureIterationV
 export { guidedStoryFixture } from './guided-story.js';
 export { readableStoryFixture } from './readable-story.js';
 export { overviewStoryFixture } from './overview-story.js';
+export { architectureStoryFixture } from './architecture-story.js';
