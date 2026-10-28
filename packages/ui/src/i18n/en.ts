@@ -31,6 +31,8 @@ export const en: Dictionary = {
     'command.aria': 'Sherpa launch command',
 
     'chat.title': 'Chat',
+    'chat.expand': 'Expand chat',
+    'chat.restore': 'Restore chat size',
     'chat.connect': 'Connect agent',
     'chat.file.remove': 'Remove attached file',
     'chat.context.open': 'Open attachment version',

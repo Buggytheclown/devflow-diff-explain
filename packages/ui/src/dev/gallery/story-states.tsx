@@ -1,4 +1,6 @@
 import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixture, architectureStoryFixture } from '@sherpa/fixtures';
+import type { ReactNode } from 'react';
+import { FloatingChat } from '../../story/floating-chat.js';
 import type { RouteSnapshot, StorySource } from '@sherpa/protocol';
 
 import { createStoryData } from '../../story/data.js';
@@ -36,17 +38,19 @@ const noop = (): void => undefined;
 
 const renderSource = (source: StorySource, section: string, index: number) => <EvidenceSource key={`${section}:${String(index)}`} source={source} diffId={diff.diffId} data={data} token="gallery" focusId={`${section}:${String(index)}`} onOpen={noop} onSelect={noop} onLayout={noop} />;
 
-function QuietChatGallery({ attached = false, offline = false }: { attached?: boolean; offline?: boolean }) {
-    return <div style={{ height: 560, maxWidth: 550 }}><ChatPanel
+function QuietChatGallery({ attached = false, offline = false, inFrame = false, headerActions }: { attached?: boolean; offline?: boolean; inFrame?: boolean; headerActions?: ReactNode }) {
+    const panel = <ChatPanel headerActions={headerActions}
         worker={offline ? { kind: 'never' } : { kind: 'connected', workerId: 'gallery', harness: 'codex', model: 'gpt', registeredAt: '2026-10-28T10:00:00Z', lastSeenAt: '2026-10-28T10:00:00Z' }}
         tasks={[]} exchanges={[]} notes={[]} loading={false} error={null} reconnectCommand="devflow-diff-explain worker next --pr fixture-medium"
         anchor={null} fileAttachment={attached ? { fileId: sourceRef.fileId, path: sourceRef.path } : undefined} contextCommit={snapshot.commit}
         focusRequest={0} scrollRequest={null} onScrollRequestHandled={noop} onClose={noop} onRemoveAnchor={noop}
         onAsk={() => Promise.reject(new Error('Gallery only'))} onCancel={() => Promise.resolve()} onRetry={() => Promise.resolve()} onNavigate={noop} onNavigateToNote={noop}
-    /></div>;
+    />;
+    return inFrame ? panel : <div style={{ height: 560, maxWidth: 550 }}>{panel}</div>;
 }
 
 export const STORY_STATES: readonly GalleryState[] = [
+    { id: 'chat-floating', group: 'Чат', title: 'Плавающий чат · файл возле ввода', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery attached inFrame headerActions={headerActions} />}</FloatingChat> },
     { id: 'chat-quiet-empty', group: 'Чат', title: 'Пустой чат · вопрос по всему PR', render: () => <QuietChatGallery /> },
     { id: 'chat-explicit-file', group: 'Чат', title: 'Явно прикреплённый файл возле ввода', render: () => <QuietChatGallery attached /> },
     { id: 'chat-quiet-offline', group: 'Чат', title: 'Отключение · команда скрыта до запроса', render: () => <QuietChatGallery offline /> },

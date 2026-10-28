@@ -36,7 +36,7 @@ test('весь PR по умолчанию; явный файл → строки 
     expect(patch).toBeDefined(); expect(await fs.readFile(patch?.trim() ?? '', 'utf8')).toContain(originalPath);
     await server.worker.complete(attached.taskId ?? 0, 'Файл участвует в проверке и применении правила.');
 
-    await page.locator('.story-code .diff-row[data-key]').first().click();
+    await page.locator('.story-code .diff-row[data-key]').first().locator('.diff-row__gutter--code').click();
     await expect(page.getByRole('button', { name: 'Убрать файл из контекста', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Убрать диапазон из контекста', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Убрать диапазон из контекста', exact: true }).click();

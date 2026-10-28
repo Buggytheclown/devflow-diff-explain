@@ -34,6 +34,8 @@ export const ru = {
     'command.aria': 'Команда запуска Шерпы',
 
     'chat.title': 'Чат',
+    'chat.expand': 'Расширить чат',
+    'chat.restore': 'Обычный размер чата',
     'chat.connect': 'Подключить агента',
     'chat.file.remove': 'Убрать файл из контекста',
     'chat.context.open': 'Открыть версию вложения',

@@ -139,7 +139,7 @@ test('выделение синхронизировано с чатом, уда�
     await expect(page.locator('.chat-panel__contexts')).toContainText(fixture.first.path);
     await input.fill('Что меняется в этих строках?');
     const nextRow = row.locator('xpath=following-sibling::div[contains(@class,"diff-row")][1]');
-    await nextRow.click({ modifiers: ['Shift'] });
+    await nextRow.locator('.diff-row__gutter--code').click({ modifiers: ['Shift'] });
     await expect(file.locator('.diff-row.is-selected')).toHaveCount(2);
     await expect(input).toHaveValue('Что меняется в этих строках?');
     const code = await quote.textContent();
@@ -172,7 +172,7 @@ test('выделение синхронизировано с чатом, уда�
     await expect(input).toBeFocused();
     await page.locator('.story-topbar').getByRole('button', { name: 'Все изменения', exact: true }).click();
     await expect(file.locator('.diff-row.is-selected')).toHaveCount(0);
-    await file.locator('.diff-row[data-key]').first().click();
+    await file.locator('.diff-row[data-key]').first().locator('.diff-row__gutter--code').click();
     await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
     await expect(quote).not.toBeEmpty();
     await page.getByRole('button', { name: 'Убрать диапазон из контекста', exact: true }).click();

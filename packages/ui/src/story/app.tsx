@@ -13,6 +13,7 @@ import { storyCopy, guidedCopy, preparationCopy } from '../i18n/story.js';
 import { createStoryData } from './data.js';
 import { EvidenceSource } from './evidence.tsx';
 import { ReadFile } from './read-file.tsx';
+import { FloatingChat } from './floating-chat.js';
 import { GuidedDocument } from './guided-document.tsx';
 import { StoryDocument } from './story-document.tsx';
 import { useGuideScroll } from './use-guide-scroll.js';
@@ -54,6 +55,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const [explanation, setExplanation] = useState<ChatExplanation | undefined>(cached?.anchor != null || cached?.explanation?.file !== undefined ? cached.explanation : undefined);
     const [focus, setFocus] = useState(0);
     const attachmentEpoch = useRef(0);
+    const chatButton = useRef<HTMLButtonElement | null>(null);
     const [data] = useState(() => createStoryData(token));
     const fileId = reader.address?.kind === 'diff' ? reader.address.fileId : diff === null ? null : data.view(diff.diffId).fileId;
     const chosenId = selectedSnapshotId ?? route?.snapshot?.snapshotId;
@@ -164,7 +166,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             removeSelection(); setExplanation({ ...pinned, file: { fileId, path: file.path } }); openChat();
         } catch (reason: unknown) { if (attachmentEpoch.current === epoch) setError(String(reason)); }
     };
-    const closeOverlay = (): void => { if (window.matchMedia('(max-width: 1100px)').matches) session.setChatOpen(false); };
+    const closeChat = (): void => { session.setChatOpen(false); chatButton.current?.focus({ preventScroll: true }); };
     const leave = (sectionId?: string): number => {
         const epoch = reading.begin();
         if (!showDiff && storyKey !== null) {
@@ -188,7 +190,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             }
             setDiff(value); setFilesOpen(false); setError(null);
             visit({ kind: 'guide', address: { kind: 'guide', snapshotId: snapshot.snapshotId, page }, remember, epoch, location: location === undefined ? null : { ...location, diffId: value.diffId } });
-            session.setView('route'); closeOverlay();
+            session.setView('route');
             const target = storyScope(snapshot.snapshotId, stream.state?.prKey ?? '', page) ?? 'empty';
             if (location !== undefined) reading.code(target, epoch, location);
             else if (resume || page === 'intro') reading.restore(target, epoch, null, true, returning ? `${target}:return` : target);
@@ -208,7 +210,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             if (location !== undefined) data.updateFile(value.diffId, file.fileId, { highlight: { ...location, diffId: value.diffId, fileId: file.fileId } });
             data.updateView(value.diffId, { fileId: file.fileId });
             setDiff(value); setQuery(memory.query); visit({ kind: 'diff', address: { kind: 'diff', diffId: value.diffId, fileId: file.fileId }, epoch, location: location === undefined ? null : { ...location, diffId: value.diffId } });
-            setFilesOpen(false); setError(null); closeOverlay(); session.setView('diff');
+            setFilesOpen(false); setError(null); session.setView('diff');
             const target = `diff:${value.diffId}:${file.fileId}`;
             if (location === undefined) reading.restore(target, epoch);
             else reading.code(target, epoch, location);
@@ -219,7 +221,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
         const epoch = reading.begin();
         const point = reading.origin;
         visit({ kind: 'return', epoch });
-        session.setView('route'); closeOverlay(); setFilesOpen(false);
+        session.setView('route'); setFilesOpen(false);
         if (guideScope !== null) reading.restore(guideScope, epoch, point?.storyKey === storyKey ? point.focus : null);
         reading.setOrigin(null);
     };
@@ -229,7 +231,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     };
     const files = diff?.files.filter((file) => file.path.toLowerCase().includes(query.toLowerCase())) ?? [];
     const prepared = preparationProgress(route ?? { phase: 'none', snapshot: null }).status === 'ready';
-    return <div data-prepared={prepared} data-preparing={connected && generating && route.generation?.status !== 'cancelled'} className={`story-app${ui.chatOpen ? ' story-app--chat' : ''}${intro ? ' story-app--intro' : ''}`}>
+    return <div data-prepared={prepared} data-preparing={connected && generating && route.generation?.status !== 'cancelled'} className={`story-app${intro ? ' story-app--intro' : ''}`}>
         <header className="story-topbar">
             <strong><span aria-hidden="true">◆</span> Devflow</strong>
             <span className="story-pr-key">{stream.state?.prKey ?? ''}</span>
@@ -241,7 +243,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             {showDiff || guided ? <button className="ctl story-files-toggle" aria-expanded={filesOpen} onClick={() => { setFilesOpen((value) => !value); }}>{filesOpen ? t.closeFiles : t.files}</button> : null}
             </nav>
             <div className="story-settings">
-                <button className="ctl" onClick={() => { openChat(); }}>{t.chat}</button>
+                <button ref={chatButton} className="ctl" aria-expanded={ui.chatOpen} onClick={() => { openChat(); }}>{t.chat}</button>
             </div>
         </header>
         <Preparation route={route} connected={connected} displayedId={snapshot?.snapshotId}
@@ -284,10 +286,10 @@ export function App({ store, session, token }: { store: Store; session: StorySes
                     } />}
 
         </main>
-        {ui.chatOpen ? <aside className="story-chat">
-            <ChatPanel composerText={draft} onComposerTextChange={setDraft} worker={worker} tasks={tasks} exchanges={chat.exchanges.filter((exchange) => exchange.explanation?.diffId === (explanation?.diffId ?? viewedDiffId))} notes={[]} loading={false} error={chatError}
+        <FloatingChat open={ui.chatOpen} onClose={closeChat}>{({ headerActions }) =>
+            <ChatPanel headerActions={headerActions} composerText={draft} onComposerTextChange={setDraft} worker={worker} tasks={tasks} exchanges={chat.exchanges.filter((exchange) => exchange.explanation?.diffId === (explanation?.diffId ?? viewedDiffId))} notes={[]} loading={false} error={chatError}
                 onOpenAttachment={explanation === undefined ? undefined : () => { void goDiff(explanation.diffId, explanation.file?.fileId ?? anchor?.fileId); }} contextCommit={explanation?.commit ?? snapshot?.commit} fileAttachment={explanation?.file} attachmentStale={explanation !== undefined && explanation.diffId !== viewedDiffId} reconnectCommand={reconnectCommand(stream.state?.prKey ?? '')} anchor={anchor} anchorText={anchorText} focusRequest={focus} scrollRequest={null} onScrollRequestHandled={noop}
-                onClose={() => { reading.preserve(); session.setChatOpen(false); }} onRemoveAnchor={removeSelection} viewDiffId={viewedDiffId}
+                onClose={closeChat} onRemoveAnchor={removeSelection} viewDiffId={viewedDiffId}
                 onAsk={async (text, selected) => {
                     const attached = explanation ?? capture();
                     if (attached === undefined) throw new Error(t.loading);
@@ -302,7 +304,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
                 onCancel={async (id) => { await cancelReviewChat(token, id); setChat(await fetchReviewChat(token)); }}
                 onRetry={async (id) => { await retryReviewChat(token, id); setChat(await fetchReviewChat(token)); }}
                 onNavigate={(selected) => { openCode(selected, selected.diffId); }} onNavigateCode={openCode} onNavigateToNote={noop} suggestions={false} />
-        </aside> : null}
+        }</FloatingChat>
     </div>;
 }
 

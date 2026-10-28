@@ -19,7 +19,8 @@ test('единая лента от первого до последнего фа
     for (const file of ordered) {
         const card = page.locator(`[data-reading-file="${file.fileId}"]`);
         // Только прокрутка: не вызываем переход по оглавлению.
-        await card.evaluate((element) => { const top = (document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0) + 12; window.scrollBy(0, element.getBoundingClientRect().top - top); });
+        const delta = await card.evaluate((element) => element.getBoundingClientRect().top - ((document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0) + 12));
+        await page.mouse.move(500, 180); await page.mouse.wheel(0, delta);
         await expect(page.locator('.story-nav-file[aria-current=page]')).toHaveAttribute('aria-label', file.path);
         await expect(card.locator('header')).toBeInViewport();
         await expect(page.locator('.story-nav-file[aria-current=page]')).toBeInViewport();

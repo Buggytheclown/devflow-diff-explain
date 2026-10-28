@@ -1,5 +1,5 @@
 import type { AgentNote, ChatAnchor, ChatExplanation, ChatExchange, CodeLocation, UiChatAskAnchor, UiTask, WorkerStatus } from '@sherpa/protocol';
-import type { KeyboardEvent, RefObject } from 'react';
+import type { KeyboardEvent, ReactNode, RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { MessageKey, Translate } from '../i18n/index.js';
@@ -13,6 +13,7 @@ export type ChatActivityState = 'empty' | 'queued' | 'answering' | 'failed' | 'd
 export type ChatScrollTarget = 'queue' | 'error' | { readonly kind: 'exchange'; readonly exchangeId: number };
 
 export interface ChatPanelProps {
+    readonly headerActions?: ReactNode;
     readonly composerText?: string;
     readonly onComposerTextChange?: (text: string) => void;
     readonly onNavigateCode?: ((location: CodeLocation, diffId: string) => void) | undefined;
@@ -329,6 +330,7 @@ export function ChatPanel(props: ChatPanelProps) {
                 <details className="chat-panel__details"><summary className="chat-panel__title">{t('chat.title')}</summary><div className="chat-panel__identity">{workerIdentity(worker, t)}{props.contextCommit === undefined ? '' : ` · ${props.contextCommit.slice(0, 12)}`}</div></details>
                 {connected ? null : <details className="chat-panel__connect"><summary>{t('chat.connect')}</summary><p>{t('chat.disconnected')}</p><CommandBox command={props.reconnectCommand} hint={t('command.hint')} /></details>}
                 <div className="chat-panel__header-actions">
+                    {props.headerActions}
                     {notes.length === 0 ? null : (
                         <span className="chat-panel__notes">{t('chat.notes', notes.length)}</span>
                     )}
@@ -404,11 +406,13 @@ export function ChatPanel(props: ChatPanelProps) {
                     </span>
                     <button
                         type="button"
-                        className="ctl ctl--primary"
+                        className="ctl ctl--primary chat-panel__send"
+                        aria-label={t('chat.composer.send')}
+                        title={t('chat.composer.send')}
                         disabled={!connected || sending || text.trim() === ''}
                         onClick={submit}
                     >
-                        {t('chat.composer.send')}
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 20V4m-6 6 6-6 6 6" /></svg>
                     </button>
                 </div>
                 {composerError === null ? null : (
