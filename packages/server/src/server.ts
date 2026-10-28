@@ -2,7 +2,7 @@ import http from 'node:http';
 import { hostname } from 'node:os';
 
 import type { ServerManifest } from '@sherpa/protocol';
-import { LONG_POLL_DEFAULT_SECONDS, PROTOCOL_VERSION } from '@sherpa/protocol';
+import { LONG_POLL_DEFAULT_SECONDS, PROTOCOL_VERSION, READER_APPEARANCE } from '@sherpa/protocol';
 
 import { createToken } from './auth.js';
 import { BlobCache } from './blob-cache.js';
@@ -179,7 +179,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         ready: routesReady,
         ...(options.assets === undefined
             ? {}
-            : { assets: withDocumentSettings(options.assets, () => settingsStore.read()) }),
+            : { assets: withDocumentSettings(options.assets, () => ({ ...settingsStore.read(), ...READER_APPEARANCE })) }),
     };
     const httpServer = http.createServer(createRequestListener(listenerOptions));
     const shutdownController = new AbortController();

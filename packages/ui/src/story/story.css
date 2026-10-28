@@ -11,7 +11,7 @@ body:has(.story-app) { min-width: 0; }
 .story-topbar nav { display: flex; gap: .6rem; }
 .story-topbar [aria-current], .story-nav [aria-current] { color: var(--accent-text); background: var(--accent-surface); }
 .story-settings { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
-.story-settings select, .story-nav input { background: var(--surface-panel); color: var(--text-primary); border: 1px solid var(--border-control); border-radius: .35rem; padding: .4rem; }
+.story-nav input { background: var(--surface-panel); color: var(--text-primary); border: 1px solid var(--border-control); border-radius: .35rem; padding: .4rem; }
 .story-nav { position: sticky; top: 3.4rem; height: calc(100vh - 3.4rem); overflow: auto; border-right: 1px solid var(--border-standard); padding: 1.5rem 1rem; display: flex; flex-direction: column; align-items: stretch; gap: .8rem; }
 .story-nav p { color: var(--text-link-muted); font-size: var(--font-size-secondary); }
 .story-nav a, .story-nav button { color: var(--text-primary); text-align: left; line-height: 1.5; text-decoration: none; overflow-wrap: anywhere; white-space: normal; }
@@ -143,7 +143,6 @@ body:has(.story-app) { min-width: 0; }
 .story-topbar strong { font-size: var(--font-size-stop-title); }
 .story-topbar nav { gap: .25rem; }
 .story-topbar nav > [aria-current] { background: transparent; box-shadow: inset 0 -2px var(--accent); border-radius: 0; }
-.story-style-toggle[aria-pressed='true'] { color: var(--accent-text); background: var(--accent-surface); }
 .story-nav { padding: 1rem .8rem; gap: .6rem; }
 .story-nav .story-nav-file { font-family: var(--font-sans); border-left: 2px solid transparent; border-radius: 0; }
 .story-nav .story-nav-file[aria-current] { border-left-color: var(--accent); }
@@ -164,9 +163,9 @@ body:has(.story-app) { min-width: 0; }
 .story-overview-route h3 { margin: 0; font-size: var(--font-size-stop-title); }
 .story-overview-route .story-block-list { margin-top: 1rem; gap: .25rem; }
 .story-overview-route .story-block-list li { border: 0; padding: 0; }
-.story-overview-route .story-block-list button { display: flex; align-items: baseline; gap: .6rem; padding: .6rem 0; }
-.story-overview-route .story-block-list small { color: var(--text-link-muted); font-size: var(--font-size-secondary); }
-.story-overview-route .story-block-list span { padding-right: 0; font-size: var(--font-size-meta); }
+.story-overview-route .story-block-list button { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: .6rem; padding: .6rem 0; }
+.story-overview-route .story-block-list small { flex-shrink: 0; color: var(--text-link-muted); font-size: var(--font-size-secondary); }
+.story-overview-route .story-block-list span { flex-shrink: 0; white-space: nowrap; padding-right: 0; font-size: var(--font-size-meta); }
 .story-file-list-title { font-size: var(--font-size-secondary); color: var(--text-link-muted); font-weight: 400; margin: 1.5rem 0 .6rem; }
 .story-file-list { margin-top: 0; gap: var(--space-card); }
 .story-file-list li { display: block; padding: 0; overflow: hidden; border-radius: var(--radius-card); }
@@ -211,15 +210,17 @@ body:has(.story-app) { min-width: 0; }
 .story-file-added { color: var(--diff-add-text); }
 .story-file-deleted { color: var(--diff-del-text); }
 
-.story-architecture-scroll { overflow: auto; max-width: 100%; padding: 1rem 0; }
-.story-architecture-scroll svg { display: block; margin: 0 auto; max-width: none; }
-.story-architecture-scroll .node { cursor: pointer; }
-.story-architecture-scroll .node > :is(rect, polygon, circle, ellipse, path) { fill: var(--surface-panel) !important; stroke: var(--border-standard) !important; }
-.story-architecture-scroll .architecture-node--modified > :is(rect, polygon, circle, ellipse, path) { fill: var(--accent-surface) !important; stroke: var(--accent) !important; stroke-width: 2px !important; }
-.story-architecture-scroll .architecture-node--added > :is(rect, polygon, circle, ellipse, path) { fill: var(--ownership-mine-surface) !important; stroke: var(--success-text) !important; stroke-width: 2px !important; }
-.story-architecture-scroll .architecture-node--affected > :is(rect, polygon, circle, ellipse, path) { fill: var(--accent-surface) !important; stroke: var(--accent) !important; stroke-dasharray: 5 3 !important; }
-.story-architecture-scroll .architecture-node--unknown > :is(rect, polygon, circle, ellipse, path) { stroke-dasharray: 3 4 !important; }
-.story-architecture-scroll .node:is(.is-architecture-active, :focus-visible) > :is(rect, polygon, circle, ellipse, path) { stroke: var(--accent-text-bright) !important; stroke-width: 4px !important; }
+/* Геометрия схемы укладывается в область чтения; цвета модели не меняют палитру UI. */
+.story-architecture-toolbar { display: flex; gap: .5rem; margin: .75rem 0; }
+.story-architecture-toolbar [aria-pressed='true'] { color: var(--accent-text); background: var(--accent-surface); }
+.story-architecture-scroll { max-width: 100%; min-width: 0; padding: 1rem 0; }
+.story-architecture-scroll svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+.story-architecture-scroll .node { cursor: pointer; --architecture-node-fill: var(--surface-panel); --architecture-node-stroke: var(--text-link-muted); }
+.story-architecture-scroll .architecture-node--modified { --architecture-node-fill: var(--accent-surface); --architecture-node-stroke: var(--accent-text); }
+.story-architecture-scroll .architecture-node--added { --architecture-node-fill: var(--ownership-mine-surface); --architecture-node-stroke: var(--success-text); }
+.story-architecture-scroll .architecture-node--affected { --architecture-node-fill: var(--accent-surface); --architecture-node-stroke: var(--accent-text); --architecture-node-dash: 5 3; }
+.story-architecture-scroll .architecture-node--unknown { --architecture-node-dash: 3 4; }
+.story-architecture-scroll .node:is(.is-architecture-active, :focus-visible) { --architecture-highlight: var(--accent-text-bright); --architecture-highlight-width: 4px; }
 .story-architecture-selection { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; border-top: 1px solid var(--border-standard); padding-top: .75rem; }
 .story-architecture-selection p { flex-basis: 100%; margin: 0; }
 .story-flow--affected { border-style: dashed !important; border-color: var(--accent) !important; }

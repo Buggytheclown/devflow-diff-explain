@@ -216,8 +216,7 @@ test('источники показывают точные стороны, от�
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toHaveValue('Мой черновик');
     await expect(page.locator('.story-chat-context')).toHaveText(context);
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
-    await page.getByRole('combobox', { name: 'Тема', exact: true }).selectOption('light');
-    await page.screenshot({ path: test.info().outputPath('sources-light.png'), fullPage: true });
+    await page.screenshot({ path: test.info().outputPath('sources-dark.png'), fullPage: true });
     await intro.getByRole('button', { name: 'Скрыть изменение', exact: true }).focus();
     await page.keyboard.press('Enter');
     await expect(button).toBeFocused();

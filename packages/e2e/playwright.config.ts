@@ -13,11 +13,9 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         launchOptions: process.env.SHERPA_E2E_EXECUTABLE_PATH === undefined ? {} : { executablePath: process.env.SHERPA_E2E_EXECUTABLE_PATH },
         viewport: { width: 1440, height: 900 },
-        // Локаль браузера фиксирована: настройка языка UI по умолчанию `auto`, а chromium
-        // без этого приходит с `en-US` — спеки ищут русские строки.
+        // Детерминированное окружение; рабочий UI остаётся русским независимо от браузера.
         locale: 'ru-RU',
-        // Системная тема фиксирована по той же причине: настройка темы по умолчанию `auto`,
-        // а спеки сверяют цвета тёмной палитры. Спека темы переключает её сама (`emulateMedia`).
+        // Рабочий UI всегда Arcanum dark; сценарий схемы дополнительно проверяет светлую ОС.
         colorScheme: 'dark',
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',

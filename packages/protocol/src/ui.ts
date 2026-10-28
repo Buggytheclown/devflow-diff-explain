@@ -541,6 +541,9 @@ export const uiSettingsSchema = z.object({
 });
 export type UiSettings = z.infer<typeof uiSettingsSchema>;
 
+/** Рабочий интерфейс: сохранённые настройки прежних версий не меняют его оформление. */
+export const READER_APPEARANCE = { locale: 'ru', theme: 'dark', arcanum: true } as const;
+
 export const uiSettingsResponseSchema = z.object({ settings: uiSettingsSchema });
 export type UiSettingsResponse = z.infer<typeof uiSettingsResponseSchema>;
 

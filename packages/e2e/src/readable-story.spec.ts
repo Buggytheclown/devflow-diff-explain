@@ -13,13 +13,12 @@ test('краткое пояснение и пример → полный диф�
     await expect(page.locator('.story-main')).toContainText('Готовлю схему потока');
     await expect(page.locator('.story-nav')).toBeHidden();
     await expect(page.locator('.story-overview-route')).toBeVisible();
-    await page.getByRole('button', { name: 'Стиль Arcanum', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'arcanum-dark');
     const section = await server.worker.next(); expect(section.type).toBe('route.section');
     expect((await server.worker.complete(section.taskId ?? 0, JSON.stringify(fixture.body))).stdout).not.toContain('rejected');
     await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
     await expect(page.locator('.story-file-list .md-blocks').first()).toContainText(fixture.body.stops[0]?.files[0]?.explanation ?? '');
-    if (await page.getByRole('button', { name: 'Стиль Arcanum', exact: true }).getAttribute('aria-pressed') === 'true') await page.screenshot({ path: test.info().outputPath('sherpa-arcanum-block.png') });
+    await page.screenshot({ path: test.info().outputPath('sherpa-arcanum-block.png') });
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     await expect(page.locator('.story-example')).toContainText(fixture.example.text);
     await expect(page.locator('.story-topbar button[aria-current=page]')).toHaveText('Разбор по блокам');
@@ -27,13 +26,6 @@ test('краткое пояснение и пример → полный диф�
     const rows = await page.locator('.story-main .diff-row').allTextContents(); expect(rows.length).toBeGreaterThan(0);
     await page.screenshot({ path: test.info().outputPath('sherpa-readable-file.png') });
     await page.locator('.story-main .diff-row').nth(20).scrollIntoViewIfNeeded();
-    const row = page.locator('.story-main .diff-row').nth(20);
-    const y = (await row.boundingBox())?.y ?? 0;
-    await page.getByRole('button', { name: 'Стиль Arcanum', exact: true }).click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await page.getByRole('button', { name: 'Стиль Arcanum', exact: true }).click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'arcanum-dark');
-    await expect(async () => { expect(Math.abs(((await row.boundingBox())?.y ?? 9999) - y)).toBeLessThan(3); }).toPass();
     const diagram = await server.worker.next(); expect(diagram.type).toBe('route.diagram');
     expect((await server.worker.complete(diagram.taskId ?? 0, JSON.stringify({ contextRequests: [{ path: 'missing-context.ts', start: 1, end: 5 }], diagram: null, reason: null }))).stdout).not.toContain('rejected');
     const second = await server.worker.next(); expect(second.type).toBe('route.diagram');
@@ -63,7 +55,7 @@ test('сбой схемы сохраняет готовое описание, б
     await expect(page.locator('.story-main')).toContainText(fixture.outline.summary);
     await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
     await expect(page.locator('.story-file-list .md-blocks').first()).toContainText(fixture.body.stops[0]?.files[0]?.explanation ?? '');
-    if (await page.getByRole('button', { name: 'Стиль Arcanum', exact: true }).getAttribute('aria-pressed') === 'true') await page.screenshot({ path: test.info().outputPath('sherpa-arcanum-block.png') });
+    await page.screenshot({ path: test.info().outputPath('sherpa-arcanum-block.png') });
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     await expect(page.locator('.story-example')).toBeVisible();
     await expect(page.locator('.story-main .diff-row--add, .story-main .diff-row--del')).toHaveCount(fixture.first.additions + fixture.first.deletions);

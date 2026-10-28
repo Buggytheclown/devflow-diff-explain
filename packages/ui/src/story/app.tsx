@@ -10,7 +10,6 @@ import { ChatPanel } from '../components/chat-panel.tsx';
 import '../diff-view/diff-view.css';
 import { useLocale } from '../i18n/index.js';
 import { storyCopy, guidedCopy, preparationCopy } from '../i18n/story.js';
-import { useUiSettings, useUiSettingsStore } from '../settings/context.tsx';
 import { createStoryData } from './data.js';
 import { EvidenceSource } from './evidence.tsx';
 import { ReadFile } from './read-file.tsx';
@@ -31,8 +30,6 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const locale = useLocale();
     const t = storyCopy[locale];
     const pt = preparationCopy[locale];
-    const settings = useUiSettingsStore();
-    const preferences = useUiSettings();
     const stream = useSyncExternalStore(store.subscribe, store.getSnapshot);
     const ui = useSyncExternalStore(session.subscribe, session.getSnapshot);
     const [route, setRoute] = useState<UiRouteState | null>(null);
@@ -213,9 +210,6 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             {showDiff || guided ? <button className="ctl story-files-toggle" aria-expanded={filesOpen} onClick={() => { setFilesOpen((value) => !value); }}>{filesOpen ? t.closeFiles : t.files}</button> : null}
             </nav>
             <div className="story-settings">
-                <select aria-label={t.language} value={locale} onChange={(event) => { settings.update({ locale: event.target.value === 'ru' ? 'ru' : 'en' }); }}><option value="ru">RU</option><option value="en">EN</option></select>
-                <select aria-label={t.theme} onChange={(event) => { settings.update({ theme: event.target.value === 'auto' ? 'auto' : event.target.value === 'light' ? 'light' : 'dark' }); }} value={preferences.theme}><option value="auto">Auto</option><option value="dark">Dark</option><option value="light">Light</option></select>
-                <button className="ctl story-style-toggle" aria-pressed={preferences.arcanum} onClick={() => { reading.preserve(); settings.update({ arcanum: !preferences.arcanum }); }}>{gt.arcanum}</button>
                 <button className="ctl" onClick={() => { openChat(); }}>{t.chat}</button>
             </div>
         </header>

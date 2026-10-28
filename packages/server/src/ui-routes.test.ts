@@ -354,42 +354,16 @@ describe('ручки UI', () => {
             expect(await response.text()).toContain('Sherpa');
         });
 
-        it.each([
-            ['dark', false, 'dark'], ['light', false, 'light'],
-            ['dark', true, 'arcanum-dark'], ['light', true, 'arcanum-light'],
-        ] as const)('сохранённая тема %s, Arcanum=%s приезжает в первом кадре', async (theme, arcanum, expected) => {
-            new SettingsStore(sherpaDir).patch({ theme, arcanum, textSize: 'l' });
+        it.each(['auto', 'dark', 'light'] as const)('первый кадр остаётся Arcanum dark при сохранённой теме %s', async (theme) => {
+            new SettingsStore(sherpaDir).patch({ theme, arcanum: false, textSize: 'l' });
             const server = await start(uiDir);
-
             const html = await (await get(server.port, '/')).text();
-
-            expect(html).toContain(`data-theme="${expected}"`);
+            expect(html).toContain('data-theme="arcanum-dark"');
             expect(html).toContain('data-textsize="l"');
-            expect(html).not.toContain('<script>');
             expect(html).not.toContain('prefers-color-scheme');
         });
 
-        it('режим auto: тему ставит встроенный скрипт до подключения стилей', async () => {
-            const server = await start(uiDir);
-
-            const html = await (await get(server.port, '/')).text();
-
-            // Свежий `settings.json` — это `auto`: подставить нечего, системную тему знает браузер.
-            expect(html).not.toContain('data-theme=');
-            expect(html).toContain('prefers-color-scheme: dark');
-            expect(html.indexOf('<script>')).toBeLessThan(html.indexOf('<link rel="stylesheet"'));
-        });
-
-        it('смена темы применяется к следующему запросу index.html без перезапуска', async () => {
-            const server = await start(uiDir);
-            expect(await (await get(server.port, '/')).text()).not.toContain('data-theme=');
-
-            await patchJson(server.port, UI_ENDPOINTS.settings, { theme: 'dark' }, server.token);
-
-            expect(await (await get(server.port, '/')).text()).toContain('data-theme="dark"');
-        });
-
-        it('переход на auto сохраняет Arcanum в системном скрипте следующего документа', async () => {
+        it('старые настройки auto не меняют оформление следующего документа', async () => {
             new SettingsStore(sherpaDir).patch({ theme: 'dark', arcanum: true });
             const server = await start(uiDir);
 
@@ -399,10 +373,8 @@ describe('ручки UI', () => {
 
             expect(response.status).toBe(200);
             expect(document.status).toBe(200);
-            expect(html).not.toContain('data-theme=');
-            expect(html).toContain('prefers-color-scheme: dark');
-            expect(html).toContain('"arcanum-dark":"arcanum-light"');
-            expect(html.indexOf('<script>')).toBeLessThan(html.indexOf('<link rel="stylesheet"'));
+            expect(html).toContain('data-theme="arcanum-dark"');
+            expect(html).not.toContain('prefers-color-scheme');
         });
 
         it('ассеты отдаются с нужным content-type', async () => {

@@ -17,6 +17,7 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
     const [selected, setSelected] = useState<string | null>(null);
     const [rendered, setRendered] = useState(0);
+    const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
     const content = JSON.stringify(diagram);
     const failure = useRef(onRenderFailure);
     useEffect(() => { failure.current = onRenderFailure; }, [onRenderFailure]);
@@ -28,7 +29,7 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
         let closed = false;
         const draw = () => {
             const requested = ++revision;
-            void renderArchitecture(id, diagram, element).then((svg) => {
+            void renderArchitecture(id, diagram, element, direction).then((svg) => {
                 if (closed || requested !== revision) return;
                 const focused = element.contains(document.activeElement) ? document.activeElement?.getAttribute('data-architecture-node') : null;
                 element.replaceChildren(svg);
@@ -39,6 +40,13 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
                     target.dataset.architectureNode = node.id;
                     target.dataset.readingFocus = `architecture-node:${node.id}`;
                     target.classList.add(`architecture-node--${node.change}`);
+                    // Inline !important сильнее правил с ID, которые Mermaid создаёт из classDef.
+                    // Цвет задаётся токенами приложения, а не оформлением, выбранным моделью.
+                    paint(target, { opacity: '1' });
+                    for (const shape of target.querySelectorAll<SVGElement>('rect, polygon, circle, ellipse, path, line')) {
+                        paint(shape, { fill: 'var(--architecture-node-fill)', stroke: 'var(--architecture-highlight, var(--architecture-node-stroke))',
+                            'stroke-width': 'var(--architecture-highlight-width, 2px)', 'stroke-dasharray': 'var(--architecture-node-dash, none)', 'fill-opacity': '1', 'stroke-opacity': '1' });
+                    }
                     target.setAttribute('role', 'button'); target.setAttribute('tabindex', '0');
                     target.setAttribute('aria-label', `${node.label} · ${t[node.change]}`);
                     const select = () => { setSelected(node.id); };
@@ -54,7 +62,7 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
         const observer = new MutationObserver(draw);
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'data-arcanum', 'style'] });
         return () => { closed = true; revision++; observer.disconnect(); };
-    }, [content, id, t]);
+    }, [content, direction, id, t]);
     useEffect(() => {
         const ids = new Set(blocks.find((block) => block.id === activeBlock)?.nodeIds ?? (selected === null ? [] : [selected]));
         for (const node of root.current?.querySelectorAll<SVGGElement>('[data-architecture-node]') ?? []) {
@@ -66,9 +74,13 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
     const chosen = diagram.nodes.find((node) => node.id === selected);
     const related = blocks.filter((block) => selected !== null && block.nodeIds?.includes(selected));
     return <div className="story-architecture" data-reading="architecture">
+        <div className="story-architecture-toolbar" role="group" aria-label={t.orientation}>
+            <button className="ctl" aria-pressed={direction === 'TB'} onClick={() => { setDirection('TB'); }}>{t.vertical}</button>
+            <button className="ctl" aria-pressed={direction === 'LR'} onClick={() => { setDirection('LR'); }}>{t.horizontal}</button>
+        </div>
         {status === 'loading' ? <Skeleton diagram label={t.pending} /> : null}
         {status === 'error' ? <p className="story-notice" role="alert">{t.renderError}{onRetry === undefined ? null : <button className="ctl" disabled={!connected} onClick={onRetry}>{t.retry}</button>}</p> : null}
-        <div className="story-architecture-scroll" ref={root} aria-label={diagram.title} />
+        <div className="story-architecture-scroll" data-direction={direction} ref={root} aria-label={diagram.title} />
         {chosen === undefined ? null : <aside className="story-architecture-selection" aria-live="polite"><strong>{chosen.label}</strong><span>{t[chosen.change]}</span>{chosen.limitation === null ? null : <p>{chosen.limitation}</p>}
             {related.map((block) => <button className="ctl" key={block.id} data-reading-focus={`architecture-block:${block.id}`} onClick={() => { onVisit?.(block.id); }}>{block.title} →</button>)}
         </aside>}
@@ -76,7 +88,7 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
 }
 
 let drawing: Promise<unknown> = Promise.resolve();
-function renderArchitecture(id: string, diagram: Diagram, element: HTMLElement): Promise<SVGElement> {
+function renderArchitecture(id: string, diagram: Diagram, element: HTMLElement, direction: 'TB' | 'LR'): Promise<SVGElement> {
     const next = drawing.catch(() => undefined).then(async () => {
         const { default: mermaid } = await import('mermaid');
         await document.fonts.ready;
@@ -84,17 +96,27 @@ function renderArchitecture(id: string, diagram: Diagram, element: HTMLElement):
         const color = (name: string) => style.getPropertyValue(name).trim();
         mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
             htmlLabels: false, theme: 'base', fontFamily: style.fontFamily,
-            themeVariables: { primaryColor: color('--surface-panel'), primaryTextColor: color('--text-primary'),
+            themeVariables: { fontSize: style.fontSize, primaryColor: color('--surface-panel'), primaryTextColor: color('--text-primary'),
                 primaryBorderColor: color('--border-standard'), lineColor: color('--text-link-muted'),
                 secondaryColor: color('--accent-surface'), tertiaryColor: color('--surface-panel'),
                 edgeLabelBackground: color('--surface-panel'), clusterBkg: color('--surface-panel'), clusterBorder: color('--border-standard') },
             flowchart: { htmlLabels: false, useMaxWidth: false, nodeSpacing: 35, rankSpacing: 55 } });
-        const result = await mermaid.render(id, diagram.mermaid);
+        const source = diagram.mermaid.replace(/^(flowchart|graph)\s+(TB|TD|BT|LR|RL)\b/, `$1 ${direction}`);
+        const result = await mermaid.render(id, source);
         const svg = new DOMParser().parseFromString(result.svg, 'image/svg+xml').documentElement;
         if (!(svg instanceof SVGElement)) throw new Error('Invalid diagram SVG');
         svg.setAttribute('role', 'group'); svg.setAttribute('aria-label', diagram.title);
+        for (const label of svg.querySelectorAll<SVGElement>('text, tspan, .nodeLabel')) paint(label, { fill: 'var(--text-primary)', color: 'var(--text-primary)', opacity: '1', 'fill-opacity': '1' });
+        for (const edge of svg.querySelectorAll<SVGElement>('.flowchart-link')) paint(edge, { stroke: 'var(--text-link-muted)', 'stroke-opacity': '1' });
+        for (const marker of svg.querySelectorAll<SVGElement>('marker path, marker polygon, marker circle')) paint(marker, { fill: 'var(--text-link-muted)', stroke: 'var(--text-link-muted)' });
+        for (const background of svg.querySelectorAll<SVGElement>('.labelBkg, .edgeLabel rect')) paint(background, { fill: 'var(--surface-panel)', 'background-color': 'var(--surface-panel)', opacity: '1' });
+        for (const cluster of svg.querySelectorAll<SVGElement>('.cluster rect')) paint(cluster, { fill: 'var(--surface-panel-deep)', stroke: 'var(--text-link-muted)' });
         return svg;
     });
     drawing = next;
     return next;
+}
+
+function paint(element: SVGElement, properties: Record<string, string>): void {
+    for (const [property, value] of Object.entries(properties)) element.style.setProperty(property, value, 'important');
 }
