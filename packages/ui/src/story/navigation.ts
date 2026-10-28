@@ -14,10 +14,16 @@ export const initialNavigation: ReaderNavigation = { address: null, guide: null,
 export type ReaderVisit =
     | { kind: 'guide'; address: GuideAddress; epoch: number; location: ReaderNavigation['location']; remember: boolean }
     | { kind: 'diff'; address: DiffAddress; epoch: number; location: ReaderNavigation['location'] }
-    | { kind: 'return'; epoch: number };
+    | { kind: 'return'; epoch: number }
+    | { kind: 'scroll'; snapshotId: string; page: string };
 
 /** Адрес и переход к строкам меняются вместе, после проверки актуальности загрузки. */
 export function visitReader(state: ReaderNavigation, visit: ReaderVisit): ReaderNavigation {
+    if (visit.kind === 'scroll') {
+        if (state.address?.kind !== 'guide' || state.address.snapshotId !== visit.snapshotId || state.address.page === visit.page) return state;
+        const address: GuideAddress = { kind: 'guide', snapshotId: visit.snapshotId, page: visit.page };
+        return { ...state, address, guide: address, resume: address };
+    }
     if (visit.kind === 'return') return { ...state, address: state.guide, location: null, epoch: visit.epoch };
     if (visit.kind === 'diff') return { ...state, address: visit.address, location: visit.location, epoch: visit.epoch };
     const sameSnapshot = state.guide?.snapshotId === visit.address.snapshotId;

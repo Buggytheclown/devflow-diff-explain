@@ -84,10 +84,10 @@ const guided = guidedStoryFixture();
 function GuidedGallery({ page, pending = false, readableView = false }: { page: string; pending?: boolean; readableView?: boolean }) {
     const base = readableView ? readable.snapshot : guided.snapshot;
     const view = pending ? { ...base, stops: base.stops.map((stop) => ({ ...stop, status: 'filling' as const, paragraph: null, guidedFiles: stop.guidedFiles?.map((file) => ({ ...file, explanation: null, annotations: [] })) })) } : base;
-    return <main className="story-main story-main--diff"><GuidedDocument snapshot={view} page={page} onVisit={noop} onAsk={noop} renderFile={(id) => {
+    return <main className="story-main story-main--diff"><GuidedDocument snapshot={view} page={page} onVisit={noop} onAsk={noop} renderFile={(id, description) => {
         const file = guided.diff.files.find((entry) => entry.fileId === id);
         const notes = view.stops.flatMap((stop) => stop.guidedFiles ?? []).find((entry) => entry.fileId === id)?.annotations;
-        return file === undefined ? null : <ReadFile file={file} diffId={guided.diff.diffId} data={data} token="gallery" current={false} annotations={notes} onSelect={noop} onLayout={noop} />;
+        return file === undefined ? null : <ReadFile description={description} file={file} diffId={guided.diff.diffId} data={data} token="gallery" current={false} annotations={notes} onSelect={noop} onLayout={noop} />;
     }} /></main>;
 }
 const readable = readableStoryFixture();
@@ -110,6 +110,7 @@ export const GUIDED_STORY_STATES: readonly GalleryState[] = [
     { id: 'readable-flow-unavailable', group: 'По диффу', title: 'Схема недоступна', render: () => <FlowDiagram flow={{ status: 'unavailable', reason: 'Не удалось подтвердить общий поток. Рассказ и дифф доступны.' }} /> },
     { id: 'guided-description', group: 'По диффу', title: 'Описание ПРа и маршрут', render: () => <GuidedGallery page="intro" /> },
     { id: 'guided-block', group: 'По диффу', title: 'Смысловой блок · порядок файлов', render: () => <GuidedGallery page="guided-2" /> },
+    { id: 'guided-continuous', group: 'По диффу', title: 'Непрерывный разбор · блоки и все полные диффы', render: () => <GuidedGallery page="guided-1" /> },
     { id: 'guided-file', group: 'По диффу', title: 'Файл · полный дифф и пояснение важных строк', render: () => <GuidedGallery page={`file:${guided.first.fileId}`} /> },
     { id: 'guided-pending', group: 'По диффу', title: 'Дифф доступен до готовности пояснений', render: () => <GuidedGallery page={`file:${guided.first.fileId}`} pending /> },
 ];

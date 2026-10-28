@@ -30,7 +30,7 @@ export function FlowDiagram({ flow, onRetry, connected = false, blocks, activeBl
     if (flow.status === 'pending') return <div data-reading="flow-pending"><Skeleton diagram label={t.pending} /></div>;
     if (flow.status === 'not_applicable') return <p className="story-notice">{pt.diagramNotNeeded}{flow.reason}</p>;
     if (flow.status === 'unavailable') return <div className="story-notice" data-reading="flow-unavailable"><p>{flow.reason}</p>{onRetry === undefined ? null : <><button className="ctl" disabled={!connected} onClick={onRetry}>{pt.retryDiagram}</button>{connected ? null : <small>{pt.connectToRetry}</small>}</>}</div>;
-    const { diagram, contexts } = flow;
+    const { diagram } = flow;
     const rows: (typeof diagram.edges)[] = [];
     for (const edge of diagram.edges) {
         const row = rows.at(-1);
@@ -53,9 +53,6 @@ export function FlowDiagram({ flow, onRetry, connected = false, blocks, activeBl
             {node(row[0]?.from ?? '')}{row.map((edge, j) => <Fragment key={j}><div className={`story-flow-arrow story-flow--${edge.change}`}><span>{edge.label}</span><span className="story-flow-line" aria-hidden="true">→</span><small>{t[edge.kind]} · {t[edge.change]}</small></div>{node(edge.to)}</Fragment>)}
         </div>)}</div>
         {diagram.nodes.filter((entry) => !diagram.edges.some((edge) => edge.from === entry.id || edge.to === entry.id)).map((entry) => <div key={entry.id}>{node(entry.id)}</div>)}</>}
-        <details className="story-flow-sources"><summary>{t.sources}</summary>{[...diagram.nodes, ...diagram.edges].map((item, i) => <div key={i}><strong>{item.label}</strong>{item.limitation === null ? null : <p>{item.limitation}</p>}{item.sources.map((source, j) => {
-            const context = source.kind === 'context' ? contexts.find((entry) => entry.id === source.id) : undefined;
-            return <div key={j}>{source.kind === 'patch' ? <code>{source.path} · {source.side === 'old' ? '−' : '+'}{String(source.start)}–{String(source.end)}</code> : context === undefined ? null : <><code>{context.path}:{String(context.start)}–{String(context.end)} @ {context.revision}</code><pre>{context.text}</pre></>}</div>;
-        })}</div>)}</details>
+
     </section>;
 }

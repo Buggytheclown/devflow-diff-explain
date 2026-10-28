@@ -233,3 +233,13 @@ body:has(.story-app) { min-width: 0; }
 .story-preparation-complete summary { cursor: pointer; color: var(--text-link-muted); }
 .story-preparation-popover { position: absolute; top: 100%; left: var(--space-page); padding: 1rem; border: 1px solid var(--border-standard); border-radius: .4rem; background: var(--surface-panel); box-shadow: var(--shadow-popover); }
 .story-preparation--ready .story-previous { margin-left: auto; }
+
+/* Весь маршрут читается одной лентой; имя и пояснение файла принадлежат одной карточке. */
+.story-continuous-block { margin: 0 0 3rem; }
+.story-continuous-block > h2 { margin: 0 0 .8rem; scroll-margin-top: calc(var(--story-top) + 12px); }
+.story-continuous-block > .md-blocks { max-width: 56rem; font-size: var(--font-size-body); line-height: 1.7; margin-bottom: 1.5rem; }
+.story-file-description { margin: 0; padding: .8rem 1.1rem; border-bottom: 1px solid var(--border-standard); border-left: 3px solid var(--accent); background: var(--surface-panel); font-size: var(--font-size-body); line-height: 1.6; }
+.story-code .story-file-description p { padding: 0; margin: .3rem 0; }
+.story-file-description .story-skeleton { min-height: 4rem; padding: 0; }
+.story-file-description .story-example { margin-bottom: 0; }
+.story-guided-file { scroll-margin-top: calc(var(--story-top) + 12px); }

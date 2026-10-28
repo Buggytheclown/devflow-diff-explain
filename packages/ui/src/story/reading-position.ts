@@ -9,16 +9,27 @@ export function readingTop(): number {
     return bar + 12;
 }
 
+export function readingFocus(element: HTMLElement): string | undefined {
+    if (element.dataset.readingFocus !== undefined) return element.dataset.readingFocus;
+    if (!element.matches('.diff-row[data-key]')) return undefined;
+    return qualified(element, `line:${element.dataset.key ?? ''}`);
+}
+
+function qualified(element: HTMLElement, address: string): string {
+    const id = element.closest<HTMLElement>('[data-reading-file]')?.dataset.readingFile;
+    return id === undefined ? address : `file:${id}/${address}`;
+}
+
 function addressed(root: HTMLElement): { element: HTMLElement; address: string }[] {
     return [...root.querySelectorAll<HTMLElement>('[data-reading], .diff-row[data-key]')].map((element) => ({
-        element, address: element.dataset.reading ?? `line:${element.dataset.key ?? ''}`,
+        element, address: qualified(element, element.dataset.reading ?? `line:${element.dataset.key ?? ''}`),
     }));
 }
 
 export function capturePosition(root: HTMLElement): ReadingPosition | null {
     const top = readingTop();
     const all = addressed(root);
-    const entries = all.some((entry) => entry.address.startsWith('line:')) ? all.filter((entry) => entry.address !== 'file') : all;
+    const entries = all.some((entry) => entry.element.matches('.diff-row')) ? all.filter((entry) => entry.element.dataset.reading !== 'file') : all;
     const target = entries.find(({ element }) => element.getBoundingClientRect().bottom > top) ?? entries.at(-1);
     return target === undefined ? null : { address: target.address, offset: target.element.getBoundingClientRect().top - top };
 }
@@ -37,8 +48,19 @@ export function restorePosition(root: HTMLElement, position: ReadingPosition): b
 
 export function revealCode(root: HTMLElement, location: CodeLocation): boolean {
     const row = [...root.querySelectorAll<HTMLElement>('.diff-row[data-key]')].find((element) =>
-        lineKeyNumbers(element.dataset.key ?? '')?.[location.side] === location.start);
+        lineKeyNumbers(element.dataset.key ?? '')?.[location.side] === location.start && (() => {
+            const file = element.closest<HTMLElement>('[data-reading-file]');
+            return file === null || (location.side === 'old' ? file.dataset.fileOldPath : file.dataset.filePath) === location.path;
+        })());
     if (row === undefined) return false;
     window.scrollBy({ top: row.getBoundingClientRect().top - readingTop(), behavior: 'instant' });
+    return true;
+}
+
+/** Оглавление прокручивает ту же ленту; файл и строки не перемонтируются. */
+export function revealGuidePage(root: HTMLElement, page: string): boolean {
+    const target = [...root.querySelectorAll<HTMLElement>('[data-guide-page]')].find((element) => element.dataset.guidePage === page);
+    if (target === undefined) return false;
+    window.scrollBy({ top: target.getBoundingClientRect().top - readingTop(), behavior: 'instant' });
     return true;
 }

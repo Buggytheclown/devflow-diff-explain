@@ -1,4 +1,5 @@
 import type { CodeLocation, FileDiff, GuidedAnnotation, UiChatAskAnchor } from '@sherpa/protocol';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { parseStopBlocks } from '@sherpa/protocol/markdown';
@@ -15,8 +16,8 @@ import type { StoryData } from './data.js';
 import { selectedCode, withCodeQuote } from './selected-code.js';
 import { useLineRange } from './line-range.js';
 
-export function ReadFile({ file, diffId, data, token, current, navigation, anchor = null, onSelect, onLayout, onMediaLayout, annotations = [], onAttach }: {
-    onAttach?: (() => void) | undefined;
+export function ReadFile({ file, diffId, data, token, current, navigation, anchor = null, onSelect, onLayout, onMediaLayout, annotations = [], onAttach, description }: {
+    onAttach?: (() => void) | undefined; description?: ReactNode;
     file: FileDiff; diffId: string; data: StoryData; token: string; current: boolean;
     annotations?: readonly GuidedAnnotation[] | undefined;
     navigation?: CodeLocation | undefined; anchor?: UiChatAskAnchor | null; onSelect: (anchor: UiChatAskAnchor, text: string | null) => void; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
@@ -69,8 +70,8 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
         select(ranges.choose(side, line, extend));
         return true;
     };
-    return <div className="story-code file-card" onLoadCapture={onMediaLayout} data-reading="file">
-        <header><code>{file.oldPath != null && file.oldPath !== file.path ? `${file.oldPath} → ` : ''}{file.path}</code><span className="story-file-stats"><span className="story-file-added">+{file.additions}</span> / <span className="story-file-deleted">−{file.deletions}</span></span>
+    return <div className="story-code file-card" onLoadCapture={onMediaLayout} data-reading="file" data-reading-file={file.fileId} data-file-path={file.path} data-file-old-path={file.oldPath ?? file.path}>
+        <header tabIndex={-1} data-reading-focus={`file:${file.fileId}`}><code>{file.oldPath != null && file.oldPath !== file.path ? `${file.oldPath} → ` : ''}{file.path}</code><span className="story-file-stats"><span className="story-file-added">+{file.additions}</span> / <span className="story-file-deleted">−{file.deletions}</span></span>
             {onAttach === undefined ? null : <button className="ctl" onClick={onAttach}>{t.attachFile}</button>}
             {current ? <button className="ctl" onClick={() => {
                 void fetchFileContent(token, file.fileId, diffId).then((content) => {
@@ -82,6 +83,7 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
                 }, (reason: unknown) => { if (mounted.current) { layout.current(); setError(String(reason)); } });
             }}>{t.expand}</button> : null}
         </header>
+        {description === undefined ? null : <div className="story-file-description">{description}</div>}
         {error === null ? null : <p role="alert">{error} <button className="ctl" onClick={() => { setAttempt((n) => n + 1); }}>{t.retrySource}</button></p>}
         <div onMouseDownCapture={(event) => {
             if (event.button !== 0 || !event.shiftKey || !selectLine(event.target, true)) return;

@@ -69,10 +69,10 @@ test('два этапа: контрастная вертикальная арх�
         });
     }
     await page.locator('.story-architecture-selection button').first().click();
-    await expect(page.locator('.story-guided h2')).toHaveText(fixture.outline.stops[0]?.title ?? '');
+    await expect(page.locator('.story-continuous-block > h2')).toHaveText(fixture.outline.stops.map((block) => block.title));
     await expect(page.locator('.story-guided')).toContainText(fixture.outline.stops[0]?.paragraph ?? '');
-    await page.locator('.story-file-list button').first().click();
-    await expect(page.locator('.story-code header code')).toHaveText(fixture.first.path);
+    await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
+    await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);
     await expect(page.locator('.story-code .diff-row')).not.toHaveCount(0);
     const rows = await page.locator('.story-code .diff-row').allTextContents();
     const files = await server.worker.next(); expect(files.type).toBe('route.section');
@@ -83,11 +83,11 @@ test('два этапа: контрастная вертикальная арх�
     await expect(page.locator('.story-inline-note')).not.toHaveCount(0);
     expect(await page.locator('.story-code .diff-row').allTextContents()).toEqual(rows);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.story-code header code')).toHaveText(fixture.first.path);
+    await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);
     await page.locator('.story-topbar').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
     await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
     await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
-    await expect(page.locator('.story-code header code')).toHaveText(fixture.first.path);
+    await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);
 });
 
 test('ошибка Mermaid не даёт 100%; повтор схемы сохраняет готовые блоки и файлы', async ({ page, launchSherpa }) => {

@@ -4,13 +4,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CodeLocation } from '@sherpa/protocol';
 
 import type { ReadingPosition } from './reading-position.js';
-import { capturePosition, restorePosition, revealCode } from './reading-position.js';
+import { capturePosition, restorePosition, revealCode, revealGuidePage, readingFocus } from './reading-position.js';
 import type { ReadingRequest, ReturnPoint, StoryMemory } from './reading-state.js';
 import { storyMemory, returnForSnapshot } from './reading-state.js';
 import { readPositions, writeCache } from './reading-cache.js';
 
 /** Память принадлежит вкладке, а не удаляемым компонентам документа и файла. */
-export function useReadingSession(root: RefObject<HTMLElement | null>, scope: string, storyKey: string | null) {
+export function useReadingSession(root: RefObject<HTMLElement | null>, scope: string, storyKey: string | null, initialPage?: string) {
     const focuses = useRef(new Map<string, string>());
     const [initialPositions] = useState(() => new Map<string, ReadingPosition>(readPositions()));
     const positions = useRef(initialPositions);
@@ -31,7 +31,7 @@ export function useReadingSession(root: RefObject<HTMLElement | null>, scope: st
         if (root.current === null || pending.current !== null) return;
         const active = document.activeElement;
         if (active instanceof HTMLElement && root.current.contains(active)) {
-            const address = active.dataset.readingFocus ?? (active.matches('.diff-row[data-key]') ? `line:${active.dataset.key ?? ''}` : undefined);
+            const address = readingFocus(active);
             if (address !== undefined) focuses.current.set(scope, address);
         }
         const position = capturePosition(root.current);
@@ -43,9 +43,9 @@ export function useReadingSession(root: RefObject<HTMLElement | null>, scope: st
         }
     };
     const begin = (): number => { capture(); pending.current = null; loading.current = true; return ++epoch.current; };
-    const restore = (target: string, requestEpoch: number, focus: string | null = null, restoreFocus = true): void => {
+    const restore = (target: string, requestEpoch: number, focus: string | null = null, restoreFocus = true, memoryKey = target): void => {
         loading.current = false;
-        pending.current = { kind: 'restore', epoch: requestEpoch, scope: target, position: positions.current.get(target) ?? null, focus: restoreFocus ? focuses.current.get(target) ?? focus : null };
+        pending.current = { kind: 'restore', epoch: requestEpoch, scope: target, position: positions.current.get(memoryKey) ?? null, focus: restoreFocus ? focuses.current.get(memoryKey) ?? focus : null };
         redraw((n) => n + 1);
     };
     // Догрузка и смена оформления сохраняют место, но не отбирают текущий фокус.
@@ -54,20 +54,20 @@ export function useReadingSession(root: RefObject<HTMLElement | null>, scope: st
     useLayoutEffect(() => {
         if (previousStory.current !== storyKey) {
             previousStory.current = storyKey;
-            pending.current = { kind: 'restore', scope, epoch: ++epoch.current, position: positions.current.get(scope) ?? null, focus: null };
+            const position = positions.current.get(scope);
+            pending.current = position === undefined && initialPage !== undefined && initialPage !== 'intro' ? { kind: 'jump', scope, epoch: ++epoch.current, page: initialPage, focus: null } : { kind: 'restore', scope, epoch: ++epoch.current, position: position ?? null, focus: null };
         }
         const request = pending.current;
         if (request?.scope !== scope || root.current === null || request.epoch !== epoch.current) return;
-        if (root.current.querySelector('[data-reading-wait]') !== null) return;
         const applied = request.kind === 'code' ? revealCode(root.current, request.location)
-            : request.position === null ? (window.scrollTo({ top: 0, behavior: 'instant' }), true) : restorePosition(root.current, request.position);
-        if (!applied && root.current.querySelector('[role="alert"]') === null) return;
+            : request.kind === 'jump' ? revealGuidePage(root.current, request.page) : request.position === null ? (window.scrollTo({ top: 0, behavior: 'instant' }), true) : restorePosition(root.current, request.position);
+        if (!applied && (root.current.querySelector('[data-reading-wait]') !== null || root.current.querySelector('[role="alert"]') === null)) return;
         pending.current = null;
         const actual = capturePosition(root.current);
         if (actual !== null) positions.current.set(scope, actual);
         if (request.focus !== null) {
             const target = [...root.current.querySelectorAll<HTMLElement>('[data-reading-focus], .diff-row[data-key]')]
-                .find((element) => (element.dataset.readingFocus ?? `line:${element.dataset.key ?? ''}`) === request.focus);
+                .find((element) => readingFocus(element) === request.focus);
             // Программный возврат фокуса не должен заменять сохранённое выделение одним рядом.
             if (target !== undefined) { target.dataset.restoringFocus = 'true'; target.focus({ preventScroll: true }); delete target.dataset.restoringFocus; }
         }
@@ -88,7 +88,13 @@ export function useReadingSession(root: RefObject<HTMLElement | null>, scope: st
         window.addEventListener('resize', resize);
         return () => { window.removeEventListener('resize', resize); };
     });
-    return { saved, origin: returnForSnapshot(origin, storyKey), setOrigin, capture, begin, restore, preserve, relayout,
+    return { saved,
+        bookmark: (key: string) => { capture(); const position = positions.current.get(scope); if (position !== undefined) positions.current.set(key, position); const focus = focuses.current.get(scope); if (focus !== undefined) focuses.current.set(key, focus); },
+        jump: (target: string, id: number, page: string) => {
+            loading.current = false;
+            pending.current = { kind: 'jump', epoch: id, scope: target, page, focus: page.startsWith('file:') ? page : `block:${page}` }; redraw((n) => n + 1);
+        },
+        origin: returnForSnapshot(origin, storyKey), setOrigin, capture, begin, restore, preserve, relayout,
         expanded: storyKey === null ? undefined : expansions[storyKey],
         isPending: () => pending.current !== null || loading.current,
         isCurrent: (id: number) => id === epoch.current,

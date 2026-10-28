@@ -6,7 +6,7 @@ export interface StoryMemory { position: ReadingPosition | null; focus: string |
 export interface DiffMemory { fileId: string | null; query: string }
 export interface ReturnPoint { storyKey: string; sectionId: string; focus: string | null }
 export type ReadingRequest = { epoch: number; scope: string; focus: string | null } & (
-    { kind: 'restore'; position: ReadingPosition | null } | { kind: 'code'; location: CodeLocation }
+    { kind: 'restore'; position: ReadingPosition | null } | { kind: 'code'; location: CodeLocation } | { kind: 'jump'; page: string }
 );
 
 export function storyMemory(): StoryMemory { return { position: null, focus: null }; }
