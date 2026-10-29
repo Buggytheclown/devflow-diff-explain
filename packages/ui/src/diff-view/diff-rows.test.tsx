@@ -51,6 +51,13 @@ function renderGaps(mode: 'unified' | 'split', model = GAP_MODEL): HTMLElement {
     return host;
 }
 
+it('заголовки ханков сохраняют диапазоны, стороны и число строк диффа', () => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(<DiffRows showHunkHeaders model={GAP_MODEL} mode="unified" content={GAP_CONTENT} selection={null} />);
+    expect([...host.querySelectorAll('.diff-hunk-header')].map((node) => node.textContent)).toEqual(['@@ -21,1 +21,1 @@', '@@ -51,1 +51,1 @@']);
+    expect([...host.querySelectorAll('.diff-row')].map((node) => node.getAttribute('data-key'))).toEqual(['d21', 'a21', 'd51', 'a51']);
+});
+
 describe('категории подсветки', () => {
     it.each(['unified', 'split'] as const)('режим %s передаёт одну категорию имени на удалённой и добавленной строках', (mode) => {
         const model = parseFileDiff({

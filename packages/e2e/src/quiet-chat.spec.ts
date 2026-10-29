@@ -9,7 +9,7 @@ test('весь PR по умолчанию; явный файл → строки 
     await server.worker.register('codex', 'ru');
     await page.locator('.story-topbar').getByRole('button', { name: 'Дифф', exact: true }).click();
     await expect(page.locator('.story-code .diff-row')).not.toHaveCount(0);
-    const originalPath = await page.locator('.story-code header code').innerText();
+    const originalPath = await page.locator('.story-code header code').textContent() ?? '';
     await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.locator('.story-chat-context,.chat-panel__empty')).toHaveCount(0);
     await expect(page.locator('.chat-panel__header')).toContainText('Чат');
@@ -24,7 +24,7 @@ test('весь PR по умолчанию; явный файл → строки 
     await page.locator('.story-code header').getByRole('button', { name: 'В чат', exact: true }).click();
     await expect(page.locator('.chat-panel__context-label')).toHaveText(originalPath);
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Зачем изменили этот файл?');
-    await page.locator('.story-nav > button').nth(1).click();
+    await page.locator('.story-nav-file').nth(1).click();
     await expect(page.locator('.chat-panel__context-label')).toHaveText(originalPath);
     await page.reload();
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toHaveValue('Зачем изменили этот файл?');

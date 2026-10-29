@@ -73,7 +73,7 @@ test('рассказ → явный вопрос → ответ; старое р
     await page.getByRole('button', { name: 'Дифф', exact: true }).click();
     await expect(page.locator('.story-code')).toBeVisible();
     const columns = await page.locator('.diff-row').first().evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' '));
-    expect(columns).toHaveLength(4);
+    expect(columns).toHaveLength(3);
     expect(Number.parseFloat(columns[0] ?? '')).toBeLessThan(100);
     await expect(page.locator('.diff-row__comment, .thread-marker, .comment-composer')).toHaveCount(0);
     await page.keyboard.press('c');

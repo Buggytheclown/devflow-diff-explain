@@ -25,6 +25,15 @@ test('единая лента от первого до последнего фа
         await expect(card.locator('header')).toBeInViewport();
         await expect(page.locator('.story-nav-file[aria-current=page]')).toBeInViewport();
     }
+    const first = ordered[0]; if (first === undefined) throw new Error('Need a first file');
+    const firstLink = page.locator('.story-nav').getByRole('button', { name: first.path, exact: true });
+    const folder = firstLink.locator('xpath=ancestor::details[1]');
+    await folder.locator(':scope > summary').click(); await expect(firstLink).toBeHidden();
+    const firstCard = page.locator(`[data-reading-file="${first.fileId}"]`);
+    const delta = await firstCard.evaluate((element) => element.getBoundingClientRect().top - ((document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0) + 12));
+    await page.mouse.move(600, 200); await page.mouse.wheel(0, delta);
+    await expect(firstLink).toHaveAttribute('aria-current', 'page');
+    await expect(firstLink).toBeInViewport(); await expect(folder).toHaveAttribute('open', '');
     const target = ordered[1]; if (target === undefined) throw new Error('Need multiple files');
     const card = page.locator(`[data-reading-file="${target.fileId}"]`);
     await page.locator('.story-nav').getByRole('button', { name: target.path, exact: true }).click();

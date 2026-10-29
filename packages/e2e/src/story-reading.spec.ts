@@ -92,7 +92,7 @@ test('новый push и поздняя загрузка не подменяют
     await startStory(page, server);
     await page.locator('.story-document section').nth(1).getByRole('button', { name: 'Показать изменение', exact: true }).click();
     await page.locator('.story-document section').nth(1).getByRole('button', { name: 'Открыть в диффе ↗', exact: true }).click();
-    const oldPath = await page.locator('.story-code header code').innerText();
+    const oldPath = await page.locator('.story-code header code').textContent() ?? '';
     const oldCommit = await page.locator('.story-provenance').innerText();
     await advanceIteration(page, server);
     await expect(page.getByRole('button', { name: 'Открыть новый дифф', exact: true })).toBeVisible();
@@ -150,7 +150,7 @@ test('ошибка источника повторяется локально б
     await intro.getByRole('button', { name: 'Повторить загрузку', exact: true }).click();
     await expect(intro.locator('.story-source-line')).not.toHaveCount(0);
     expect(writes).toEqual([]);
-    await page.route('**/api/ui/review/route', async (route) => {
+    const legacyResponse: Parameters<Page['route']>[1] = async (route) => {
         const response = await route.fetch();
         const result = await response.json() as { route: { snapshot: Record<string, unknown> | null } };
         if (result.route.snapshot !== null) {
@@ -159,7 +159,8 @@ test('ошибка источника повторяется локально б
             for (const stop of stops) { delete stop.storyEvidence; stop.anchors = [{ ...evidenceSource, collapsed: false, fileId: fixtureIteration('medium').diff.files.find((file) => file.path === evidenceSource.path)?.fileId }]; }
         }
         await route.fulfill({ response, json: result });
-    });
+    };
+    await page.route('**/api/ui/review/route', legacyResponse);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.getByText(/Этот рассказ создан без связей/)).toHaveCount(1);
     await expect(page.locator('.story-source-line')).toHaveCount(0);
@@ -167,14 +168,17 @@ test('ошибка источника повторяется локально б
     await expect(page.locator('.story-source-line')).not.toHaveCount(0);
     const stateResponse = await page.request.get(new URL('/api/ui/state', server.url).href, { headers: sherpaAuth(server) });
     const state = await stateResponse.json() as Record<string, unknown>;
-    // Закрываем живой SSE до установки его подмены: смена перехватчика при открытом
-    // потоке может заблокировать следующую навигацию Chromium.
-    await page.goto('about:blank');
-    await page.route('**/api/ui/events?*', (route) => route.fulfill({ contentType: 'text/event-stream', body: `event: state\ndata: ${JSON.stringify({ ...state, worker: { kind: 'never' } })}\n\n` }));
-    await page.goto(server.url, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('Агент не подключён. Сохранённый рассказ и дифф доступны для чтения.')).toBeVisible();
-    await page.getByRole('button', { name: 'Фрагменты кода', exact: true }).first().click();
-    await expect(page.locator('.story-source-line')).not.toHaveCount(0);
+    // Подмена SSE устанавливается до открытия отдельной страницы: навигация
+    // исходной вкладки с живым перехваченным потоком может зависнуть в Chromium.
+    const offline = await page.context().newPage();
+    try {
+        await offline.route('**/api/ui/review/route', legacyResponse);
+        await offline.route('**/api/ui/events?*', (route) => route.fulfill({ contentType: 'text/event-stream', body: `event: state\ndata: ${JSON.stringify({ ...state, worker: { kind: 'never' } })}\n\n` }));
+        await offline.goto(server.url, { waitUntil: 'domcontentloaded' });
+        await expect(offline.getByText('Агент не подключён. Сохранённый рассказ и дифф доступны для чтения.')).toBeVisible();
+        await offline.getByRole('button', { name: 'Фрагменты кода', exact: true }).first().click();
+        await expect(offline.locator('.story-source-line')).not.toHaveCount(0);
+    } finally { await offline.close(); }
 });
 
 test('источники показывают точные стороны, отдельный файл и картинку; раскрытие не меняет вопрос', async ({ page, launchSherpa }) => {

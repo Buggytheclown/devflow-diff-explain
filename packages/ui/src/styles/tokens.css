@@ -849,7 +849,7 @@ html[data-textsize='l'] {
     --tour-skip-underline: #5e6673;
 
     /* --- Дифф и статусы --- */
-    --diff-add-bg: rgba(151, 234, 151, 0.1);
+    --diff-add-bg: #2f3e37;
     --diff-add-text: #50c987;
     --diff-add-text-strong: #68d99b;
     --diff-add-gutter: #e0e0e1;
@@ -857,7 +857,7 @@ html[data-textsize='l'] {
     --diff-del-text: #ff6969;
     --diff-del-text-strong: #ff9494;
     --diff-del-gutter: #e0e0e1;
-    --diff-add-gutter-bg: #425247;
+    --diff-add-gutter-bg: #30533f;
     --diff-del-gutter-bg: #56464c;
     --read-fill: #3a8f66;
     --viewed-surface: rgba(91, 181, 87, 0.15);

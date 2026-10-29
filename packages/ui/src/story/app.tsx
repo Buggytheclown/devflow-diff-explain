@@ -16,6 +16,8 @@ import { ReadFile } from './read-file.tsx';
 import { FloatingChat } from './floating-chat.js';
 import { ChatLauncher } from './chat-launcher.js';
 import { useChatNotifications } from './use-chat-notifications.js';
+import { GuidedNavigation } from './guided-navigation.js';
+import { FileTree } from './file-tree.js';
 import { GuidedDocument } from './guided-document.tsx';
 import { StoryDocument } from './story-document.tsx';
 import { useGuideScroll } from './use-guide-scroll.js';
@@ -254,9 +256,9 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             onOpenLatest={route?.snapshot == null ? undefined : () => { const latest = route.snapshot; if (latest === null) return; const epoch = reading.begin(); selectSnapshot(latest.snapshotId); visit({ kind: 'guide', address: { kind: 'guide', snapshotId: latest.snapshotId, page: 'intro' }, epoch, location: null, remember: false }); reading.restore(storyScope(latest.snapshotId, stream.state?.prKey ?? '', 'intro') ?? 'empty', epoch, 'intro'); session.setView('route'); }} />
         <aside className={`story-nav${filesOpen ? ' story-nav--open' : ''}`} aria-label={t.contents} hidden={intro && !filesOpen}>
             {showDiff ? <><input aria-label={t.fileSearch} placeholder={t.fileSearch} value={query} onChange={(event) => { setQuery(event.target.value); if (diff !== null) data.updateView(diff.diffId, { query: event.target.value }); }} />
-                {files.map((file) => <button className="ctl" key={file.fileId} aria-current={selectedFile?.fileId === file.fileId ? 'page' : undefined} onClick={() => { void goDiff(diffVersion, file.fileId); }}>{file.path}</button>)}
+                <FileTree files={files.map((file) => ({ ...file, explanations: 0 }))} activeFileId={selectedFile?.fileId ?? null} onVisit={(fileId) => { void goDiff(diffVersion, fileId); }} />
                 {files.length === 0 ? <p>{diff?.files.length === 0 ? t.noFiles : t.noMatch}</p> : null}</>
-                : guided ? <><button className="ctl" aria-current={guidePage === 'intro' ? 'page' : undefined} onClick={() => { void goGuide('intro'); }}>{gt.description}</button>{snapshot.tourOrder.map((id, index) => { const stop = snapshot.stops.find((entry) => entry.id === id); return stop === undefined ? null : <div className="story-nav-block" key={id}><button className="ctl" aria-current={guidePage === id ? 'page' : undefined} onClick={() => { void goGuide(id); }}>{index + 1}. {stop.title}</button>{stop.guidedFiles?.map((file) => <button className="ctl story-nav-file" key={file.fileId} aria-label={file.path} title={file.path} aria-current={guidePage === `file:${file.fileId}` ? 'page' : undefined} onClick={() => { void goGuide(`file:${file.fileId}`); }}><span>{file.path.split('/').at(-1)}</span><small>{file.path.slice(0, Math.max(0, file.path.lastIndexOf('/')))}</small></button>)}</div>; })}</> : <><p>{t.contents}</p>{snapshot?.tourOrder.map((id) => {
+                : guided ? <GuidedNavigation snapshot={snapshot} diff={diff} page={guidePage} onVisit={(page) => { void goGuide(page); }} /> : <><p>{t.contents}</p>{snapshot?.tourOrder.map((id) => {
                     const stop = snapshot.stops.find((entry) => entry.id === id);
                     return stop === undefined ? null : <a key={id} href={`#section-${id}`} onClick={(event) => { event.preventDefault(); reading.cancel(); document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth' }); }}>{stop.title}</a>;
                 })}</>}

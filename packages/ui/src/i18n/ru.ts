@@ -34,6 +34,8 @@ export const ru = {
     'command.aria': 'Команда запуска Шерпы',
 
     'chat.title': 'Чат',
+    'files.explanations': (count: number) => `Пояснений ЛЛМ: ${num(count)}`,
+    'files.changes': (added: number | null, deleted: number | null) => `Добавлено строк: ${added === null ? 'ещё не загружено' : num(added)}; удалено: ${deleted === null ? 'ещё не загружено' : num(deleted)}`,
     'chat.launcher.queued': 'В очереди',
     'chat.launcher.paused': 'Нужен агент',
     'chat.launcher.unread': (count: number) => `Непрочитанных ответов: ${num(count)}`,

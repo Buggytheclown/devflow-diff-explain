@@ -31,6 +31,8 @@ export const en: Dictionary = {
     'command.aria': 'Sherpa launch command',
 
     'chat.title': 'Chat',
+    'files.explanations': (count: number) => `LLM explanations: ${String(count)}`,
+    'files.changes': (added: number | null, deleted: number | null) => `Added lines: ${added === null ? 'not loaded yet' : String(added)}; deleted: ${deleted === null ? 'not loaded yet' : String(deleted)}`,
     'chat.launcher.queued': 'Queued',
     'chat.launcher.paused': 'Agent needed',
     'chat.launcher.unread': (count: number) => `Unread replies: ${String(count)}`,

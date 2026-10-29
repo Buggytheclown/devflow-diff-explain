@@ -2,6 +2,7 @@ import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixtu
 import type { ReactNode } from 'react';
 import { FloatingChat } from '../../story/floating-chat.js';
 import { ChatLauncher } from '../../story/chat-launcher.js';
+import { GuidedNavigation } from '../../story/guided-navigation.js';
 import type { RouteSnapshot, StorySource } from '@sherpa/protocol';
 
 import { createStoryData } from '../../story/data.js';
@@ -104,6 +105,7 @@ function GuidedGallery({ page, pending = false, readableView = false }: { page: 
 const readable = readableStoryFixture();
 const architecture = architectureStoryFixture();
 export const GUIDED_STORY_STATES: readonly GalleryState[] = [
+    { id: 'guided-arcanum-tree', group: 'По диффу', title: 'Смысловые заголовки и дерево каталогов · строки и пояснения', render: () => <aside className="story-nav" style={{ position: 'static', width: 420, height: 720 }}><GuidedNavigation snapshot={architecture.snapshot} diff={architecture.diff} page={`file:${architecture.first.fileId}`} onVisit={noop} /></aside> },
     { id: 'overview-compact-ready', group: 'По диффу', title: 'Готовность · компактная строка с подробностями', render: () => <Preparation route={{ phase: 'ready', smallPr: false, snapshot: architecture.snapshot, failure: null, stale: null }} connected /> },
     { id: 'architecture-contrast', group: 'По диффу', title: 'Архитектура · контраст при конфликтующих цветах модели', render: () => <main className="story-main"><FlowDiagram flow={{ status: 'ready', contexts: [], diagram: { ...architecture.diagram, mermaid: architecture.diagram.mermaid + '\nclassDef faint fill:#ffffff,color:#eeeeee,stroke:#ffffff\nclass request,handler,rule,saved,rejected faint' } }} /></main> },
     { id: 'architecture-overview', group: 'По диффу', title: 'Архитектура · развилки, группы и связь с блоками', render: () => <main className="story-main"><GuidedDocument snapshot={architecture.snapshot} page="intro" onVisit={noop} onAsk={noop} renderFile={() => null} /></main> },

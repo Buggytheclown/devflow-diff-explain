@@ -15,6 +15,9 @@ import { storyCopy } from '../i18n/story.js';
 import type { StoryData } from './data.js';
 import { selectedCode, withCodeQuote } from './selected-code.js';
 import { useLineRange } from './line-range.js';
+import { FileGlyph } from './file-glyph.js';
+
+const changeMarks = { add: 'A', modify: 'M', delete: 'D', move: 'R', copy: 'C', conflict: '!' } as const;
 
 export function ReadFile({ file, diffId, data, token, current, navigation, anchor = null, onSelect, onLayout, onMediaLayout, annotations = [], onAttach, description }: {
     onAttach?: (() => void) | undefined; description?: ReactNode;
@@ -70,10 +73,11 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
         select(ranges.choose(side, line, extend));
         return true;
     };
-    return <div className="story-code file-card" onLoadCapture={onMediaLayout} data-reading="file" data-reading-file={file.fileId} data-file-path={file.path} data-file-old-path={file.oldPath ?? file.path}>
-        <header tabIndex={-1} data-reading-focus={`file:${file.fileId}`}><code>{file.oldPath != null && file.oldPath !== file.path ? `${file.oldPath} → ` : ''}{file.path}</code><span className="story-file-stats"><span className="story-file-added">+{file.additions}</span> / <span className="story-file-deleted">−{file.deletions}</span></span>
+    const directory = file.path.slice(0, Math.max(0, file.path.lastIndexOf('/') + 1));
+    return <div className="story-code file-card" data-change={file.changeType} onLoadCapture={onMediaLayout} data-reading="file" data-reading-file={file.fileId} data-file-path={file.path} data-file-old-path={file.oldPath ?? file.path}>
+        <header tabIndex={-1} data-reading-focus={`file:${file.fileId}`}><span className="story-file-status" data-change={file.changeType} title={t.changeTypes[file.changeType]} aria-label={t.changeTypes[file.changeType]}>{changeMarks[file.changeType]}</span><FileGlyph /><code title={file.path}><span className="story-file-directory"><bdi>{file.oldPath != null && file.oldPath !== file.path ? `${file.oldPath} → ` : ''}{directory}</bdi></span><span className="story-file-basename">{file.path.split('/').at(-1)}</span></code><span className="story-file-stats"><span className="story-file-added">+{file.additions}</span><span className="story-file-deleted">−{file.deletions}</span></span>
             {onAttach === undefined ? null : <button className="ctl" onClick={onAttach}>{t.attachFile}</button>}
-            {current ? <button className="ctl" onClick={() => {
+            {current ? <button className="ctl ctl--toolbar-icon story-file-expand" aria-label={t.expand} title={t.expand} onClick={() => {
                 void fetchFileContent(token, file.fileId, diffId).then((content) => {
                     const base = data.file(diffId, file.fileId).model;
                     if (base === null) return;
@@ -81,7 +85,7 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
                     data.updateFile(diffId, file.fileId, { model: expanded });
                     if (mounted.current) { layout.current(); setModel(expanded); setError(null); }
                 }, (reason: unknown) => { if (mounted.current) { layout.current(); setError(String(reason)); } });
-            }}>{t.expand}</button> : null}
+            }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button> : null}
         </header>
         {description === undefined ? null : <div className="story-file-description">{description}</div>}
         {error === null ? null : <p role="alert">{error} <button className="ctl" onClick={() => { setAttempt((n) => n + 1); }}>{t.retrySource}</button></p>}
@@ -104,7 +108,7 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
             else if (first?.old != null && last?.old != null) select(ranges.fromText('old', first.old, last.old));
         }}>
             {file.image != null ? <ImageBody file={file} image={file.image} loadBlob={loadBlob} /> : model === null ? error === null ? <p data-reading-wait>{t.loading}</p> : null
-                : model.content.kind !== 'text' ? <p>{t.noPatch}</p> : <DiffRows model={model} mode="unified" content={null} selection={selection} contextAvailable={false} renderAfterLine={(side, line) => annotations.filter((note) => note.side === side && note.end === line).map((note, index) => <aside className="story-inline-note" key={index} data-reading={`note:${side}:${String(line)}:${String(index)}`}><span>{side === 'old' ? '−' : '+'} {note.start}–{note.end}</span>{parseStopBlocks(note.text).map((part, i) => renderBlock(part, i))}</aside>)} onLineFocus={(side, line) => { select(ranges.choose(side, line)); }} />}
+                : model.content.kind !== 'text' ? <p>{t.noPatch}</p> : <DiffRows showHunkHeaders model={model} mode="unified" content={null} selection={selection} contextAvailable={false} renderAfterLine={(side, line) => annotations.filter((note) => note.side === side && note.end === line).map((note, index) => <aside className="story-inline-note" key={index} data-reading={`note:${side}:${String(line)}:${String(index)}`}><span>{side === 'old' ? '−' : '+'} {note.start}–{note.end}</span>{parseStopBlocks(note.text).map((part, i) => renderBlock(part, i))}</aside>)} onLineFocus={(side, line) => { select(ranges.choose(side, line)); }} />}
         </div>
     </div>;
 }

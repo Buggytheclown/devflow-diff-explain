@@ -355,3 +355,6 @@
 .diff-row__gutter.diff-side--del {
     background: var(--file-gutter-del-bg, var(--diff-del-bg));
 }
+
+/* У нового или удалённого файла есть номера только одной стороны. */
+.story-code[data-change='add'] .diff-row, .story-code[data-change='delete'] .diff-row { grid-template-columns: var(--gutter-col) 20px minmax(0, 1fr); }

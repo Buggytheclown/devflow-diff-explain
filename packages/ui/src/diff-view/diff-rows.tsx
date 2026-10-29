@@ -2,7 +2,7 @@ import type { FileContent } from '@sherpa/protocol';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { Fragment, memo, useId, useMemo, useRef, useState } from 'react';
 
-import type { DiffFileModel, DiffGap, DiffLine } from '../diff/model.js';
+import type { DiffFileModel, DiffGap, DiffHunk, DiffLine } from '../diff/model.js';
 import type { Translate } from '../i18n/index.js';
 import { useT } from '../i18n/index.js';
 import { Icon } from '../icons/icon.tsx';
@@ -41,6 +41,7 @@ type Row = { readonly hunk?: number } & (
 );
 
 export interface DiffRowsProps {
+    readonly showHunkHeaders?: boolean;
     readonly model: DiffFileModel;
     readonly mode: DiffMode;
     /** Нужно только чтобы честно назвать длину хвостового пропуска. */
@@ -61,6 +62,7 @@ const NOOP_EXPAND = (): Promise<GapExpandResult> =>
 const NOOP_ANNOUNCE = (): void => undefined;
 
 export function DiffRows({
+    showHunkHeaders = false,
     model,
     mode,
     content,
@@ -78,6 +80,7 @@ export function DiffRows({
     const oneSided = model.onlyAdditions || model.onlyDeletions;
     const effective: DiffMode = mode === 'split' && !oneSided ? 'split' : 'unified';
     const rows = useMemo(() => buildRows(model, effective), [model, effective]);
+    const hunks = useMemo(() => model.content.kind === 'text' ? model.content.blocks.filter((block) => block.kind === 'hunk') : [], [model]);
     const selected = useMemo(() => selectedLines(model, selection), [model, selection]);
 
     const firstGap = rows.find((row) => row.kind === 'gap');
@@ -117,6 +120,7 @@ export function DiffRows({
                     const positions = positionsOf(row.cell);
                     return (
                         <Fragment key={`row-${String(index)}`}>
+                            {showHunkHeaders && row.hunk !== undefined ? <div className="diff-hunk-header">{hunkLabel(row.hunk, hunks)}</div> : null}
                             <UnifiedRow
                                 cell={row.cell}
                                 selected={isSelected(selected, row.cell)}
@@ -140,6 +144,7 @@ export function DiffRows({
                 const newExtra = newLine === null ? null : (renderAfterLine?.('new', newLine) ?? null);
                 return (
                     <Fragment key={`pair-${String(index)}`}>
+                        {showHunkHeaders && row.hunk !== undefined ? <div className="diff-hunk-header">{hunkLabel(row.hunk, hunks)}</div> : null}
                         <SplitRow
                             left={row.left}
                             right={row.right}
@@ -162,6 +167,11 @@ export function DiffRows({
             })}
         </div>
     );
+}
+
+function hunkLabel(index: number, hunks: readonly DiffHunk[]): string {
+    const hunk = hunks[index];
+    return hunk === undefined ? '' : `@@ -${String(hunk.oldStart)},${String(hunk.oldCount)} +${String(hunk.newStart)},${String(hunk.newCount)} @@`;
 }
 
 function isSelected(selected: ReadonlySet<LineKey>, cell: LineCell | null): boolean {

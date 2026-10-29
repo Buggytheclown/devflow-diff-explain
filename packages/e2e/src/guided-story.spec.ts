@@ -84,7 +84,7 @@ test('описание → блок → полный дифф → файл/ст�
         await expect(async () => { expect(Math.abs(((await row.boundingBox())?.y ?? 9999) - point.y)).toBeLessThan(3); }).toPass();
     }
     await page.screenshot({ path: test.info().outputPath('sherpa-guided-file.png'), fullPage: false });
-    await page.locator('.story-nav-block > button:first-child').nth(1).click();
+    await page.locator('.story-nav-block h3 > button').nth(1).click();
     const related = page.locator('.story-related button').first();
     await related.click();
     await expect(file.locator('header code')).toHaveText(fixture.first.path);
