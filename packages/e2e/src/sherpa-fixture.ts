@@ -349,3 +349,10 @@ async function stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
         });
     });
 }
+
+/** Вход через блок; из обзора можно вернуться к сохранённому месту чтения. */
+export async function openBlocks(page: Page): Promise<void> {
+    const back = page.locator('.story-guided > .story-return');
+    if (await back.isVisible()) await back.click();
+    else await page.locator('.story-block-visit').first().click();
+}

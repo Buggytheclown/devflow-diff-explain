@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { useState } from 'react';
 import type { RouteSnapshot } from '@sherpa/protocol';
 import { parseStopBlocks } from '@sherpa/protocol/markdown';
 import { useLocale } from '../i18n/index.js';
@@ -9,22 +8,21 @@ import { FlowDiagram, ExplanationExample } from './flow-diagram.tsx';
 import { guidedCopy } from '../i18n/story.js';
 import { Skeleton } from './preparation.tsx';
 
-export function GuidedDocument({ snapshot, page, onVisit, onAsk, renderFile, renderDescription, onRetry, onBack, returnLabel, onRetryDiagram, connected, onDiagramFailure }: {
-    snapshot: RouteSnapshot; page: string; onVisit: (page: string, remember?: boolean) => void; onAsk: (sectionId: string) => void;
+export function GuidedDocument({ snapshot, page, onVisit, onAsk, renderFile, renderDescription, onRetry, onBack, returnLabel, onRetryDiagram, connected, onDiagramFailure, activeBlock }: {
+    activeBlock?: string | undefined; snapshot: RouteSnapshot; page: string; onVisit: (page: string, remember?: boolean) => void; onAsk: (sectionId: string) => void;
     onBack?: (() => void) | undefined; returnLabel?: string | undefined;
     renderFile: (fileId: string, description: ReactNode) => ReactNode; renderDescription?: ReactNode; onRetry?: (id: string) => void;
     onRetryDiagram?: (() => void) | undefined; connected?: boolean | undefined;
     onDiagramFailure?: (() => void) | undefined;
 }) {
     const t = guidedCopy[useLocale()];
-    const [activeBlock, setActiveBlock] = useState<string>();
     const blocks = snapshot.tourOrder.flatMap((id) => snapshot.stops.filter((stop) => stop.id === id));
     const text = (value: string, key: string) => <div className="md-blocks">{parseStopBlocks(value).map((part, i) => <div key={i} data-reading={`${key}:${String(i)}`}>{renderBlock(part, i)}</div>)}</div>;
     return <article className="story-guided" data-guided-page={page === 'intro' ? 'intro' : 'blocks'}>
         {onBack === undefined ? null : <button className="ctl story-return" onClick={onBack}>← {returnLabel}</button>}
         {page === 'intro' ? <div className="story-overview"><div className="story-overview-content"><h2>{t.description}</h2>{renderDescription ?? <StoryDocument snapshot={{ ...snapshot, stops: [], tourOrder: [] }} onAsk={(id) => { onAsk(id ?? 'intro'); }} hideSources />}
             <FlowDiagram flow={snapshot.flow} onRetry={onRetryDiagram} onRenderFailure={onDiagramFailure} connected={connected} blocks={blocks} activeBlock={activeBlock} onVisit={onVisit} /></div>
-            <aside className="story-overview-route" aria-label={t.route}><h3>{t.route}</h3><ol className="story-block-list" data-reading="block-list:intro">{blocks.map((stop, i) => <li key={stop.id} onMouseEnter={() => { setActiveBlock(stop.id); }} onMouseLeave={() => { setActiveBlock(undefined); }}><button className="ctl" onFocus={() => { setActiveBlock(stop.id); }} onBlur={() => { setActiveBlock(undefined); }} onClick={() => { onVisit(stop.id); }}><small aria-hidden="true">{i + 1}.</small>{stop.title}</button><span>{stop.guidedFiles?.length ?? 0}</span></li>)}</ol></aside></div>
+            </div>
             : <div className="story-continuous">{blocks.map((block) => <section key={block.id} className="story-continuous-block" data-guide-block={block.id}>
                 <h2 data-guide-page={block.id} data-reading={`block:${block.id}`} tabIndex={-1} data-reading-focus={`block:${block.id}`}>{block.title}</h2>
                 {block.paragraph === null ? <Skeleton label={t.pending} /> : text(block.paragraph, block.id)}<ExplanationExample example={block.example} />

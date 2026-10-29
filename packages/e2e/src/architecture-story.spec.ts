@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { architectureStoryFixture } from '@sherpa/fixtures';
-import { test, expect } from './sherpa-fixture.js';
+import { openBlocks, test, expect } from './sherpa-fixture.js';
 
 const fixture = architectureStoryFixture();
 test('два этапа: контрастная вертикальная архитектура → связанные блоки → все файлы и возврат', async ({ page, launchSherpa }) => {
@@ -25,7 +25,7 @@ test('два этапа: контрастная вертикальная арх�
     await expect(page.locator('.story-architecture-scroll .cluster')).toHaveCount(1);
     await expect(page.locator('.story-architecture-scroll')).toContainText('Да');
     await expect(page.locator('.story-architecture-scroll')).toContainText('Нет');
-    await page.locator('.story-overview-route button').nth(1).hover();
+    await page.locator('.story-nav-block .story-block-visit').nth(1).hover();
     await expect(page.locator('.is-architecture-active')).toHaveCount(3);
     const rule = page.locator('[data-architecture-node="rule"]');
     await rule.focus(); await page.keyboard.press('Enter');
@@ -84,9 +84,9 @@ test('два этапа: контрастная вертикальная арх�
     expect(await page.locator('.story-code .diff-row').allTextContents()).toEqual(rows);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);
-    await page.locator('.story-topbar').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
+    await page.locator('.story-nav').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
     await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);
 });
 

@@ -1,5 +1,5 @@
 import { architectureStoryFixture } from '@sherpa/fixtures';
-import { test, expect } from './sherpa-fixture.js';
+import { openBlocks, test, expect } from './sherpa-fixture.js';
 
 const fixture = architectureStoryFixture();
 test('плавающая кнопка и чат не сдвигают дифф; перенос, расширение, Escape, вложение и длинный ответ', async ({ page, launchSherpa }) => {
@@ -11,7 +11,7 @@ test('плавающая кнопка и чат не сдвигают дифф; 
     const open = page.getByRole('button', { name: 'Чат', exact: true });
     await expect(open).toBeVisible(); await expect(open).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(page.locator('.story-topbar').getByRole('button', { name: 'Чат', exact: true })).toHaveCount(0);
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     const card = page.locator(`[data-reading-file="${fixture.first.fileId}"]`);
     const launcher = await open.boundingBox(); if (launcher === null) throw new Error('Missing launcher');

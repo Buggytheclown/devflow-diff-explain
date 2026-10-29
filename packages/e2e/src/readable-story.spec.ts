@@ -1,5 +1,5 @@
 import { readableStoryFixture } from '@sherpa/fixtures';
-import { test, expect } from './sherpa-fixture.js';
+import { openBlocks, test, expect } from './sherpa-fixture.js';
 
 const fixture = readableStoryFixture();
 test.setTimeout(90_000);
@@ -12,17 +12,17 @@ test('краткое пояснение и пример → полный диф�
     expect((await server.worker.complete(plan.taskId ?? 0, JSON.stringify(fixture.outline))).stdout).not.toContain('rejected');
     await expect(page.locator('.story-guided h2')).toHaveText('Описание ПРа');
     await expect(page.locator('.story-main')).toContainText('Готовлю схему потока');
-    await expect(page.locator('.story-nav')).toBeHidden();
-    await expect(page.locator('.story-overview-route')).toBeVisible();
+    await expect(page.locator('.story-nav')).toBeVisible();
+    await expect(page.locator('.story-overview-route')).toHaveCount(0);
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'arcanum-dark');
     const section = await server.worker.next(); expect(section.type).toBe('route.section');
     expect((await server.worker.complete(section.taskId ?? 0, JSON.stringify(fixture.body))).stdout).not.toContain('rejected');
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await expect(file.locator('.story-file-description .md-blocks').first()).toContainText(fixture.body.stops[0]?.files[0]?.explanation ?? '');
     await page.screenshot({ path: test.info().outputPath('sherpa-arcanum-block.png') });
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     await expect(file.locator('.story-example')).toContainText(fixture.example.text);
-    await expect(page.locator('.story-topbar button[aria-current=page]')).toHaveText('Разбор по блокам');
+    await expect(page.locator('.story-nav-file[aria-current=page]')).toHaveAttribute('aria-label', fixture.first.path);
     await expect(file.locator('.diff-row').first()).toBeVisible();
     const rows = await file.locator('.diff-row').allTextContents(); expect(rows.length).toBeGreaterThan(0);
     await page.screenshot({ path: test.info().outputPath('sherpa-readable-file.png') });
@@ -52,7 +52,7 @@ test('сбой схемы сохраняет готовое описание, б
     const diagram = await server.worker.next(); await server.worker.fail(diagram.taskId ?? 0, 'Synthetic diagram failure');
     await expect(page.locator('.story-main')).toContainText('Схема недоступна');
     await expect(page.locator('.story-main')).toContainText(fixture.outline.summary);
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await expect(file.locator('.story-file-description .md-blocks').first()).toContainText(fixture.body.stops[0]?.files[0]?.explanation ?? '');
     await page.screenshot({ path: test.info().outputPath('sherpa-arcanum-block.png') });
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();

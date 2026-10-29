@@ -70,7 +70,7 @@ test('рассказ → явный вопрос → ответ; старое р
     await target.click();
     await expect(page.locator('.chat-panel__composer')).toContainText(`${String(jumpStart)}–${String(jumpStart)}`);
 
-    await page.getByRole('button', { name: 'Дифф', exact: true }).click();
+    await page.getByRole('button', { name: 'Все изменения', exact: true }).click();
     await expect(page.locator('.story-code')).toBeVisible();
     const columns = await page.locator('.diff-row').first().evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' '));
     expect(columns).toHaveLength(3);
@@ -95,7 +95,7 @@ test('рассказ → явный вопрос → ответ; старое р
         expect(box?.y).toBeGreaterThan(54);
         expect(box?.y).toBeLessThan(900);
     }).toPass();
-    await page.locator('.story-topbar').getByRole('button', { name: 'К рассказу', exact: true }).click();
+    await page.locator('.story-nav').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
     await page.screenshot({ path: test.info().outputPath('sherpa-story-ui.png'), fullPage: true });
 });
 
@@ -104,7 +104,7 @@ test('дифф доступен без агента, история коммен
     const requests: string[] = [];
     page.on('request', (request) => { requests.push(request.url()); });
     await page.goto(server.url);
-    await page.getByRole('button', { name: 'Дифф', exact: true }).click();
+    await page.getByRole('button', { name: 'Все изменения', exact: true }).click();
     await expect(page.locator('.story-code')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Построить рассказ' })).toHaveCount(0);
     expect(requests.some((url) => /\/threads|\/snapshots|draft-buffer/.test(url))).toBe(false);

@@ -1,5 +1,5 @@
 import { architectureStoryFixture } from '@sherpa/fixtures';
-import { test, expect } from './sherpa-fixture.js';
+import { openBlocks, test, expect } from './sherpa-fixture.js';
 
 const fixture = architectureStoryFixture();
 test('единая лента от первого до последнего файла; подсветка при прокрутке, reload и возврат из обзора', async ({ page, launchSherpa }) => {
@@ -9,7 +9,7 @@ test('единая лента от первого до последнего фа
     const files = await server.worker.next(); await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('.story-preparation--ready')).toBeVisible();
     await expect(page.locator('.story-source-hint,.story-source-links,.story-flow-sources,.story-guide-pager')).toHaveCount(0);
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await expect(page.locator('.story-code')).toHaveCount(fixture.diff.files.length);
     await expect(page.locator('.story-main h1,.story-breadcrumb,.story-guide-pager')).toHaveCount(0);
     const expected = fixture.snapshot.tourOrder.flatMap((id) => fixture.snapshot.stops.find((stop) => stop.id === id)?.guidedFiles?.map((file) => file.path) ?? []);
@@ -19,7 +19,7 @@ test('единая лента от первого до последнего фа
     for (const file of ordered) {
         const card = page.locator(`[data-reading-file="${file.fileId}"]`);
         // Только прокрутка: не вызываем переход по оглавлению.
-        const delta = await card.evaluate((element) => element.getBoundingClientRect().top - ((document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0) + 12));
+        const delta = await card.evaluate((element) => element.getBoundingClientRect().top - (Math.max(document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0) + 12));
         await page.mouse.move(500, 180); await page.mouse.wheel(0, delta);
         await expect(page.locator('.story-nav-file[aria-current=page]')).toHaveAttribute('aria-label', file.path);
         await expect(card.locator('header')).toBeInViewport();
@@ -30,7 +30,7 @@ test('единая лента от первого до последнего фа
     const folder = firstLink.locator('xpath=ancestor::details[1]');
     await folder.locator(':scope > summary').click(); await expect(firstLink).toBeHidden();
     const firstCard = page.locator(`[data-reading-file="${first.fileId}"]`);
-    const delta = await firstCard.evaluate((element) => element.getBoundingClientRect().top - ((document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0) + 12));
+    const delta = await firstCard.evaluate((element) => element.getBoundingClientRect().top - (Math.max(document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0) + 12));
     await page.mouse.move(600, 200); await page.mouse.wheel(0, delta);
     await expect(firstLink).toHaveAttribute('aria-current', 'page');
     await expect(firstLink).toBeInViewport(); await expect(folder).toHaveAttribute('open', '');
@@ -45,8 +45,8 @@ test('единая лента от первого до последнего фа
     const key = await row.getAttribute('data-key'); if (key === null) throw new Error('Missing row key');
     await expect(page.locator('.story-nav-file[aria-current=page]')).toHaveAttribute('aria-label', target.path);
     const y = (await row.boundingBox())?.y ?? -1;
-    await page.locator('.story-topbar').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await page.locator('.story-nav').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
+    await openBlocks(page);
     await expect(async () => { expect(Math.abs(((await row.boundingBox())?.y ?? 9999) - y)).toBeLessThan(4); }).toPass();
     await page.reload();
     const restored = card.locator(`.diff-row[data-key="${key}"]`);

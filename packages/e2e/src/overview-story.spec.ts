@@ -1,5 +1,5 @@
 import { overviewStoryFixture } from '@sherpa/fixtures';
-import { test, expect } from './sherpa-fixture.js';
+import { openBlocks, test, expect } from './sherpa-fixture.js';
 
 const fixture = overviewStoryFixture();
 test('обзор первым → непрерывный дифф → локальный повтор схемы → перезагрузка и новая подготовка', async ({ page, launchSherpa }) => {
@@ -23,7 +23,7 @@ test('обзор первым → непрерывный дифф → локал
     await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ contextRequests: [], diagram: fixture.diagram, reason: null }));
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
     await page.screenshot({ path: test.info().outputPath('overview-ready.png'), fullPage: true });
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     await expect(file.locator('.story-example')).toBeVisible();
     await file.locator('.diff-row').nth(20).scrollIntoViewIfNeeded();

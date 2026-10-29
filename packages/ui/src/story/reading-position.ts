@@ -5,7 +5,7 @@ import { lineKeyNumbers } from '../diff-view/selection.js';
 export interface ReadingPosition { address: string; offset: number }
 
 export function readingTop(): number {
-    const bar = document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0;
+    const bar = Math.max(document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0);
     return bar + 12;
 }
 

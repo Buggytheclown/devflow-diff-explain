@@ -23,11 +23,11 @@ async function startStory(page: Page, server: SherpaServerHandle, content = long
     expect((await server.worker.complete(section.taskId ?? 0, JSON.stringify(content))).stdout).not.toContain('rejected');
     await expect(page.locator('.story-document section')).toHaveCount(3);
 }
-const storyTab = (page: Page) => page.locator('.story-topbar nav button').first();
-const diffTab = (page: Page) => page.getByRole('button', { name: 'Дифф', exact: true });
+const storyTab = (page: Page) => page.locator('.story-nav-overview');
+const diffTab = (page: Page) => page.getByRole('button', { name: 'Все изменения', exact: true });
 async function visibleLine(page: Page) {
     return page.locator('.story-main').evaluate((root) => {
-        const top = (document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 54) + 12;
+        const top = Math.max(document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0) + 12;
         const line = [...root.querySelectorAll<HTMLElement>('.diff-row[data-key]')].find((row) => row.getBoundingClientRect().bottom > top);
         return { key: line?.dataset.key ?? '', y: line?.getBoundingClientRect().top ?? -1 };
     });

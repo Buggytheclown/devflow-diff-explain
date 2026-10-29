@@ -9,7 +9,7 @@ export function Skeleton({ label, diagram = false }: { label: string; diagram?: 
 
 export function OverviewSkeleton() {
     const t = preparationCopy[useLocale()];
-    return <article className="story-overview"><div className="story-overview-content"><h2>{t.overviewTitle}</h2><Skeleton label={t.overviewPending} /><h3>{t.diagramTitle}</h3><Skeleton diagram label={t.diagramPending} /></div><aside className="story-overview-route"><h3>{t.routeTitle}</h3><Skeleton label={t.routePending} /></aside></article>;
+    return <article className="story-overview"><div className="story-overview-content"><h2>{t.overviewTitle}</h2><Skeleton label={t.overviewPending} /><h3>{t.diagramTitle}</h3><Skeleton diagram label={t.diagramPending} /></div></article>;
 }
 
 export function Preparation({ route, connected, displayedId, onOpenLatest, onCancel }: {

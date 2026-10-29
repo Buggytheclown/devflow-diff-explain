@@ -1,6 +1,6 @@
 import { guidedStoryFixture } from '@sherpa/fixtures';
 import fs from 'node:fs/promises';
-import { test, expect, sherpaAuth } from './sherpa-fixture.js';
+import { openBlocks, test, expect, sherpaAuth } from './sherpa-fixture.js';
 const fixture = guidedStoryFixture();
 test.setTimeout(90_000);
 
@@ -13,7 +13,7 @@ test('описание → блок → полный дифф → файл/ст�
     expect((await server.worker.complete(plan.taskId ?? 0, JSON.stringify(fixture.outline))).stdout).not.toContain('rejected');
     await expect(page.locator('.story-guided h2')).toHaveText('Описание ПРа');
     await expect(page.locator('.story-code')).toHaveCount(0);
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await expect(page.locator('.story-continuous-block > h2')).toHaveText(fixture.outline.stops.map((block) => block.title));
     await expect(page.locator('.story-main h1,.story-breadcrumb,.story-guide-pager')).toHaveCount(0);
     await expect(page.locator('.story-code')).toHaveCount(fixture.diff.files.length);
@@ -43,7 +43,9 @@ test('описание → блок → полный дифф → файл/ст�
     expect(await fs.readFile(fileContext?.trim() ?? '', 'utf8')).toContain(fixture.first.path);
     const location = `#code?path=${encodeURIComponent(fixture.anchor.path)}&side=${fixture.anchor.side}&start=${String(fixture.anchor.start)}&end=${String(fixture.anchor.start)}`;
     expect((await server.worker.complete(question.taskId ?? 0, `См. [важную строку](${location}).`)).stdout).not.toContain('rejected');
+    await page.getByRole('button', { name: 'Свернуть всё', exact: true }).click();
     await page.getByRole('link', { name: 'важную строку' }).click();
+    await expect(page.locator('.story-nav-block').first().locator('.story-block-toggle')).toHaveAttribute('aria-expanded', 'true');
     await expect(file.locator('.diff-row.is-selected')).not.toHaveCount(0);
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
     await file.getByRole('button', { name: 'Раскрыть контекст файла', exact: true }).click();
@@ -65,7 +67,7 @@ test('описание → блок → полный дифф → файл/ст�
     await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Убрать диапазон из контекста', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
-    await page.locator('.story-topbar').getByRole('button', { name: 'Все изменения', exact: true }).click();
+    await page.locator('.story-nav').getByRole('button', { name: 'Все изменения', exact: true }).click();
     await expect(page.locator('.story-return')).toHaveText(`К рассказу · ${fixture.first.path}`);
     await page.locator('.story-return').click();
     await expect(file.locator('header code')).toHaveText(fixture.first.path);
@@ -73,18 +75,18 @@ test('описание → блок → полный дифф → файл/ст�
     await file.locator('.diff-row').nth(20).focus();
     await page.evaluate(() => { window.scrollBy(0, 250); });
     const point = await file.evaluate((root) => {
-        const top = (document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 54) + 12;
+        const top = Math.max(document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0) + 12;
         const row = [...root.querySelectorAll<HTMLElement>('.diff-row[data-key]')].find((entry) => entry.getBoundingClientRect().bottom > top);
         return { key: row?.dataset.key ?? '', y: row?.getBoundingClientRect().top ?? 0 };
     });
     for (let i = 0; i < 3; i += 1) {
-        await page.locator('.story-topbar').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
-        await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+        await page.locator('.story-nav').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
+        await openBlocks(page);
         const row = file.locator(`.diff-row[data-key="${point.key}"]`);
         await expect(async () => { expect(Math.abs(((await row.boundingBox())?.y ?? 9999) - point.y)).toBeLessThan(3); }).toPass();
     }
     await page.screenshot({ path: test.info().outputPath('sherpa-guided-file.png'), fullPage: false });
-    await page.locator('.story-nav-block h3 > button').nth(1).click();
+    await page.locator('.story-nav-block .story-block-visit').nth(1).click();
     const related = page.locator('.story-related button').first();
     await related.click();
     await expect(file.locator('header code')).toHaveText(fixture.first.path);
@@ -99,7 +101,7 @@ test('провал и локальный повтор сохраняют пла�
     await page.goto(server.url); await server.worker.register('codex', 'ru');
     const plan = await server.worker.next();
     await server.worker.complete(plan.taskId ?? 0, JSON.stringify(fixture.outline));
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     const section = await server.worker.next();
     await server.worker.fail(section.taskId ?? 0, 'Synthetic explanation failure');
@@ -123,7 +125,7 @@ test('выделение синхронизировано с чатом, уда�
     await server.worker.complete(plan.taskId ?? 0, JSON.stringify(fixture.outline));
     const section = await server.worker.next();
     await server.worker.complete(section.taskId ?? 0, JSON.stringify(fixture.body));
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     const start = fixture.anchor.start;
     const prefix = fixture.anchor.side === 'old' ? 'd' : 'a';
@@ -170,7 +172,7 @@ test('выделение синхронизировано с чатом, уда�
     await expect(quote).toHaveCount(0);
     await expect(input).toHaveValue('Следующий вопрос');
     await expect(input).toBeFocused();
-    await page.locator('.story-topbar').getByRole('button', { name: 'Все изменения', exact: true }).click();
+    await page.locator('.story-nav').getByRole('button', { name: 'Все изменения', exact: true }).click();
     await expect(file.locator('.diff-row.is-selected')).toHaveCount(0);
     await file.locator('.diff-row[data-key]').first().locator('.diff-row__gutter--code').click();
     await expect(page.getByRole('dialog', { name: 'Чат с агентом', exact: true })).toBeVisible();

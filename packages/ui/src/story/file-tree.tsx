@@ -6,21 +6,23 @@ import { buildFileTree, treeFiles } from './file-tree-model.js';
 import type { FileTreeNode, TreeFile } from './file-tree-model.js';
 import { ExplanationGlyph, FileGlyph } from './file-glyph.js';
 
-export function FileTree({ files, activeFileId, onVisit }: {
+export function FileTree({ files, activeFileId, onVisit, directoryControl }: {
     files: readonly TreeFile[]; activeFileId: string | null; onVisit: (fileId: string) => void;
+    directoryControl?: { defaultOpen: boolean; toggled: ReadonlySet<string>; onToggle: (path: string) => void };
 }) {
     const t = useT();
     const status = storyCopy[useLocale()].changeTypes;
     const root = useRef<HTMLUListElement | null>(null);
     const nodes = useMemo(() => buildFileTree(files), [files]);
     useLayoutEffect(() => {
+        if (directoryControl !== undefined) return;
         // Скролл к файлу раскрывает его каталоги, но не забирает фокус из кода или чата.
         const selected = root.current?.querySelector('[aria-current="page"]');
         let directory = selected?.closest('details');
         while (directory != null && root.current?.contains(directory)) {
             directory.open = true; directory = directory.parentElement?.closest('details');
         }
-    }, [activeFileId]);
+    }, [activeFileId, directoryControl]);
     const render = (node: FileTreeNode): ReactNode => {
         if (node.kind === 'file') {
             const file = node.file;
@@ -32,7 +34,9 @@ export function FileTree({ files, activeFileId, onVisit }: {
         }
         const descendants = treeFiles(node);
         const added = descendants.every((file) => file.changeType === 'add');
-        return <li key={`${node.path}:${descendants[0]?.fileId ?? ''}`}><details open data-directory={node.path}><summary title={node.path}><span className="story-tree-chevron" aria-hidden="true">›</span><FileGlyph directory changeType={added ? 'add' : undefined} /><span className="story-tree-name">{node.label}</span></summary><ul>{node.children.map(render)}</ul></details></li>;
+        const key = `${node.path}:${descendants[0]?.fileId ?? ''}`;
+        const open = directoryControl === undefined ? true : directoryControl.defaultOpen !== directoryControl.toggled.has(key);
+        return <li key={key}><details open={open} data-directory={node.path}><summary title={node.path} onClick={directoryControl === undefined ? undefined : (event) => { event.preventDefault(); directoryControl.onToggle(key); }}><span className="story-tree-chevron" aria-hidden="true">›</span><FileGlyph directory changeType={added ? 'add' : undefined} /><span className="story-tree-name">{node.label}</span></summary><ul>{node.children.map(render)}</ul></details></li>;
     };
     return <ul className="story-file-tree" ref={root}>{nodes.map(render)}</ul>;
 }

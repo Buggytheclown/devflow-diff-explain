@@ -1,19 +1,20 @@
 import { architectureStoryFixture } from '@sherpa/fixtures';
-import { test, expect } from './sherpa-fixture.js';
+import { openBlocks, test, expect } from './sherpa-fixture.js';
 
 test('заголовки блоков и настоящее дерево: порядок, строки, пояснения и шапки диффа', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium');
     const fixture = architectureStoryFixture();
     await page.goto(server.url); await server.worker.register('codex', 'ru');
     const outline = await server.worker.next(); await server.worker.complete(outline.taskId ?? 0, JSON.stringify(fixture.outline));
-    await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
+    await openBlocks(page);
     const nav = page.locator('.story-nav');
     const firstLink = nav.getByRole('button', { name: fixture.first.path, exact: true });
     await expect(firstLink.locator('.story-tree-explanations')).toBeEmpty();
     const body = await server.worker.next(); await server.worker.complete(body.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('.story-preparation--ready')).toBeVisible();
+    await nav.getByRole('button', { name: 'Развернуть всё', exact: true }).click();
     const blocks = fixture.snapshot.tourOrder.flatMap((id) => fixture.snapshot.stops.filter((block) => block.id === id));
-    await expect(nav.locator('.story-nav-block h3')).toHaveText(blocks.map((block, index) => `${String(index + 1)}. ${block.title}`));
+    await expect(nav.locator('.story-nav-block .story-block-visit > span')).toHaveText(blocks.map((block, index) => `${String(index + 1)}. ${block.title}`));
     await expect(nav.locator('.story-nav-block h3 svg,.story-file-status')).toHaveCount(0);
     for (const [index, block] of blocks.entries()) {
         const group = nav.locator('.story-nav-block').nth(index);
@@ -47,8 +48,8 @@ test('заголовки блоков и настоящее дерево: пор
     await expect(addedRow.locator('.diff-row__gutter--code')).toBeVisible();
     await expect(addedRow.locator('.diff-row__sign')).toHaveText('+');
     await page.screenshot({ path: test.info().outputPath('arcanum-files-tree.png') });
-    await page.locator('.story-topbar').getByRole('button', { name: 'Все изменения', exact: true }).click();
-    await expect(nav.locator('.story-file-tree')).toHaveCount(1);
+    await page.locator('.story-nav').getByRole('button', { name: 'Все изменения', exact: true }).click();
+    await expect(nav.locator('.story-diff-navigation .story-file-tree')).toHaveCount(1);
     await expect(nav.locator('details > summary').first()).toBeVisible();
     await expect(nav.locator('.story-file-status')).toHaveCount(0);
 });

@@ -1,5 +1,5 @@
 import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixture, architectureStoryFixture } from '@sherpa/fixtures';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { FloatingChat } from '../../story/floating-chat.js';
 import { ChatLauncher } from '../../story/chat-launcher.js';
 import { GuidedNavigation } from '../../story/guided-navigation.js';
@@ -104,7 +104,13 @@ function GuidedGallery({ page, pending = false, readableView = false }: { page: 
 }
 const readable = readableStoryFixture();
 const architecture = architectureStoryFixture();
+function SidebarOverviewGallery() {
+    const [page, visit] = useState('intro');
+    return <div className="story-app story-app--intro" data-prepared="true"><header className="story-topbar"><strong>◆ Devflow</strong><span className="story-pr-key">fixture-medium</span><Preparation route={{ phase: 'ready', smallPr: false, snapshot: guided.snapshot, failure: null, stale: null }} connected /></header><aside className="story-nav"><nav className="story-sections"><button className="ctl" onClick={() => { visit('intro'); }}>Описание ПРа</button></nav><GuidedNavigation snapshot={guided.snapshot} diff={guided.diff} page={page} onVisit={visit} /></aside><GuidedGallery page={page} /></div>;
+}
 export const GUIDED_STORY_STATES: readonly GalleryState[] = [
+    { id: 'overview-left-navigation', group: 'По диффу', title: 'Обзор · единая навигация слева и готовность в шапке', render: () => <SidebarOverviewGallery /> },
+    { id: 'route-collapsed', group: 'По диффу', title: 'Маршрут · блоки свёрнуты до выбора', render: () => <aside className="story-nav" style={{ position: 'static', width: 420, height: 720 }}><GuidedNavigation snapshot={architecture.snapshot} diff={architecture.diff} page="intro" onVisit={noop} /></aside> },
     { id: 'guided-arcanum-tree', group: 'По диффу', title: 'Смысловые заголовки и дерево каталогов · строки и пояснения', render: () => <aside className="story-nav" style={{ position: 'static', width: 420, height: 720 }}><GuidedNavigation snapshot={architecture.snapshot} diff={architecture.diff} page={`file:${architecture.first.fileId}`} onVisit={noop} /></aside> },
     { id: 'overview-compact-ready', group: 'По диффу', title: 'Готовность · компактная строка с подробностями', render: () => <Preparation route={{ phase: 'ready', smallPr: false, snapshot: architecture.snapshot, failure: null, stale: null }} connected /> },
     { id: 'architecture-contrast', group: 'По диффу', title: 'Архитектура · контраст при конфликтующих цветах модели', render: () => <main className="story-main"><FlowDiagram flow={{ status: 'ready', contexts: [], diagram: { ...architecture.diagram, mermaid: architecture.diagram.mermaid + '\nclassDef faint fill:#ffffff,color:#eeeeee,stroke:#ffffff\nclass request,handler,rule,saved,rejected faint' } }} /></main> },
@@ -114,7 +120,7 @@ export const GUIDED_STORY_STATES: readonly GalleryState[] = [
     { id: 'overview-progress', group: 'По диффу', title: 'Общий прогресс · файлы готовы, схема недоступна', render: () => <main className="story-main"><Preparation route={{ phase: 'ready', smallPr: false, snapshot: { ...readable.snapshot, storyContractVersion: 5, flow: { status: 'unavailable', reason: 'Не удалось получить контекст.' } }, failure: null, stale: null }} connected /><FlowDiagram flow={{ status: 'unavailable', reason: 'Не удалось получить контекст.' }} onRetry={noop} connected /></main> },
     { id: 'overview-previous', group: 'По диффу', title: 'Перестройка · предыдущий разбор остаётся открыт', render: () => <main className="story-main"><Preparation route={{ phase: 'reading', smallPr: false, snapshot: readable.snapshot, generation: { id: 'new', commit: 'next', snapshotId: null, previousSnapshotId: readable.snapshot.snapshotId, status: 'running' }, failure: null, stale: null }} displayedId={readable.snapshot.snapshotId} connected={false} /><GuidedGallery page="intro" readableView /></main> },
     { id: 'overview-diagram-offline', group: 'По диффу', title: 'Локальный повтор схемы · агент отключён', render: () => <main className="story-main"><FlowDiagram flow={{ status: 'unavailable', reason: 'Схема не подготовлена. Описание и файлы доступны.' }} onRetry={noop} /></main> },
-    { id: 'readable-description-route', group: 'По диффу', title: 'Описание · общий поток и маршрут справа', render: () => <GuidedGallery page="intro" readableView /> },
+    { id: 'readable-description-route', group: 'По диффу', title: 'Описание · общий поток', render: () => <GuidedGallery page="intro" readableView /> },
     { id: 'readable-file-cards', group: 'По диффу', title: 'Блок · назначения файлов до перехода в дифф', render: () => <GuidedGallery page="guided-1" readableView /> },
     { id: 'readable-flow', group: 'По диффу', title: 'Общий поток · изменения и неполный контекст', render: () => <main className="story-main"><FlowDiagram flow={readable.snapshot.flow} /></main> },
     { id: 'readable-flow-cycle', group: 'По диффу', title: 'Поток · повторный узел и скрытые ограничения', render: () => <main className="story-main"><FlowDiagram flow={{ status: 'ready', contexts: [], diagram: { ...readable.diagram, edges: [...readable.diagram.edges, { from: readable.diagram.nodes.at(-1)?.id ?? '', to: readable.diagram.nodes[0]?.id ?? '', label: 'Обратная связь', kind: 'data', change: 'unknown', sources: [], limitation: 'Связь не подтверждена сохранённым кодом. Подробности доступны в основании схемы.' }] } }} /></main> },

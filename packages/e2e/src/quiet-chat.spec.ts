@@ -7,7 +7,7 @@ test('весь PR по умолчанию; явный файл → строки 
     const server = await launchSherpa('fixture-medium');
     await page.goto(server.url);
     await server.worker.register('codex', 'ru');
-    await page.locator('.story-topbar').getByRole('button', { name: 'Дифф', exact: true }).click();
+    await page.locator('.story-nav').getByRole('button', { name: 'Все изменения', exact: true }).click();
     await expect(page.locator('.story-code .diff-row')).not.toHaveCount(0);
     const originalPath = await page.locator('.story-code header code').textContent() ?? '';
     await page.getByRole('button', { name: 'Чат', exact: true }).click();
