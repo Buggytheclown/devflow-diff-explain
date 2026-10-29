@@ -34,6 +34,9 @@ export const ru = {
     'command.aria': 'Команда запуска Шерпы',
 
     'chat.title': 'Чат',
+    'chat.launcher.queued': 'В очереди',
+    'chat.launcher.paused': 'Нужен агент',
+    'chat.launcher.unread': (count: number) => `Непрочитанных ответов: ${num(count)}`,
     'chat.expand': 'Расширить чат',
     'chat.restore': 'Обычный размер чата',
     'chat.connect': 'Подключить агента',

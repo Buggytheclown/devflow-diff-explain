@@ -1,6 +1,6 @@
 import type { ChatExplanation, CodeLocation, PrDiff, RouteSnapshot, UiChatAskAnchor, UiChatResponse, UiRouteState } from '@sherpa/protocol';
 import { explanationText, preparationProgress } from '@sherpa/protocol';
-import { useEffect, useEffectEvent, useRef, useReducer, useState, useSyncExternalStore } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useReducer, useState, useSyncExternalStore } from 'react';
 
 import { askReviewChat, cancelReviewChat, cancelRouteGeneration, fillRouteStop, fetchReviewChat, fetchReviewRoute, generateReviewRoute, retryReviewChat, retryRouteDiagram } from '../api.js';
 import type { Store } from '../store.js';
@@ -15,6 +15,7 @@ import { EvidenceSource } from './evidence.tsx';
 import { ReadFile } from './read-file.tsx';
 import { FloatingChat } from './floating-chat.js';
 import { ChatLauncher } from './chat-launcher.js';
+import { useChatNotifications } from './use-chat-notifications.js';
 import { GuidedDocument } from './guided-document.tsx';
 import { StoryDocument } from './story-document.tsx';
 import { useGuideScroll } from './use-guide-scroll.js';
@@ -39,6 +40,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const routeLoaded = route !== null;
     const [diff, setDiff] = useState<PrDiff | null>(null);
     const [chat, setChat] = useState<UiChatResponse>(EMPTY_CHAT);
+    const [chatLoaded, setChatLoaded] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [chatError, setChatError] = useState<string | null>(null);
     const [cached] = useState(readReader);
@@ -70,6 +72,10 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const viewedDiffId = (showDiff ? diffVersion ?? active : snapshot?.diffId) ?? active ?? null;
     const worker = stream.state?.worker ?? { kind: 'never' as const };
     const connected = worker.kind === 'connected';
+    const shownExchanges = useMemo(() => chat.exchanges.filter((exchange) => exchange.explanation?.diffId === (explanation?.diffId ?? viewedDiffId)), [chat.exchanges, explanation?.diffId, viewedDiffId]);
+    const unreadCount = useChatNotifications({ prKey: stream.state?.prKey ?? null, exchanges: chat.exchanges, shown: shownExchanges, loaded: chatLoaded, open: ui.chatOpen });
+    const pendingQuestion = shownExchanges.find((exchange) => exchange.status === 'running') ?? shownExchanges.find((exchange) => exchange.status === 'queued');
+    const chatActivity = pendingQuestion === undefined ? 'idle' : !connected ? 'paused' : pendingQuestion.status === 'running' ? 'running' : 'queued';
     const tasks = stream.state?.tasks ?? [];
     const generating = route?.phase === 'reading' || route?.phase === 'filling';
     const selectedFile = diff?.files.find((file) => file.fileId === (guideFileId ?? fileId)) ?? diff?.files[0] ?? null;
@@ -124,7 +130,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     }, [data, diffVersion, active, snapshot?.diffId, showDiff, reader.address]);
     useEffect(() => {
         let alive = true;
-        void fetchReviewChat(token).then((value) => { if (alive) { setChat(value); setChatError(null); } },
+        void fetchReviewChat(token).then((value) => { if (alive) { setChat(value); setChatLoaded(true); setChatError(null); } },
             (reason: unknown) => { if (alive) setChatError(String(reason)); });
         return () => { alive = false; };
     }, [token, stream.chatRevision]);
@@ -283,9 +289,9 @@ export function App({ store, session, token }: { store: Store; session: StorySes
                     } />}
 
         </main>
-        <ChatLauncher open={ui.chatOpen} onOpen={openChat} />
+        <ChatLauncher open={ui.chatOpen} onOpen={openChat} activity={chatActivity} progressText={pendingQuestion?.progressText ?? null} unreadCount={unreadCount} />
         <FloatingChat open={ui.chatOpen} onClose={closeChat}>{({ headerActions }) =>
-            <ChatPanel headerActions={headerActions} composerText={draft} onComposerTextChange={setDraft} worker={worker} tasks={tasks} exchanges={chat.exchanges.filter((exchange) => exchange.explanation?.diffId === (explanation?.diffId ?? viewedDiffId))} notes={[]} loading={false} error={chatError}
+            <ChatPanel headerActions={headerActions} composerText={draft} onComposerTextChange={setDraft} worker={worker} tasks={tasks} exchanges={shownExchanges} notes={[]} loading={false} error={chatError}
                 onOpenAttachment={explanation === undefined ? undefined : () => { void goDiff(explanation.diffId, explanation.file?.fileId ?? anchor?.fileId); }} contextCommit={explanation?.commit ?? snapshot?.commit} fileAttachment={explanation?.file} attachmentStale={explanation !== undefined && explanation.diffId !== viewedDiffId} reconnectCommand={reconnectCommand(stream.state?.prKey ?? '')} anchor={anchor} anchorText={anchorText} focusRequest={focus} scrollRequest={null} onScrollRequestHandled={noop}
                 onClose={closeChat} onRemoveAnchor={removeSelection} viewDiffId={viewedDiffId}
                 onAsk={async (text, selected) => {

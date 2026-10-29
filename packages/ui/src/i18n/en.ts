@@ -31,6 +31,9 @@ export const en: Dictionary = {
     'command.aria': 'Sherpa launch command',
 
     'chat.title': 'Chat',
+    'chat.launcher.queued': 'Queued',
+    'chat.launcher.paused': 'Agent needed',
+    'chat.launcher.unread': (count: number) => `Unread replies: ${String(count)}`,
     'chat.expand': 'Expand chat',
     'chat.restore': 'Restore chat size',
     'chat.connect': 'Connect agent',

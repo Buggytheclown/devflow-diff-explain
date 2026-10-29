@@ -52,6 +52,11 @@ function QuietChatGallery({ attached = false, offline = false, inFrame = false, 
 
 export const STORY_STATES: readonly GalleryState[] = [
     { id: 'chat-launcher', group: 'Чат', title: 'Свёрнутый чат · кнопка снизу справа', render: () => <ChatLauncher open={false} onOpen={noop} /> },
+    { id: 'chat-launcher-queued', group: 'Чат', title: 'Свёрнутый чат · вопрос в очереди', render: () => <ChatLauncher open={false} onOpen={noop} activity="queued" /> },
+    { id: 'chat-launcher-running', group: 'Чат', title: 'Свёрнутый чат · агент отвечает', render: () => <ChatLauncher open={false} onOpen={noop} activity="running" progressText="Проверяю, когда сохраняется заказ" /> },
+    { id: 'chat-launcher-unread', group: 'Чат', title: 'Свёрнутый чат · новый непрочитанный ответ', render: () => <ChatLauncher open={false} onOpen={noop} unreadCount={1} /> },
+    { id: 'chat-launcher-running-unread', group: 'Чат', title: 'Свёрнутый чат · новый ответ и следующий вопрос', render: () => <ChatLauncher open={false} onOpen={noop} activity="running" unreadCount={1} /> },
+    { id: 'chat-launcher-paused', group: 'Чат', title: 'Свёрнутый чат · ожидание подключения агента', render: () => <ChatLauncher open={false} onOpen={noop} activity="paused" /> },
     { id: 'chat-floating', group: 'Чат', title: 'Плавающий чат · файл возле ввода', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery attached inFrame headerActions={headerActions} />}</FloatingChat> },
     { id: 'chat-quiet-empty', group: 'Чат', title: 'Пустой чат · вопрос по всему PR', render: () => <QuietChatGallery /> },
     { id: 'chat-explicit-file', group: 'Чат', title: 'Явно прикреплённый файл возле ввода', render: () => <QuietChatGallery attached /> },

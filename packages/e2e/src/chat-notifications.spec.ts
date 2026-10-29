@@ -1,0 +1,68 @@
+import { architectureStoryFixture } from '@sherpa/fixtures';
+import { test, expect } from './sherpa-fixture.js';
+
+test('закрытый чат: очередь → прогресс → непрочитанный ответ; reload, чтение и повтор', async ({ page, launchSherpa }) => {
+    const server = await launchSherpa('fixture-medium');
+    const fixture = architectureStoryFixture();
+    await page.goto(server.url); await server.worker.register('codex', 'ru');
+    const overview = await server.worker.next(); await server.worker.complete(overview.taskId ?? 0, JSON.stringify(fixture.outline));
+    const files = await server.worker.next(); await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
+    await expect(page.locator('.story-preparation--ready')).toBeVisible();
+    const launcher = page.getByRole('button', { name: 'Чат', exact: true });
+    const badge = launcher.locator('.story-chat-launcher__unread');
+    const spinner = launcher.locator('.story-chat-launcher__spinner');
+    const close = page.getByRole('button', { name: 'Закрыть чат', exact: true });
+    const input = page.getByRole('textbox', { name: 'Вопрос агенту' });
+    await expect(badge).toHaveCount(0);
+    await launcher.click(); await expect(input).toBeFocused();
+    const composerBorder = await page.locator('.chat-panel__composer').evaluate((element) => getComputedStyle(element).borderColor);
+    expect(composerBorder).not.toBe('rgb(82, 130, 255)');
+    await input.fill('Почему проверка происходит до сохранения?'); await input.press('Enter');
+    await expect(page.locator('.chat-message--you')).toContainText('Почему проверка');
+    await close.click();
+    await expect(launcher).toHaveAttribute('data-activity', 'queued');
+    await expect(launcher).toContainText('В очереди'); await expect(spinner).toBeVisible();
+    const question = await server.worker.next(); expect(question.type).toBe('chat');
+    await server.worker.progress(question.taskId ?? 0, 'Проверяю порядок сохранения заказа');
+    await expect(launcher).toHaveAttribute('data-activity', 'running');
+    await expect(launcher).toContainText('Отвечаю');
+    await expect(launcher).toHaveAttribute('title', /Проверяю порядок сохранения заказа/);
+    await page.screenshot({ path: test.info().outputPath('chat-progress.png') });
+    await page.reload(); await expect(launcher).toHaveAttribute('data-activity', 'running');
+    await expect(badge).toHaveCount(0);
+    await server.worker.complete(question.taskId ?? 0, 'Проверка останавливает запрос до записи заказа.');
+    await expect(launcher).toHaveAttribute('data-activity', 'idle');
+    await expect(spinner).toHaveCount(0); await expect(badge).toHaveText('1');
+    await expect(launcher).toHaveAccessibleDescription('Непрочитанных ответов: 1');
+    await page.screenshot({ path: test.info().outputPath('chat-unread.png') });
+    await page.reload(); await expect(badge).toHaveText('1');
+    await launcher.click(); await expect(page.locator('.chat-message--agent')).toContainText('Проверка останавливает');
+    await close.click(); await expect(launcher).toBeFocused(); await expect(badge).toHaveCount(0);
+    const outline = await launcher.evaluate((element) => getComputedStyle(element).outlineColor);
+    expect(outline).not.toBe('rgb(82, 130, 255)');
+    await page.reload(); await expect(launcher).toBeVisible(); await expect(badge).toHaveCount(0);
+
+    // Ответ в открытом чате прочитан; отказ останавливает индикатор, повтор создаёт новый ответ.
+    await launcher.click(); await input.fill('Как сохраняется заказ?'); await input.press('Enter');
+    await expect(page.locator('.chat-message--you')).toHaveCount(2);
+    const second = await server.worker.next(); await server.worker.complete(second.taskId ?? 0, 'Заказ сохраняется после проверки.');
+    await expect(page.locator('.chat-message--agent')).toHaveCount(2);
+    await close.click(); await expect(badge).toHaveCount(0);
+    await launcher.click(); await input.fill('Что происходит при отказе?'); await input.press('Enter');
+    await expect(page.locator('.chat-message--you')).toHaveCount(3);
+    const failed = await server.worker.next(); await close.click();
+    await server.worker.fail(failed.taskId ?? 0, 'Could not read the file');
+    await expect(launcher).toHaveAttribute('data-activity', 'idle'); await expect(spinner).toHaveCount(0);
+    await expect(badge).toHaveCount(0);
+    await launcher.click(); await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Повторить', exact: true })).toHaveCount(0);
+    await close.click();
+    await expect(launcher).toHaveAttribute('data-activity', 'queued');
+    const retry = await server.worker.next(); await server.worker.complete(retry.taskId ?? 0, 'При отказе заказ остаётся прежним.');
+    await expect(badge).toHaveText('1');
+    await launcher.click(); await expect(page.locator('.chat-message--agent').last()).toContainText('заказ остаётся прежним');
+    await close.click(); await expect(badge).toHaveCount(0);
+    // Первое открытие уже существующей истории не превращает все ответы в непрочитанные.
+    await page.evaluate(() => { localStorage.removeItem('devflow:chat-read:fixture-medium'); });
+    await page.reload(); await expect(launcher).toBeVisible(); await expect(badge).toHaveCount(0);
+});
