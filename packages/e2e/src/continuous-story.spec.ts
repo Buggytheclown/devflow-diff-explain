@@ -11,7 +11,7 @@ test('единая лента от первого до последнего фа
     await expect(page.locator('.story-source-hint,.story-source-links,.story-flow-sources,.story-guide-pager')).toHaveCount(0);
     await openBlocks(page);
     await expect(page.locator('.story-code')).toHaveCount(fixture.diff.files.length);
-    await expect(page.locator('.story-main h1,.story-breadcrumb,.story-guide-pager')).toHaveCount(0);
+    await expect(page.locator('.story-breadcrumb,.story-guide-pager')).toHaveCount(0);
     const expected = fixture.snapshot.tourOrder.flatMap((id) => fixture.snapshot.stops.find((stop) => stop.id === id)?.guidedFiles?.map((file) => file.path) ?? []);
     await expect(page.locator('.story-code > header code')).toHaveText(expected);
     await expect(page.locator('.story-code > .story-file-description')).toHaveCount(expected.length);

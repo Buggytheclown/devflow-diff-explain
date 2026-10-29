@@ -69,7 +69,7 @@ test('два этапа: контрастная вертикальная арх�
         });
     }
     await page.locator('.story-architecture-selection button').first().click();
-    await expect(page.locator('.story-continuous-block > h2')).toHaveText(fixture.outline.stops.map((block) => block.title));
+    await expect(page.locator('.story-continuous-block > h2')).toHaveText(fixture.outline.stops.map((block, index) => `${String(index + 1)}. ${block.title}`));
     await expect(page.locator('.story-guided')).toContainText(fixture.outline.stops[0]?.paragraph ?? '');
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);

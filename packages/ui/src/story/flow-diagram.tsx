@@ -19,8 +19,8 @@ export function ExplanationExample({ example }: { example: ReadableExample | nul
 }
 
 /** Связанные переходы объединены в цепочку; длинный путь продолжается следующей строкой. */
-export function FlowDiagram({ flow, onRetry, connected = false, blocks, activeBlock, onVisit, onRenderFailure }: { flow: FlowState | undefined; onRetry?: (() => void) | undefined; connected?: boolean | undefined;
-    onRenderFailure?: (() => void) | undefined;
+export function FlowDiagram({ flow, onRetry, connected = false, blocks, activeBlock, onVisit, onRenderFailure, onLayout }: { flow: FlowState | undefined; onRetry?: (() => void) | undefined; connected?: boolean | undefined;
+    onRenderFailure?: (() => void) | undefined; onLayout?: (() => void) | undefined;
     blocks?: readonly Pick<ExplanationBlock, 'id' | 'title' | 'nodeIds'>[] | undefined; activeBlock?: string | undefined; onVisit?: ((id: string) => void) | undefined }) {
     const locale = useLocale();
     const t = flowCopy[locale];
@@ -49,7 +49,7 @@ export function FlowDiagram({ flow, onRetry, connected = false, blocks, activeBl
         <h3 id={id}>{diagram.title}</h3>
         <ul className="story-flow-legend" aria-label={t.title}>{(['existing', 'added', 'modified', ...('mermaid' in diagram ? ['affected' as const] : []), 'unknown'] as const).map((change) => <li className={`story-flow--${change}`} key={change}>{t[change]}</li>)}</ul>
         {[...diagram.nodes, ...diagram.edges].some((entry) => entry.change === 'unknown' || entry.limitation !== null) ? <p className="story-flow-limit">{pt.diagramLimited}</p> : null}
-        {'mermaid' in diagram ? <ArchitectureDiagram diagram={diagram} blocks={blocks} activeBlock={activeBlock} onVisit={onVisit} onRetry={onRetry} onRenderFailure={onRenderFailure} connected={connected} /> : <><div className="story-flow-graph" role="list">{rows.map((row, i) => <div className={`story-flow-edge${row.length === 2 ? ' story-flow-edge--chain' : ''}`} role="listitem" key={i}>
+        {'mermaid' in diagram ? <ArchitectureDiagram onLayout={onLayout} diagram={diagram} blocks={blocks} activeBlock={activeBlock} onVisit={onVisit} onRetry={onRetry} onRenderFailure={onRenderFailure} connected={connected} /> : <><div className="story-flow-graph" role="list">{rows.map((row, i) => <div className={`story-flow-edge${row.length === 2 ? ' story-flow-edge--chain' : ''}`} role="listitem" key={i}>
             {node(row[0]?.from ?? '')}{row.map((edge, j) => <Fragment key={j}><div className={`story-flow-arrow story-flow--${edge.change}`}><span>{edge.label}</span><span className="story-flow-line" aria-hidden="true">→</span><small>{t[edge.kind]} · {t[edge.change]}</small></div>{node(edge.to)}</Fragment>)}
         </div>)}</div>
         {diagram.nodes.filter((entry) => !diagram.edges.some((edge) => edge.from === entry.id || edge.to === entry.id)).map((entry) => <div key={entry.id}>{node(entry.id)}</div>)}</>}

@@ -3,6 +3,7 @@ import type { PrDiff, RouteSnapshot } from '@sherpa/protocol';
 import { useLocale } from '../i18n/index.js';
 import { guidedCopy } from '../i18n/story.js';
 import { FileTree } from './file-tree.js';
+import { numberedBlockTitle } from './block-title.js';
 import type { TreeFile } from './file-tree-model.js';
 import { closedBlockTree, createRouteTree, routeTreeReducer } from './route-tree-state.js';
 
@@ -27,7 +28,7 @@ export function GuidedNavigation({ snapshot, diff, page, onVisit, reveal = 0, on
             explanations: (file.explanation === null ? 0 : 1) + file.annotations.length,
         }));
         return <section className="story-nav-block" key={block.id} aria-label={block.title} data-current-block={active === block.id || undefined} onMouseEnter={() => { onPreview?.(block.id); }} onMouseLeave={() => { onPreview?.(undefined); }}>
-            <h3><button className="ctl story-block-toggle" aria-label={`${state.open ? t.collapseBlock : t.expandBlock}: ${block.title}`} aria-expanded={state.open} aria-controls={id} onClick={() => { dispatch({ kind: 'block', id: block.id }); }}><span aria-hidden="true">{state.open ? '⌄' : '›'}</span></button><button className="ctl story-block-visit" aria-current={active === block.id ? 'location' : undefined} onFocus={() => { onPreview?.(block.id); }} onBlur={() => { onPreview?.(undefined); }} onClick={() => { onVisit(block.id); }}><span>{index + 1}. {block.title}</span><small>{files.length}</small></button></h3>
+            <h3><button className="ctl story-block-toggle" aria-label={`${state.open ? t.collapseBlock : t.expandBlock}: ${block.title}`} aria-expanded={state.open} aria-controls={id} onClick={() => { dispatch({ kind: 'block', id: block.id }); }}><span aria-hidden="true">{state.open ? '⌄' : '›'}</span></button><button className="ctl story-block-visit" aria-current={active === block.id ? 'location' : undefined} onFocus={() => { onPreview?.(block.id); }} onBlur={() => { onPreview?.(undefined); }} onClick={() => { onVisit(block.id); }}><span>{numberedBlockTitle(block.title, index)}</span><small>{files.length}</small></button></h3>
             <div id={id} hidden={!state.open}><FileTree files={files} activeFileId={page.startsWith('file:') ? page.slice(5) : null} onVisit={(fileId) => { onVisit(`file:${fileId}`); }} directoryControl={{ defaultOpen: state.directoriesOpen, toggled: state.toggled, onToggle: (path) => { dispatch({ kind: 'directory', id: block.id, path }); } }} /></div>
         </section>;
     })}</>;

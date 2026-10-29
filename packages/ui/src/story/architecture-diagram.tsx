@@ -5,11 +5,11 @@ import { flowCopy } from '../i18n/story.js';
 import { Skeleton } from './preparation.tsx';
 
 /** Mermaid сохраняет топологию графа; интерактивность связываем с проверенными ID сами. */
-export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit, onRetry, connected, onRenderFailure }: {
+export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit, onRetry, connected, onRenderFailure, onLayout }: {
     diagram: Diagram; blocks?: readonly Pick<ExplanationBlock, 'id' | 'title' | 'nodeIds'>[] | undefined;
     activeBlock?: string | undefined; onVisit?: ((id: string) => void) | undefined;
     onRetry?: (() => void) | undefined; connected: boolean;
-    onRenderFailure?: (() => void) | undefined;
+    onRenderFailure?: (() => void) | undefined; onLayout?: (() => void) | undefined;
 }) {
     const t = flowCopy[useLocale()];
     const root = useRef<HTMLDivElement>(null);
@@ -19,6 +19,8 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
     const [rendered, setRendered] = useState(0);
     const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
     const content = JSON.stringify(diagram);
+    const layout = useRef(onLayout);
+    useEffect(() => { layout.current = onLayout; }, [onLayout]);
     const failure = useRef(onRenderFailure);
     useEffect(() => { failure.current = onRenderFailure; }, [onRenderFailure]);
     useEffect(() => {
@@ -32,6 +34,7 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
             void renderArchitecture(id, diagram, element, direction).then((svg) => {
                 if (closed || requested !== revision) return;
                 const focused = element.contains(document.activeElement) ? document.activeElement?.getAttribute('data-architecture-node') : null;
+                layout.current?.();
                 element.replaceChildren(svg);
                 if (element.querySelectorAll('g.node').length !== diagram.nodes.length) throw new Error('Diagram IDs do not match metadata');
                 for (const node of diagram.nodes) {
@@ -56,7 +59,7 @@ export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit
                 }
                 setStatus('ready');
                 setRendered((value) => value + 1);
-            }).catch((reason: unknown) => { if (!closed && requested === revision) { console.error('Architecture diagram rendering failed', reason); element.replaceChildren(); setStatus('error'); failure.current?.(); } });
+            }).catch((reason: unknown) => { if (!closed && requested === revision) { console.error('Architecture diagram rendering failed', reason); layout.current?.(); element.replaceChildren(); setStatus('error'); failure.current?.(); } });
         };
         draw();
         const observer = new MutationObserver(draw);

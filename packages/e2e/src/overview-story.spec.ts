@@ -48,5 +48,5 @@ test('обзор первым → непрерывный дифф → локал
     await expect(file.locator('header code')).toHaveText(fixture.first.path);
     await page.reload(); await expect(file.locator('header code')).toHaveText(fixture.first.path);
     await page.getByRole('button', { name: 'Открыть новый разбор', exact: true }).click();
-    await expect(page.locator('.story-guided h2')).toHaveText('Описание ПРа');
+    await expect(page.locator('.story-overview h2').first()).toHaveText('Описание ПРа');
 });

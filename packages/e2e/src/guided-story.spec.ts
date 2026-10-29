@@ -11,11 +11,11 @@ test('описание → блок → полный дифф → файл/ст�
     await server.worker.register('codex', 'ru');
     const plan = await server.worker.next();
     expect((await server.worker.complete(plan.taskId ?? 0, JSON.stringify(fixture.outline))).stdout).not.toContain('rejected');
-    await expect(page.locator('.story-guided h2')).toHaveText('Описание ПРа');
-    await expect(page.locator('.story-code')).toHaveCount(0);
+    await expect(page.locator('.story-overview h2').first()).toHaveText('Описание ПРа');
+    await expect(page.locator('.story-code')).toHaveCount(fixture.diff.files.length);
     await openBlocks(page);
-    await expect(page.locator('.story-continuous-block > h2')).toHaveText(fixture.outline.stops.map((block) => block.title));
-    await expect(page.locator('.story-main h1,.story-breadcrumb,.story-guide-pager')).toHaveCount(0);
+    await expect(page.locator('.story-continuous-block > h2')).toHaveText(fixture.outline.stops.map((block, index) => `${String(index + 1)}. ${block.title}`));
+    await expect(page.locator('.story-breadcrumb,.story-guide-pager')).toHaveCount(0);
     await expect(page.locator('.story-code')).toHaveCount(fixture.diff.files.length);
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     await expect(file.locator('header code')).toHaveText(fixture.first.path);
@@ -67,9 +67,8 @@ test('описание → блок → полный дифф → файл/ст�
     await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Убрать диапазон из контекста', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
-    await page.locator('.story-nav').getByRole('button', { name: 'Все изменения', exact: true }).click();
-    await expect(page.locator('.story-return')).toHaveText(`К рассказу · ${fixture.first.path}`);
-    await page.locator('.story-return').click();
+    await page.locator('.story-nav-overview').click();
+    await page.locator('.story-guided > .story-return').click();
     await expect(file.locator('header code')).toHaveText(fixture.first.path);
     await expect(file.locator('.diff-row.is-selected')).toHaveCount(5);
     await file.locator('.diff-row').nth(20).focus();
@@ -172,7 +171,8 @@ test('выделение синхронизировано с чатом, уда�
     await expect(quote).toHaveCount(0);
     await expect(input).toHaveValue('Следующий вопрос');
     await expect(input).toBeFocused();
-    await page.locator('.story-nav').getByRole('button', { name: 'Все изменения', exact: true }).click();
+    await page.locator('.story-nav-overview').click();
+    await page.locator('.story-guided > .story-return').click();
     await expect(file.locator('.diff-row.is-selected')).toHaveCount(0);
     await file.locator('.diff-row[data-key]').first().locator('.diff-row__gutter--code').click();
     await expect(page.getByRole('dialog', { name: 'Чат с агентом', exact: true })).toBeVisible();

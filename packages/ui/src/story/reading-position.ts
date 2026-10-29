@@ -29,7 +29,9 @@ function addressed(root: HTMLElement): { element: HTMLElement; address: string }
 export function capturePosition(root: HTMLElement): ReadingPosition | null {
     const top = readingTop();
     const all = addressed(root);
-    const entries = all.some((entry) => entry.element.matches('.diff-row')) ? all.filter((entry) => entry.element.dataset.reading !== 'file') : all;
+    // Пока конкретный файл разбирается, его карточка остаётся якорем,
+    // даже если строки других файлов уже появились выше или ниже.
+    const entries = all.filter((entry) => entry.element.dataset.reading !== 'file' || entry.element.querySelector('.diff-row') === null);
     const target = entries.find(({ element }) => element.getBoundingClientRect().bottom > top) ?? entries.at(-1);
     return target === undefined ? null : { address: target.address, offset: target.element.getBoundingClientRect().top - top };
 }
@@ -43,7 +45,9 @@ export function restorePosition(root: HTMLElement, position: ReadingPosition): b
         if (Math.abs(delta) <= 1) break;
         window.scrollBy({ top: delta, behavior: 'instant' });
     }
-    return true;
+    // Короткий ещё загружающийся холст может ограничить scrollY.
+    // Не принимаем эту промежуточную позицию за восстановленную.
+    return Math.abs(target.getBoundingClientRect().top - readingTop() - position.offset) <= 1 || root.querySelector('[data-reading-wait]') === null;
 }
 
 export function revealCode(root: HTMLElement, location: CodeLocation): boolean {

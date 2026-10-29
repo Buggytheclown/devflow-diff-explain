@@ -17,7 +17,6 @@ import { FloatingChat } from './floating-chat.js';
 import { ChatLauncher } from './chat-launcher.js';
 import { useChatNotifications } from './use-chat-notifications.js';
 import { GuidedNavigation } from './guided-navigation.js';
-import { FileTree } from './file-tree.js';
 import { GuidedDocument } from './guided-document.tsx';
 import { StoryDocument } from './story-document.tsx';
 import { useGuideScroll } from './use-guide-scroll.js';
@@ -52,7 +51,6 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const { guide: guidePosition, returnTo: guideReturn, location: navigation, epoch: navigationEpoch } = reader;
     const diffVersion = diff?.diffId ?? null;
     const showDiff = ui.view === 'diff';
-    const [query, setQuery] = useState('');
     const [draft, setDraft] = useState(cached?.draft ?? '');
     const [treeReveal, revealTree] = useState(0);
     const [previewBlock, setPreviewBlock] = useState<string>();
@@ -70,7 +68,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const gt = guidedCopy[locale];
     const intro = !showDiff && (snapshot === null || guided && guidePage === 'intro');
     const guideFileId = !showDiff && guided && guidePage.startsWith('file:') ? guidePage.slice(5) : null;
-    const guideScope = storyScope(snapshot?.snapshotId, stream.state?.prKey ?? '', guided ? guidePage : 'intro');
+    const guideScope = storyScope(snapshot?.snapshotId, stream.state?.prKey ?? '', guided);
     const active = stream.state?.iterations.find((iteration) => iteration.status === 'active')?.diffId;
     const viewedDiffId = (showDiff ? diffVersion ?? active : snapshot?.diffId) ?? active ?? null;
     const worker = stream.state?.worker ?? { kind: 'never' as const };
@@ -86,13 +84,13 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const scope = showDiff ? `diff:${diff?.diffId ?? ''}:${selectedFile?.fileId ?? ''}` : guideScope ?? 'empty';
     const readingRoot = useRef<HTMLElement | null>(null);
     const reading = useReadingSession(readingRoot, scope, storyKey, !showDiff && guided ? guidePage : undefined);
-    useGuideScroll(readingRoot, !showDiff && guided && !intro, (page) => {
+    useGuideScroll(readingRoot, !showDiff && guided, (page) => {
         if (snapshot !== null && !reading.isPending()) visit({ kind: 'scroll', snapshotId: snapshot.snapshotId, page });
     });
     useEffect(() => {
-        if (showDiff || !guided || intro) return;
+        if (showDiff || !guided) return;
         const file = document.querySelector<HTMLElement>('.story-nav-file[aria-current="page"]');
-        const current = file !== null && file.getClientRects().length > 0 ? file : document.querySelector<HTMLElement>('.story-nav-block[data-current-block] h3');
+        const current = intro ? document.querySelector<HTMLElement>('.story-nav-overview') : file !== null && file.getClientRects().length > 0 ? file : document.querySelector<HTMLElement>('.story-nav-block[data-current-block] h3');
         const container = current?.closest<HTMLElement>('.story-nav');
         if (current === null || container === null || container === undefined) return;
         const item = current.getBoundingClientRect(), panel = container.getBoundingClientRect();
@@ -102,6 +100,19 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     }, [guidePage, showDiff, guided, intro]);
     const layout = (): void => { if (!reading.isPending()) reading.preserve(); reading.ready(); };
     const beforeRoute = useEffectEvent(() => { reading.preserve(); });
+    const resumeCanvas = useEffectEvent(() => {
+        if (snapshot === null || reader.address?.kind !== 'diff') return;
+        const epoch = reading.begin();
+        const address = { kind: 'guide' as const, snapshotId: snapshot.snapshotId, page: `file:${reader.address.fileId}` };
+        visit({ kind: 'guide', address, epoch, location: reader.location, remember: false });
+        session.setView('route');
+        reading.restore(guideScope ?? 'empty', epoch, null, false, `diff:${reader.address.diffId}:${reader.address.fileId}`);
+    });
+    useEffect(() => {
+        if (!showDiff) return;
+        if (reader.address?.kind !== 'diff') session.setView('route');
+        else if (guided && reader.address.diffId === snapshot.diffId) resumeCanvas();
+    }, [guided, showDiff, reader.address, snapshot?.diffId, session]);
     useEffect(() => store.subscribe(() => { beforeRoute(); }), [store]);
     useEffect(() => () => { data.close(); }, [data]);
     useEffect(() => {
@@ -201,14 +212,14 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             setDiff(value); setError(null); revealTree((value) => value + 1);
             visit({ kind: 'guide', address: { kind: 'guide', snapshotId: snapshot.snapshotId, page }, remember, epoch, location: location === undefined ? null : { ...location, diffId: value.diffId } });
             session.setView('route');
-            const target = storyScope(snapshot.snapshotId, stream.state?.prKey ?? '', page) ?? 'empty';
+            const target = storyScope(snapshot.snapshotId, stream.state?.prKey ?? '', guided) ?? 'empty';
             if (location !== undefined) reading.code(target, epoch, location);
-            else if (resume || page === 'intro') reading.restore(target, epoch, null, true, returning ? `${target}:return` : target);
+            else if (resume) reading.restore(target, epoch, null, true, returning ? `${target}:return` : target);
             else reading.jump(target, epoch, page);
         } catch (reason) { if (reading.isCurrent(epoch)) { setError(String(reason)); reading.cancel(); } }
     };
     const goDiff = async (version: string | null, id?: string, location?: CodeLocation, sectionId?: string): Promise<void> => {
-        if (guided && sectionId !== undefined && version === snapshot.diffId && location !== undefined) { await goGuide('intro', location); return; }
+        if (guided && version === snapshot.diffId) { await goGuide(id === undefined ? 'intro' : `file:${id}`, location, true); return; }
         const epoch = leave(sectionId);
         try {
             const value = await data.diff(version);
@@ -219,7 +230,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             if (file === undefined) throw new Error(t.unavailable);
             if (location !== undefined) data.updateFile(value.diffId, file.fileId, { highlight: { ...location, diffId: value.diffId, fileId: file.fileId } });
             data.updateView(value.diffId, { fileId: file.fileId });
-            setDiff(value); setQuery(memory.query); visit({ kind: 'diff', address: { kind: 'diff', diffId: value.diffId, fileId: file.fileId }, epoch, location: location === undefined ? null : { ...location, diffId: value.diffId } });
+            setDiff(value); visit({ kind: 'diff', address: { kind: 'diff', diffId: value.diffId, fileId: file.fileId }, epoch, location: location === undefined ? null : { ...location, diffId: value.diffId } });
             setError(null); session.setView('diff');
             const target = `diff:${value.diffId}:${file.fileId}`;
             if (location === undefined) reading.restore(target, epoch);
@@ -239,12 +250,11 @@ export function App({ store, session, token }: { store: Store; session: StorySes
         setError(null);
         void generateReviewRoute(token, locale).catch((reason: unknown) => { setError(String(reason)); });
     };
-    const files = diff?.files.filter((file) => file.path.toLowerCase().includes(query.toLowerCase())) ?? [];
     const prepared = preparationProgress(route ?? { phase: 'none', snapshot: null }).status === 'ready';
     const preparation = <Preparation route={route} connected={connected} displayedId={snapshot?.snapshotId}
             onCancel={route?.generation === undefined ? undefined : () => { const id = route.generation?.id; if (id !== undefined) void cancelRouteGeneration(token, id).catch((reason: unknown) => { setError(String(reason)); }); }}
-            onOpenLatest={route?.snapshot == null ? undefined : () => { const latest = route.snapshot; if (latest === null) return; const epoch = reading.begin(); selectSnapshot(latest.snapshotId); visit({ kind: 'guide', address: { kind: 'guide', snapshotId: latest.snapshotId, page: 'intro' }, epoch, location: null, remember: false }); reading.restore(storyScope(latest.snapshotId, stream.state?.prKey ?? '', 'intro') ?? 'empty', epoch, 'intro'); session.setView('route'); }} />;
-    return <div data-prepared={prepared} data-preparing={connected && generating && route.generation?.status !== 'cancelled'} className={`story-app${intro ? ' story-app--intro' : ''}`}>
+            onOpenLatest={route?.snapshot == null ? undefined : () => { const latest = route.snapshot; if (latest === null) return; const epoch = reading.begin(); selectSnapshot(latest.snapshotId); visit({ kind: 'guide', address: { kind: 'guide', snapshotId: latest.snapshotId, page: 'intro' }, epoch, location: null, remember: false }); reading.restore(storyScope(latest.snapshotId, stream.state?.prKey ?? '', (latest.storyContractVersion ?? 0) >= 3) ?? 'empty', epoch, 'intro'); session.setView('route'); }} />;
+    return <div data-prepared={prepared} data-preparing={connected && generating && route.generation?.status !== 'cancelled'} className="story-app">
         <header className="story-topbar">
             <strong><span aria-hidden="true">◆</span> Devflow</strong>
             <span className="story-pr-key">{stream.state?.prKey ?? ''}</span>
@@ -254,11 +264,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
         <aside className="story-nav" aria-label={t.contents}>
             <nav className="story-sections" aria-label={t.contents}>
                 <button className="ctl story-nav-overview" aria-current={!showDiff && (intro || !guided) ? 'page' : undefined} onClick={() => { if (snapshot === null) session.setView('route'); else if (guided) void goGuide('intro', undefined, !showDiff && !intro); else backToStory(); }}>{gt.description}</button>
-                <button className="ctl story-nav-changes" aria-current={showDiff ? 'page' : undefined} onClick={() => { void goDiff(diffVersion ?? snapshot?.diffId ?? active ?? null); }}>{gt.allChanges}</button>
             </nav>
-            {showDiff ? <div className="story-diff-navigation"><input aria-label={t.fileSearch} placeholder={t.fileSearch} value={query} onChange={(event) => { setQuery(event.target.value); if (diff !== null) data.updateView(diff.diffId, { query: event.target.value }); }} />
-                <FileTree files={files.map((file) => ({ ...file, explanations: 0 }))} activeFileId={selectedFile?.fileId ?? null} onVisit={(fileId) => { void goDiff(diffVersion, fileId); }} />
-                {files.length === 0 ? <p>{diff?.files.length === 0 ? t.noFiles : t.noMatch}</p> : null}</div> : null}
             <div hidden={showDiff}>
                 {guided ? <GuidedNavigation key={snapshot.snapshotId} snapshot={snapshot} diff={diff} page={showDiff ? 'intro' : guidePage} reveal={treeReveal} onPreview={setPreviewBlock} onVisit={(page) => { void goGuide(page); }} /> : snapshot === null ? <div className="story-route-pending"><h3>{gt.route}</h3><Skeleton label={pt.routePending} /></div> : <>{snapshot.tourOrder.map((id) => {
                     const stop = snapshot.stops.find((entry) => entry.id === id);
@@ -266,13 +272,14 @@ export function App({ store, session, token }: { store: Store; session: StorySes
                 })}</>}
             </div>
         </aside>
-        <main ref={readingRoot} data-reading-scope={scope} className={`story-main${showDiff || guided && !intro ? ' story-main--diff' : ''}`}>
-            {!guided || intro || showDiff ? <h1>{stream.state?.pr?.title ?? stream.state?.prKey ?? t.loading}</h1> : null}
-            {!showDiff && (guidePage === 'intro' || snapshot === null) ? <p className="story-pr-metadata">{stream.state?.pr == null ? null : <><a href={stream.state.pr.url} target="_blank" rel="noreferrer">{stream.state.prKey}</a> · {stream.state.pr.author.displayName ?? stream.state.pr.author.login} · {stream.state.pr.fromBranch} → {stream.state.pr.toBranch} · {stream.state.pr.statusLabel || stream.state.pr.state}</>}{diff === null || (snapshot !== null && diff.diffId !== snapshot.diffId) ? null : <> · {diff.files.length} {pt.fileCount} · +{diff.files.reduce((sum, file) => sum + file.additions, 0)} / −{diff.files.reduce((sum, file) => sum + file.deletions, 0)}</>}</p> : null}
+        <main ref={readingRoot} data-reading-scope={scope} className={`story-main${showDiff || guided ? ' story-main--diff' : ''}`}>
+            {guided && !showDiff ? <div data-guide-page="intro" /> : null}
+            <h1>{stream.state?.pr?.title ?? stream.state?.prKey ?? t.loading}</h1>
+            {!showDiff ? <p className="story-pr-metadata">{stream.state?.pr == null ? null : <><a href={stream.state.pr.url} target="_blank" rel="noreferrer">{stream.state.prKey}</a> · {stream.state.pr.author.displayName ?? stream.state.pr.author.login} · {stream.state.pr.fromBranch} → {stream.state.pr.toBranch} · {stream.state.pr.statusLabel || stream.state.pr.state}</>}{diff === null || (snapshot !== null && diff.diffId !== snapshot.diffId) ? null : <> · {diff.files.length} {pt.fileCount} · +{diff.files.reduce((sum, file) => sum + file.additions, 0)} / −{diff.files.reduce((sum, file) => sum + file.deletions, 0)}</>}</p> : null}
             {showDiff && reading.origin !== null ? <button className="ctl story-return" onClick={backToStory}>{t.returnTo} · {reading.origin.sectionId === 'intro' ? t.introduction : snapshot?.stops.flatMap((stop) => stop.guidedFiles ?? []).find((file) => `file:${file.fileId}` === reading.origin?.sectionId)?.path ?? snapshot?.stops.find((stop) => stop.id === reading.origin?.sectionId)?.title ?? t.introduction}</button> : null}
             {showDiff && diffVersion !== active && active !== undefined ? <p><button className="ctl" onClick={() => { void goDiff(active); }}>{t.newDiff}</button></p> : null}
             {!showDiff && snapshot !== null && (snapshot.storyContractVersion ?? 0) < 5 && route?.stale == null ? <p className="story-notice">{snapshot.storyContractVersion === undefined ? t.legacy : pt.legacy} <button className="ctl" disabled={generating || !connected} onClick={generate}>{t.refresh}</button></p> : null}
-            {snapshot === null || guided && !intro && !showDiff ? null : <p className="story-provenance">{(showDiff ? diff?.headCommit ?? snapshot.commit : snapshot.commit).slice(0, 12)} · {snapshot.provenance.harness} · {snapshot.provenance.model}</p>}
+            {snapshot === null ? null : <p className="story-provenance">{(showDiff ? diff?.headCommit ?? snapshot.commit : snapshot.commit).slice(0, 12)} · {snapshot.provenance.harness} · {snapshot.provenance.model}</p>}
             {error === null ? null : <p role="alert" className="story-notice">{error}</p>}
             {route?.stale == null ? null : <div className="story-notice">{t.stale} <button className="ctl" disabled={generating || !connected} onClick={generate}>{t.refresh}</button></div>}
             {!connected ? <p className="story-notice">{t.offline}</p> : null}
@@ -280,8 +287,8 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             {route?.failure == null ? null : <p role="alert" className="story-notice">{route.failure.message} <button className="ctl" onClick={generate} disabled={!connected}>{t.retry}</button></p>}
             {showDiff ? (diff === null ? <p data-reading-wait>{t.loading}</p> : selectedFile === null ? <p>{t.noFiles}</p>
                 : <ReadFile onAttach={() => { void attachFile(selectedFile.fileId); }} key={`${diff.diffId}:${selectedFile.fileId}:${String(navigationEpoch)}`} file={selectedFile} diffId={diff.diffId} data={data} token={token} current={diff.diffId === active} navigation={navigation ?? undefined} anchor={anchor} onSelect={(selected, text) => { selectCode(selected, text); }} onLayout={layout} onMediaLayout={reading.relayout} />)
-                : snapshot === null ? <>{!generating ? <div><p>{t.empty}</p><button className="ctl ctl--primary" disabled={!connected} onClick={generate}>{t.generate}</button></div> : null}<OverviewSkeleton /></>
-                    : guided ? <GuidedDocument activeBlock={previewBlock} snapshot={snapshot} page={guidePage} onVisit={(page, remember) => { void goGuide(page, undefined, remember); }} onBack={guideReturn?.snapshotId === snapshot.snapshotId ? () => { void goGuide(guideReturn.page, undefined, false, true, true); } : undefined} returnLabel={guideReturn?.page === 'intro' ? gt.description : snapshot.stops.flatMap((stop) => stop.guidedFiles ?? []).find((file) => `file:${file.fileId}` === guideReturn?.page)?.path ?? snapshot.stops.find((stop) => stop.id === guideReturn?.page)?.title ?? t.returnTo} onAsk={openChat} onRetry={(id) => { const stop = snapshot.stops.find((entry) => entry.id === id); if (stop !== undefined) void fillRouteStop(token, { snapshotId: snapshot.snapshotId, planIndex: stop.planIndex }).catch((reason: unknown) => { setError(String(reason)); }); }}
+                : snapshot === null ? <>{!generating && connected ? <div><p>{t.empty}</p><button className="ctl ctl--primary" disabled={!connected} onClick={generate}>{t.generate}</button></div> : null}<OverviewSkeleton />{diff?.files.map((file) => <ReadFile key={file.fileId} file={file} diffId={diff.diffId} data={data} token={token} current={diff.diffId === active} onAttach={() => { void attachFile(file.fileId); }} anchor={anchor} onSelect={selectCode} onLayout={layout} onMediaLayout={reading.relayout} />)}</>
+                    : guided ? <GuidedDocument onLayout={layout} activeBlock={previewBlock} snapshot={snapshot} page={guidePage} onVisit={(page, remember) => { void goGuide(page, undefined, remember); }} onBack={guideReturn?.snapshotId === snapshot.snapshotId ? () => { void goGuide(guideReturn.page, undefined, false, true, true); } : undefined} returnLabel={guideReturn?.page === 'intro' ? gt.description : snapshot.stops.flatMap((stop) => stop.guidedFiles ?? []).find((file) => `file:${file.fileId}` === guideReturn?.page)?.path ?? snapshot.stops.find((stop) => stop.id === guideReturn?.page)?.title ?? t.returnTo} onAsk={openChat} onRetry={(id) => { const stop = snapshot.stops.find((entry) => entry.id === id); if (stop !== undefined) void fillRouteStop(token, { snapshotId: snapshot.snapshotId, planIndex: stop.planIndex }).catch((reason: unknown) => { setError(String(reason)); }); }}
                         connected={connected} onRetryDiagram={route?.phase === 'reading' || snapshot.snapshotId !== route?.snapshot?.snapshotId ? undefined : () => { void retryRouteDiagram(token, snapshot.snapshotId).catch((reason: unknown) => { setError(String(reason)); }); }}
                         onDiagramFailure={route?.phase === 'reading' || snapshot.snapshotId !== route?.snapshot?.snapshotId ? undefined : () => { void retryRouteDiagram(token, snapshot.snapshotId, true).catch((reason: unknown) => { setError(String(reason)); }); }}
                         renderDescription={<StoryDocument hideSources snapshot={{ ...snapshot, stops: [], tourOrder: [] }} onAsk={openChat} expanded={reading.expanded} onToggle={reading.toggle} onOpenSource={(source) => { void goGuide(`file:${source.fileId}`, source.kind === 'lines' ? source : undefined, true); }} renderSource={(source, sectionId, index) =>
@@ -317,6 +324,6 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     </div>;
 }
 
-function storyScope(snapshotId: string | undefined, prKey: string, page: string): string | null {
-    return snapshotId === undefined ? null : `story:${prKey}:${snapshotId}${page === 'intro' ? '' : ':blocks'}`;
+function storyScope(snapshotId: string | undefined, prKey: string, guided: boolean): string | null {
+    return snapshotId === undefined ? null : `story:${prKey}:${snapshotId}${guided ? ':canvas' : ''}`;
 }

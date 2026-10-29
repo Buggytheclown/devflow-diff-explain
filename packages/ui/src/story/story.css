@@ -136,8 +136,6 @@ body:has(.story-app) { min-width: 0; }
 .story-sections > [aria-current] { border-left-color: var(--accent); background: var(--surface-hover); color: var(--text-primary); }
 .story-route-pending { margin: 0 12px; }
 .story-route-pending h3 { font-size: var(--font-size-ui); color: var(--text-link-muted); }
-.story-diff-navigation { min-width: 0; }
-.story-diff-navigation input { display: block; width: calc(100% - 20px); margin-bottom: 12px; }
 .story-file-tree, .story-file-tree ul { margin: 0; padding: 0; list-style: none; min-width: 0; }
 .story-file-tree ul { padding-left: var(--tree-indent-step); }
 .story-file-tree li { min-width: 0; }
@@ -156,7 +154,6 @@ body:has(.story-app) { min-width: 0; }
 .story-tree-stats { display: flex; gap: 7px; font-size: var(--font-size-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .story-tree-explanations { display: flex; justify-content: flex-end; align-items: center; gap: 4px; color: var(--text-primary); font-size: var(--font-size-secondary); font-variant-numeric: tabular-nums; }
 .story-main { padding: 1.5rem var(--space-page) 4rem; }
-.story-app--intro .story-main { max-width: 96rem; }
 .story-main--diff { max-width: none; padding: 12px 20px 64px; }
 .story-main h1 { font-size: var(--font-size-pr-title); }
 .story-provenance { margin-bottom: 1.5rem; }
@@ -280,3 +277,5 @@ body:has(.story-app) { min-width: 0; }
 .story-chat .chat-panel__context { border-radius: 10px; padding: 5px 9px; }
 .story-chat .chat-panel__send { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: var(--text-primary); color: var(--surface-panel); box-shadow: none; }
 .story-chat .chat-panel__resize { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; }
+
+.story-overview { margin-bottom: 3rem; }

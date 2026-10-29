@@ -10,3 +10,11 @@ it('переход к источнику помнит место возврат�
     const fresh = visitReader(back, { kind: 'guide', address: { kind: 'guide', snapshotId: 'two', page: 'intro' }, remember: false, epoch: 5, location: null });
     expect(fresh.resume).toBeNull(); expect(fresh.returnTo).toBeNull(); expect(fresh.location).toBeNull();
 });
+
+it('прокрутка из начального обзора отмечает файл без перехода по навигации', () => {
+    const next = visitReader(initialNavigation, { kind: 'scroll', snapshotId: 'one', page: 'file:2' });
+    expect(next.address).toEqual({ kind: 'guide', snapshotId: 'one', page: 'file:2' });
+    expect(next.resume).toEqual(next.address);
+    expect(next.returnTo).toBeNull();
+    expect(visitReader(next, { kind: 'scroll', snapshotId: 'one', page: 'file:2' })).toBe(next);
+});

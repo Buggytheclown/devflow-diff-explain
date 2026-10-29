@@ -9,8 +9,8 @@ test('один маршрут слева: сворачивание, прокру
     await expect(nav).toBeVisible();
     await expect(nav.locator('.story-skeleton')).toBeVisible();
     await expect(page.locator('.story-topbar nav,.story-overview-route')).toHaveCount(0);
-    await nav.getByRole('button', { name: 'Все изменения', exact: true }).click();
-    await expect(page.locator('.story-code')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Все изменения', exact: true })).toHaveCount(0);
+    await expect(page.locator('.story-code').first()).toBeVisible();
     await nav.getByRole('button', { name: 'Описание ПРа', exact: true }).click();
     const outline = await server.worker.next(); await server.worker.complete(outline.taskId ?? 0, JSON.stringify(fixture.outline));
     const blocks = fixture.snapshot.tourOrder.map((id) => fixture.snapshot.stops.find((block) => block.id === id));

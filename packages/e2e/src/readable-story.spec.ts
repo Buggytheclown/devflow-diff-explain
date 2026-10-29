@@ -10,7 +10,7 @@ test('краткое пояснение и пример → полный диф�
     await page.goto(server.url); await server.worker.register('codex', 'ru');
     const plan = await server.worker.next();
     expect((await server.worker.complete(plan.taskId ?? 0, JSON.stringify(fixture.outline))).stdout).not.toContain('rejected');
-    await expect(page.locator('.story-guided h2')).toHaveText('Описание ПРа');
+    await expect(page.locator('.story-overview h2').first()).toHaveText('Описание ПРа');
     await expect(page.locator('.story-main')).toContainText('Готовлю схему потока');
     await expect(page.locator('.story-nav')).toBeVisible();
     await expect(page.locator('.story-overview-route')).toHaveCount(0);

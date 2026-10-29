@@ -70,8 +70,7 @@ test('рассказ → явный вопрос → ответ; старое р
     await target.click();
     await expect(page.locator('.chat-panel__composer')).toContainText(`${String(jumpStart)}–${String(jumpStart)}`);
 
-    await page.getByRole('button', { name: 'Все изменения', exact: true }).click();
-    await expect(page.locator('.story-code')).toBeVisible();
+    await expect(page.locator('.story-code').first()).toBeVisible();
     const columns = await page.locator('.diff-row').first().evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' '));
     expect(columns).toHaveLength(3);
     expect(Number.parseFloat(columns[0] ?? '')).toBeLessThan(100);
@@ -104,8 +103,7 @@ test('дифф доступен без агента, история коммен
     const requests: string[] = [];
     page.on('request', (request) => { requests.push(request.url()); });
     await page.goto(server.url);
-    await page.getByRole('button', { name: 'Все изменения', exact: true }).click();
-    await expect(page.locator('.story-code')).toBeVisible();
+    await expect(page.locator('.story-code').first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Построить рассказ' })).toHaveCount(0);
     expect(requests.some((url) => /\/threads|\/snapshots|draft-buffer/.test(url))).toBe(false);
 });

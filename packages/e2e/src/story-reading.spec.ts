@@ -24,7 +24,12 @@ async function startStory(page: Page, server: SherpaServerHandle, content = long
     await expect(page.locator('.story-document section')).toHaveCount(3);
 }
 const storyTab = (page: Page) => page.locator('.story-nav-overview');
-const diffTab = (page: Page) => page.getByRole('button', { name: 'Все изменения', exact: true });
+async function openSavedSource(page: Page) {
+    const block = page.locator('.story-document section').nth(1);
+    const expand = block.getByRole('button', { name: 'Показать изменение', exact: true });
+    if (await expand.isVisible()) await expand.click();
+    await block.getByRole('button', { name: 'Открыть в диффе ↗', exact: true }).click();
+}
 async function visibleLine(page: Page) {
     return page.locator('.story-main').evaluate((root) => {
         const top = Math.max(document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0) + 12;
@@ -33,7 +38,7 @@ async function visibleLine(page: Page) {
     });
 }
 
-test('возврат хранит абзац, раскрытия и фокус; вкладки хранят файл, поиск, строки и раскрытый контекст', async ({ page, launchSherpa }) => {
+test('сохранённый источник: возврат хранит абзац, раскрытия и фокус', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium');
     await startStory(page, server);
     const first = page.locator('.story-document section').nth(1);
@@ -50,8 +55,6 @@ test('возврат хранит абзац, раскрытия и фокус; 
     await expect(page.locator('.story-return')).toContainText('Проверка ошибок');
     const target = page.locator(`.story-main .diff-row[data-key="a${String(evidenceSource.start)}"]`);
     await expect(target).toBeInViewport();
-    const otherPath = 'services/orders/src/domain/policies/edit-policy.ts';
-    await page.locator('.story-nav').getByRole('button', { name: otherPath, exact: true }).click();
     await storyTab(page).click();
     await expect(second.getByRole('button', { name: 'Скрыть изменение', exact: true })).toBeVisible();
     await expect(first.getByRole('button', { name: 'Скрыть изменение', exact: true })).toHaveCount(1);
@@ -62,29 +65,6 @@ test('возврат хранит абзац, раскрытия и фокус; 
     await expect(paragraph).toBeInViewport();
     await page.setViewportSize({ width: 1440, height: 900 });
     await expect(paragraph).toBeInViewport();
-
-    await diffTab(page).click();
-    await expect(page.locator('.story-code header code')).toHaveText(otherPath);
-    await page.getByRole('textbox', { name: 'Найти файл' }).fill('edit-policy');
-    await page.getByRole('button', { name: 'Раскрыть контекст файла', exact: true }).click();
-    await expect(page.locator('.story-main .diff-row')).not.toHaveCount(0);
-    await page.locator('.story-main .diff-row').nth(20).focus();
-    await page.evaluate(() => { window.scrollBy(0, 250); });
-    const selected = await page.locator('.story-main .diff-row.is-selected').first().getAttribute('data-key');
-    const position = await visibleLine(page);
-    const rows = await page.locator('.story-main .diff-row').count();
-    await storyTab(page).click();
-    await diffTab(page).click();
-    await expect(page.locator('.story-code header code')).toHaveText(otherPath);
-    await expect(page.getByRole('textbox', { name: 'Найти файл' })).toHaveValue('edit-policy');
-    await expect(page.locator('.story-main .diff-row')).toHaveCount(rows);
-    await expect(page.locator(`.story-main .diff-row[data-key="${selected ?? ''}"]`)).toHaveClass(/is-selected/);
-    await expect(async () => { expect(Math.abs(((await page.locator(`.story-main .diff-row[data-key="${position.key}"]`).boundingBox())?.y ?? 99999) - position.y)).toBeLessThan(3); }).toPass({ timeout: 5_000 });
-    await advanceIteration(page, server);
-    await expect(page.getByRole('button', { name: 'Открыть новый дифф', exact: true })).toBeVisible();
-    await storyTab(page).click(); await diffTab(page).click();
-    await expect(page.locator('.story-main .diff-row')).toHaveCount(rows);
-    await expect(page.locator('.story-code header code')).toHaveText(otherPath);
 });
 
 test('новый push и поздняя загрузка не подменяют выбранную версию; новый разбор открывается явно', async ({ page, launchSherpa }) => {
@@ -111,7 +91,7 @@ test('новый push и поздняя загрузка не подменяют
     release();
     await expect(page.locator('.story-document')).toBeVisible();
     await expect(page.locator('.story-code.file-card')).toHaveCount(0);
-    await diffTab(page).click();
+    await openSavedSource(page);
     await expect(page.locator('.story-code header code')).toHaveText(oldPath);
     await expect(page.locator('.story-provenance')).toHaveText(oldCommit);
     const oldPosition = await visibleLine(page);
@@ -121,9 +101,9 @@ test('новый push и поздняя загрузка не подменяют
     await expect(page.locator('.story-main--diff')).toBeVisible();
     await expect(page.locator('.story-provenance')).toHaveText(oldCommit);
     expect((await visibleLine(page)).key).toBe(oldPosition.key);
-    await expect(page.locator('.story-return')).toHaveText('К рассказу · Введение');
+    await expect(page.locator('.story-return')).toHaveText('К рассказу · Запись до уведомления');
     await storyTab(page).click();
-    await expect(page.locator('[data-reading="intro:0"]')).toBeInViewport();
+    await expect(page.locator('.story-document section').nth(1)).toBeInViewport();
     await expect(page.getByRole('button', { name: 'Скрыть изменение', exact: true })).toHaveCount(1);
     await expect(page.locator('.story-provenance')).toHaveText(oldCommit);
     await page.getByRole('button', { name: 'Открыть новый разбор', exact: true }).click();
@@ -131,7 +111,7 @@ test('новый push и поздняя загрузка не подменяют
     await expect(page.getByRole('button', { name: 'Скрыть изменение', exact: true })).toHaveCount(0);
     const section = await server.worker.next();
     await server.worker.complete(section.taskId ?? 0, JSON.stringify(body));
-    await diffTab(page).click();
+    await openSavedSource(page);
     await expect(page.locator('.story-provenance')).not.toHaveText(oldCommit);
     await expect(page.getByRole('button', { name: 'Открыть новый дифф', exact: true })).toHaveCount(0);
 });
@@ -227,20 +207,21 @@ test('источники показывают точные стороны, от�
     await expect(intro.locator('.story-source')).toHaveCount(0);
 });
 
-test('поздний разбор первого файла не переключает выбранный позже файл', async ({ page, launchSherpa }) => {
+test('поздний разбор файлов не сдвигает выбранный позже файл в общей ленте', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium');
     let release = (): void => undefined;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     await page.route('**/assets/worker-*.js', async (route) => { await gate; await route.continue(); });
     await page.goto(server.url);
-    await diffTab(page).click();
     const path = 'services/orders/src/infra/clock.ts';
-    await page.locator('.story-nav').getByRole('button', { name: path, exact: true }).click();
-    await expect(page.locator('.story-code header code')).toHaveText(path);
+    const card = page.locator('.story-code').filter({ has: page.locator('header code', { hasText: path }) });
+    await card.evaluate((element) => { window.scrollBy(0, element.getBoundingClientRect().top - Math.max(document.querySelector('.story-topbar')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.story-preparation')?.getBoundingClientRect().bottom ?? 0) - 12); });
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); })));
+    const before = (await card.boundingBox())?.y ?? 0;
     release();
-    await expect(page.locator('.story-main .diff-row')).not.toHaveCount(0);
-    await expect(page.locator('.story-code header code')).toHaveText(path);
+    await expect(card.locator('.diff-row')).not.toHaveCount(0);
     await expect(page.locator('.story-main [data-reading-wait]')).toHaveCount(0);
+    await expect(async () => { expect(Math.abs(((await card.boundingBox())?.y ?? 99999) - before)).toBeLessThan(3); }).toPass();
 });
 
 test('позднее изображение над текстом не сдвигает читаемый абзац', async ({ page, launchSherpa }) => {

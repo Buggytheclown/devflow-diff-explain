@@ -30,7 +30,6 @@ if (token === null) {
     window.addEventListener('keydown', (event) => {
         if (event.target instanceof Element && event.target.closest('input,textarea,[contenteditable="true"]') !== null) return;
         if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-        if (event.key === '1' || event.key === '2') { event.preventDefault(); session.setView(event.key === '1' ? 'route' : 'diff'); }
         if (event.key === 'Escape') session.setChatOpen(false);
     });
     void Promise.race([loadUiSettings(settings, async () => ({ ...await fetchUiSettings(token), ...READER_APPEARANCE })), delay(1500)]).then(() => {

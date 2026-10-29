@@ -54,7 +54,10 @@ export function useReadingSession(root: RefObject<HTMLElement | null>, scope: st
     useLayoutEffect(() => {
         if (previousStory.current !== storyKey) {
             previousStory.current = storyKey;
-            const position = positions.current.get(scope);
+            // Старые позиции описания и блоков переносим в общий холст по читаемой части.
+            const previousScope = initialPage === 'intro' ? storyKey : storyKey === null ? null : storyKey + ':blocks';
+            const position = positions.current.get(scope) ?? (scope.endsWith(':canvas') && previousScope !== null ? positions.current.get(previousScope) : undefined);
+            if (position !== undefined) positions.current.set(scope, position);
             pending.current = position === undefined && initialPage !== undefined && initialPage !== 'intro' ? { kind: 'jump', scope, epoch: ++epoch.current, page: initialPage, focus: null } : { kind: 'restore', scope, epoch: ++epoch.current, position: position ?? null, focus: null };
         }
         const request = pending.current;

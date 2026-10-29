@@ -48,8 +48,5 @@ test('заголовки блоков и настоящее дерево: пор
     await expect(addedRow.locator('.diff-row__gutter--code')).toBeVisible();
     await expect(addedRow.locator('.diff-row__sign')).toHaveText('+');
     await page.screenshot({ path: test.info().outputPath('arcanum-files-tree.png') });
-    await page.locator('.story-nav').getByRole('button', { name: 'Все изменения', exact: true }).click();
-    await expect(nav.locator('.story-diff-navigation .story-file-tree')).toHaveCount(1);
-    await expect(nav.locator('details > summary').first()).toBeVisible();
-    await expect(nav.locator('.story-file-status')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Все изменения', exact: true })).toHaveCount(0);
 });

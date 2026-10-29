@@ -7,9 +7,8 @@ test('весь PR по умолчанию; явный файл → строки 
     const server = await launchSherpa('fixture-medium');
     await page.goto(server.url);
     await server.worker.register('codex', 'ru');
-    await page.locator('.story-nav').getByRole('button', { name: 'Все изменения', exact: true }).click();
     await expect(page.locator('.story-code .diff-row')).not.toHaveCount(0);
-    const originalPath = await page.locator('.story-code header code').textContent() ?? '';
+    const originalPath = await page.locator('.story-code header code').first().textContent() ?? '';
     await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.locator('.story-chat-context,.chat-panel__empty')).toHaveCount(0);
     await expect(page.locator('.chat-panel__header')).toContainText('Чат');
@@ -21,10 +20,10 @@ test('весь PR по умолчанию; явный файл → строки 
     await server.worker.complete(first.taskId ?? 0, 'Этот PR меняет правило и его применение в обработчике.');
 
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
-    await page.locator('.story-code header').getByRole('button', { name: 'В чат', exact: true }).click();
+    await page.locator('.story-code header').first().getByRole('button', { name: 'В чат', exact: true }).click();
     await expect(page.locator('.chat-panel__context-label')).toHaveText(originalPath);
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Зачем изменили этот файл?');
-    await page.locator('.story-nav-file').nth(1).click();
+    await page.locator('.story-code').nth(1).scrollIntoViewIfNeeded();
     await expect(page.locator('.chat-panel__context-label')).toHaveText(originalPath);
     await page.reload();
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toHaveValue('Зачем изменили этот файл?');

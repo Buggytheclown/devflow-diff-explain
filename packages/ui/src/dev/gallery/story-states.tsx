@@ -106,7 +106,7 @@ const readable = readableStoryFixture();
 const architecture = architectureStoryFixture();
 function SidebarOverviewGallery() {
     const [page, visit] = useState('intro');
-    return <div className="story-app story-app--intro" data-prepared="true"><header className="story-topbar"><strong>◆ Devflow</strong><span className="story-pr-key">fixture-medium</span><Preparation route={{ phase: 'ready', smallPr: false, snapshot: guided.snapshot, failure: null, stale: null }} connected /></header><aside className="story-nav"><nav className="story-sections"><button className="ctl" onClick={() => { visit('intro'); }}>Описание ПРа</button></nav><GuidedNavigation snapshot={guided.snapshot} diff={guided.diff} page={page} onVisit={visit} /></aside><GuidedGallery page={page} /></div>;
+    return <div className="story-app" data-prepared="true"><header className="story-topbar"><strong>◆ Devflow</strong><span className="story-pr-key">fixture-medium</span><Preparation route={{ phase: 'ready', smallPr: false, snapshot: guided.snapshot, failure: null, stale: null }} connected /></header><aside className="story-nav"><nav className="story-sections"><button className="ctl" onClick={() => { visit('intro'); }}>Описание ПРа</button></nav><GuidedNavigation snapshot={guided.snapshot} diff={guided.diff} page={page} onVisit={visit} /></aside><GuidedGallery page={page} /></div>;
 }
 export const GUIDED_STORY_STATES: readonly GalleryState[] = [
     { id: 'overview-left-navigation', group: 'По диффу', title: 'Обзор · единая навигация слева и готовность в шапке', render: () => <SidebarOverviewGallery /> },
@@ -129,7 +129,7 @@ export const GUIDED_STORY_STATES: readonly GalleryState[] = [
     { id: 'readable-flow-unavailable', group: 'По диффу', title: 'Схема недоступна', render: () => <FlowDiagram flow={{ status: 'unavailable', reason: 'Не удалось подтвердить общий поток. Рассказ и дифф доступны.' }} /> },
     { id: 'guided-description', group: 'По диффу', title: 'Описание ПРа и маршрут', render: () => <GuidedGallery page="intro" /> },
     { id: 'guided-block', group: 'По диффу', title: 'Смысловой блок · порядок файлов', render: () => <GuidedGallery page="guided-2" /> },
-    { id: 'guided-continuous', group: 'По диффу', title: 'Непрерывный разбор · блоки и все полные диффы', render: () => <GuidedGallery page="guided-1" /> },
+    { id: 'guided-continuous', group: 'По диффу', title: 'Единый холст · описание, схема и все блоки с диффами', render: () => <SidebarOverviewGallery /> },
     { id: 'guided-file', group: 'По диффу', title: 'Файл · полный дифф и пояснение важных строк', render: () => <GuidedGallery page={`file:${guided.first.fileId}`} /> },
     { id: 'guided-pending', group: 'По диффу', title: 'Дифф доступен до готовности пояснений', render: () => <GuidedGallery page={`file:${guided.first.fileId}`} pending /> },
 ];

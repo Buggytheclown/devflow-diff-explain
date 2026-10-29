@@ -20,7 +20,7 @@ export type ReaderVisit =
 /** Адрес и переход к строкам меняются вместе, после проверки актуальности загрузки. */
 export function visitReader(state: ReaderNavigation, visit: ReaderVisit): ReaderNavigation {
     if (visit.kind === 'scroll') {
-        if (state.address?.kind !== 'guide' || state.address.snapshotId !== visit.snapshotId || state.address.page === visit.page) return state;
+        if (state.address !== null && (state.address.kind !== 'guide' || state.address.snapshotId !== visit.snapshotId || state.address.page === visit.page)) return state;
         const address: GuideAddress = { kind: 'guide', snapshotId: visit.snapshotId, page: visit.page };
         return { ...state, address, guide: address, resume: address };
     }
