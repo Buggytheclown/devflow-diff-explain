@@ -31,7 +31,7 @@ test('единая лента от первого до последнего фа
     await expect(card.locator('header')).toBeInViewport();
     const row = card.locator('.diff-row[data-key]').first();
     await row.click();
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     const input = page.getByRole('textbox', { name: 'Вопрос агенту' }); await input.fill('Поясни эту строку');
     const key = await row.getAttribute('data-key'); if (key === null) throw new Error('Missing row key');
     await expect(page.locator('.story-nav-file[aria-current=page]')).toHaveAttribute('aria-label', target.path);

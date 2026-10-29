@@ -28,13 +28,13 @@ test('обзор первым → непрерывный дифф → локал
     await expect(file.locator('.story-example')).toBeVisible();
     await file.locator('.diff-row').nth(20).scrollIntoViewIfNeeded();
     const row = file.locator('.diff-row').nth(20);
-    await page.locator('.story-topbar').getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     const composer = page.locator('.chat-panel textarea'); await composer.fill('Почему здесь такое условие?');
     const y = (await row.boundingBox())?.y ?? 0;
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(file.locator('header code')).toHaveText(fixture.first.path);
     await expect(async () => { expect(Math.abs(((await row.boundingBox())?.y ?? 9999) - y)).toBeLessThan(4); }).toPass({ timeout: 10_000 });
-    await page.locator('.story-topbar').getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Чат с агентом', exact: true })).toBeVisible();
     await expect(composer).toHaveValue('Почему здесь такое условие?');
     // Новая подготовка не подменяет выбранный файл даже после приёмки нового плана.
     await page.evaluate(async () => {

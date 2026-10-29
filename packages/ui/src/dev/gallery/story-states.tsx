@@ -1,6 +1,7 @@
 import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixture, architectureStoryFixture } from '@sherpa/fixtures';
 import type { ReactNode } from 'react';
 import { FloatingChat } from '../../story/floating-chat.js';
+import { ChatLauncher } from '../../story/chat-launcher.js';
 import type { RouteSnapshot, StorySource } from '@sherpa/protocol';
 
 import { createStoryData } from '../../story/data.js';
@@ -50,6 +51,7 @@ function QuietChatGallery({ attached = false, offline = false, inFrame = false, 
 }
 
 export const STORY_STATES: readonly GalleryState[] = [
+    { id: 'chat-launcher', group: 'Чат', title: 'Свёрнутый чат · кнопка снизу справа', render: () => <ChatLauncher open={false} onOpen={noop} /> },
     { id: 'chat-floating', group: 'Чат', title: 'Плавающий чат · файл возле ввода', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery attached inFrame headerActions={headerActions} />}</FloatingChat> },
     { id: 'chat-quiet-empty', group: 'Чат', title: 'Пустой чат · вопрос по всему PR', render: () => <QuietChatGallery /> },
     { id: 'chat-explicit-file', group: 'Чат', title: 'Явно прикреплённый файл возле ввода', render: () => <QuietChatGallery attached /> },

@@ -10,7 +10,7 @@ test('весь PR по умолчанию; явный файл → строки 
     await page.locator('.story-topbar').getByRole('button', { name: 'Дифф', exact: true }).click();
     await expect(page.locator('.story-code .diff-row')).not.toHaveCount(0);
     const originalPath = await page.locator('.story-code header code').innerText();
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.locator('.story-chat-context,.chat-panel__empty')).toHaveCount(0);
     await expect(page.locator('.chat-panel__header')).toContainText('Чат');
     await expect(page.locator('.chat-panel__contexts')).toHaveCount(0);

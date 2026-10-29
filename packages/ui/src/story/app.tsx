@@ -14,6 +14,7 @@ import { createStoryData } from './data.js';
 import { EvidenceSource } from './evidence.tsx';
 import { ReadFile } from './read-file.tsx';
 import { FloatingChat } from './floating-chat.js';
+import { ChatLauncher } from './chat-launcher.js';
 import { GuidedDocument } from './guided-document.tsx';
 import { StoryDocument } from './story-document.tsx';
 import { useGuideScroll } from './use-guide-scroll.js';
@@ -55,7 +56,6 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const [explanation, setExplanation] = useState<ChatExplanation | undefined>(cached?.anchor != null || cached?.explanation?.file !== undefined ? cached.explanation : undefined);
     const [focus, setFocus] = useState(0);
     const attachmentEpoch = useRef(0);
-    const chatButton = useRef<HTMLButtonElement | null>(null);
     const [data] = useState(() => createStoryData(token));
     const fileId = reader.address?.kind === 'diff' ? reader.address.fileId : diff === null ? null : data.view(diff.diffId).fileId;
     const chosenId = selectedSnapshotId ?? route?.snapshot?.snapshotId;
@@ -166,7 +166,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             removeSelection(); setExplanation({ ...pinned, file: { fileId, path: file.path } }); openChat();
         } catch (reason: unknown) { if (attachmentEpoch.current === epoch) setError(String(reason)); }
     };
-    const closeChat = (): void => { session.setChatOpen(false); chatButton.current?.focus({ preventScroll: true }); };
+    const closeChat = (): void => { session.setChatOpen(false); };
     const leave = (sectionId?: string): number => {
         const epoch = reading.begin();
         if (!showDiff && storyKey !== null) {
@@ -242,9 +242,6 @@ export function App({ store, session, token }: { store: Store; session: StorySes
                 <button className="ctl" aria-current={showDiff ? 'page' : undefined} onClick={() => { void goDiff(diffVersion ?? snapshot?.diffId ?? active ?? null); }}>{guided ? gt.allChanges : t.diff}</button>
             {showDiff || guided ? <button className="ctl story-files-toggle" aria-expanded={filesOpen} onClick={() => { setFilesOpen((value) => !value); }}>{filesOpen ? t.closeFiles : t.files}</button> : null}
             </nav>
-            <div className="story-settings">
-                <button ref={chatButton} className="ctl" aria-expanded={ui.chatOpen} onClick={() => { openChat(); }}>{t.chat}</button>
-            </div>
         </header>
         <Preparation route={route} connected={connected} displayedId={snapshot?.snapshotId}
             onCancel={route?.generation === undefined ? undefined : () => { const id = route.generation?.id; if (id !== undefined) void cancelRouteGeneration(token, id).catch((reason: unknown) => { setError(String(reason)); }); }}
@@ -286,6 +283,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
                     } />}
 
         </main>
+        <ChatLauncher open={ui.chatOpen} onOpen={openChat} />
         <FloatingChat open={ui.chatOpen} onClose={closeChat}>{({ headerActions }) =>
             <ChatPanel headerActions={headerActions} composerText={draft} onComposerTextChange={setDraft} worker={worker} tasks={tasks} exchanges={chat.exchanges.filter((exchange) => exchange.explanation?.diffId === (explanation?.diffId ?? viewedDiffId))} notes={[]} loading={false} error={chatError}
                 onOpenAttachment={explanation === undefined ? undefined : () => { void goDiff(explanation.diffId, explanation.file?.fileId ?? anchor?.fileId); }} contextCommit={explanation?.commit ?? snapshot?.commit} fileAttachment={explanation?.file} attachmentStale={explanation !== undefined && explanation.diffId !== viewedDiffId} reconnectCommand={reconnectCommand(stream.state?.prKey ?? '')} anchor={anchor} anchorText={anchorText} focusRequest={focus} scrollRequest={null} onScrollRequestHandled={noop}

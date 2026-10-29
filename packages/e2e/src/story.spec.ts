@@ -29,10 +29,10 @@ test('рассказ → явный вопрос → ответ; старое р
     await expect(page.locator('[data-story-section="intro"] [aria-expanded="true"]')).toHaveCount(1);
     await expect(page.locator('.review-action-bar, .route-toolbar, .thread-list')).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Почему уведомление идёт после записи?');
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toHaveValue('Почему уведомление идёт после записи?');
     await expect(page.locator('.story-chat-context')).toHaveCount(0);
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).press('Enter');

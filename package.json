@@ -1,6 +1,6 @@
 {
   "name": "devflow-diff-explain",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "description": "Личная Devflow Diff Explain: краткий рассказ о ПР, дифф и вопросы агенту",
   "private": true,
   "license": "UNLICENSED",

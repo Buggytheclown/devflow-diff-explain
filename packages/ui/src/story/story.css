@@ -9,7 +9,6 @@ body:has(.story-app) { min-width: 0; }
 .story-pr-key { color: var(--text-link-muted); font-family: monospace; font-size: var(--font-size-secondary); }
 .story-topbar nav { display: flex; gap: .6rem; }
 .story-topbar [aria-current], .story-nav [aria-current] { color: var(--accent-text); background: var(--accent-surface); }
-.story-settings { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
 .story-nav input { background: var(--surface-panel); color: var(--text-primary); border: 1px solid var(--border-control); border-radius: .35rem; padding: .4rem; }
 .story-nav { position: sticky; top: 3.4rem; height: calc(100vh - 3.4rem); overflow: auto; border-right: 1px solid var(--border-standard); padding: 1.5rem 1rem; display: flex; flex-direction: column; align-items: stretch; gap: .8rem; }
 .story-nav p { color: var(--text-link-muted); font-size: var(--font-size-secondary); }
@@ -194,7 +193,6 @@ body:has(.story-app) { min-width: 0; }
     .story-overview { grid-template-columns: minmax(0, 1fr); }
     .story-overview-route { padding: 1rem 0 0; border-left: 0; border-top: 1px solid var(--border-standard); }
     .story-topbar { gap: .4rem; }
-    .story-settings { gap: .25rem; }
 }
 
 
@@ -240,6 +238,8 @@ body:has(.story-app) { min-width: 0; }
 .story-guided-file { scroll-margin-top: calc(var(--story-top) + 12px); }
 
 /* Плавающий чат оставляет геометрию диффа неизменной. */
+.story-chat-launcher { position: fixed; right: 24px; bottom: 24px; z-index: 20; display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 20px; border: 1px solid var(--border-control); border-radius: 999px; background: var(--surface-panel); color: var(--text-primary); font-size: var(--font-size-body); box-shadow: var(--shadow-floating); }
+.story-chat-launcher[hidden] { display: none; }
 .story-chat { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--border-standard); border-radius: 18px; background: var(--surface-panel); box-shadow: var(--shadow-floating); }
 .story-chat .chat-panel { position: static; width: 100%; height: 100%; min-height: 0; border: 0; flex: 1; }
 .story-chat .chat-panel__header { min-height: 52px; padding: 10px 16px; cursor: grab; touch-action: none; }

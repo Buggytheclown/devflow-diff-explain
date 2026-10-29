@@ -2,22 +2,32 @@ import { architectureStoryFixture } from '@sherpa/fixtures';
 import { test, expect } from './sherpa-fixture.js';
 
 const fixture = architectureStoryFixture();
-test('плавающий чат не сдвигает дифф; перенос, расширение, Escape, вложение и длинный ответ', async ({ page, launchSherpa }) => {
+test('плавающая кнопка и чат не сдвигают дифф; перенос, расширение, Escape, вложение и длинный ответ', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium');
     await page.goto(server.url); await server.worker.register('codex', 'ru');
     const overview = await server.worker.next(); await server.worker.complete(overview.taskId ?? 0, JSON.stringify(fixture.outline));
     const files = await server.worker.next(); await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('.story-preparation--ready')).toBeVisible();
+    const open = page.getByRole('button', { name: 'Чат', exact: true });
+    await expect(open).toBeVisible(); await expect(open).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(page.locator('.story-topbar').getByRole('button', { name: 'Чат', exact: true })).toHaveCount(0);
     await page.locator('.story-topbar').getByRole('button', { name: 'Разбор по блокам', exact: true }).click();
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();
     const card = page.locator(`[data-reading-file="${fixture.first.fileId}"]`);
+    const launcher = await open.boundingBox(); if (launcher === null) throw new Error('Missing launcher');
+    expect(launcher.height).toBe(48);
+    expect(1440 - launcher.x - launcher.width).toBe(24); expect(900 - launcher.y - launcher.height).toBe(24);
+    await page.screenshot({ path: test.info().outputPath('chat-launcher.png') });
+    await page.mouse.move(500, 400); await page.mouse.wheel(0, 180);
+    await expect(async () => { expect(await open.boundingBox()).toEqual(launcher); expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(100); }).toPass();
     const row = card.locator('.diff-row[data-key]').first(); await row.locator('.diff-row__gutter--code').click();
     const before = await card.boundingBox();
     if (before === null) throw new Error('Missing file');
     const rowY = (await row.boundingBox())?.y ?? 0;
-    const open = page.getByRole('button', { name: 'Спросить в чате', exact: true }); await open.click();
+    await open.click();
     const dialog = page.getByRole('dialog', { name: 'Чат с агентом', exact: true });
     await expect(dialog).toBeVisible(); await expect(dialog).toHaveAttribute('aria-modal', 'false');
+    await expect(open).toHaveCount(0);
     await expect(async () => { expect((await card.boundingBox())?.width).toBe(before.width); expect(Math.abs(((await row.boundingBox())?.y ?? 9999) - rowY)).toBeLessThan(2); }).toPass();
     const input = page.getByRole('textbox', { name: 'Вопрос агенту' });
     await expect(input).toBeFocused(); await input.fill('Почему проверяем это до сохранения?');
@@ -34,7 +44,7 @@ test('плавающий чат не сдвигает дифф; перенос, 
     expect((await dialog.boundingBox())?.width).toBeGreaterThan(initial.width);
     await expect(input).toHaveValue('Почему проверяем это до сохранения?');
     await input.press('Escape'); await expect(dialog).toHaveCount(0); await expect(open).toBeFocused();
-    await open.click(); await expect(input).toHaveValue('Почему проверяем это до сохранения?');
+    await open.press('Enter'); await expect(input).toHaveValue('Почему проверяем это до сохранения?');
     await page.getByRole('button', { name: 'Обычный размер чата', exact: true }).click();
     expect(Math.abs(((await dialog.boundingBox())?.x ?? 0) - (moved?.x ?? 0))).toBeLessThan(2);
     await input.press('Enter');

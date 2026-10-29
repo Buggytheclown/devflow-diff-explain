@@ -192,7 +192,7 @@ test('источники показывают точные стороны, от�
     const task = await server.worker.next();
     await server.worker.complete(task.taskId ?? 0, JSON.stringify({ ...outline, evidence: { claims: [{ quote: outline.summary, sources, limitation: null }] } }));
     const intro = page.locator('[data-story-section="intro"]');
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Мой черновик');
     const context = await page.locator('textarea').inputValue();
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
@@ -212,7 +212,7 @@ test('источники показывают точные стороны, от�
     const image = intro.locator('[data-source-side="file"]');
     await expect(image).toContainText(picture.path);
     await expect(image.locator('img')).not.toHaveCount(0);
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toHaveValue('Мой черновик');
     await expect(page.locator('textarea')).toHaveValue(context);
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();

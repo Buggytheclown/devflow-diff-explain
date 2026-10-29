@@ -33,7 +33,7 @@ test('описание → блок → полный дифф → файл/ст�
     await page.locator('.story-inline-note').scrollIntoViewIfNeeded();
     await page.screenshot({ path: test.info().outputPath('sherpa-guided-explanation.png'), fullPage: false });
     await expect(file.locator('.story-file-description .md-blocks').first()).toContainText(fixture.body.stops[0]?.files[0]?.explanation.replaceAll('`', '') ?? '');
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Вопрос агенту' })).toHaveValue('Как файл участвует в решении?');
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).press('Enter');
     const question = await server.worker.next();
@@ -62,7 +62,7 @@ test('описание → блок → полный дифф → файл/ст�
     await laterRow.click({ modifiers: ['Shift'] });
     await expect(file.locator('.diff-row.is-selected')).toHaveCount(5);
     await expect(page.getByRole('button', { name: 'Спросить об этих строках', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Убрать диапазон из контекста', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
     await page.locator('.story-topbar').getByRole('button', { name: 'Все изменения', exact: true }).click();
@@ -132,7 +132,7 @@ test('выделение синхронизировано с чатом, уда�
     await expect(page.locator('.story-chat')).toHaveCount(0);
     await expect(row).toBeFocused();
     await expect(page.getByRole('toolbar', { name: 'Выбраны строки' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     const input = page.getByRole('textbox', { name: 'Вопрос агенту' });
     const quote = page.locator('.chat-panel__selection-quote');
     await expect(quote).not.toBeEmpty();
@@ -147,7 +147,7 @@ test('выделение синхронизировано с чатом, уда�
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
     await page.reload();
     await expect(file.locator('.diff-row.is-selected')).toHaveCount(2);
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
     await expect(quote).toHaveText(code ?? '');
     await expect(input).toHaveValue('Что меняется в этих строках?');
     await input.press('Enter');
@@ -173,7 +173,8 @@ test('выделение синхронизировано с чатом, уда�
     await page.locator('.story-topbar').getByRole('button', { name: 'Все изменения', exact: true }).click();
     await expect(file.locator('.diff-row.is-selected')).toHaveCount(0);
     await file.locator('.diff-row[data-key]').first().locator('.diff-row__gutter--code').click();
-    await page.getByRole('button', { name: 'Спросить в чате', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Чат с агентом', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Чат', exact: true })).toHaveCount(0);
     await expect(quote).not.toBeEmpty();
     await page.getByRole('button', { name: 'Убрать диапазон из контекста', exact: true }).click();
     await page.reload();
