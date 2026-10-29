@@ -36,6 +36,8 @@ const bundles = [
 rmSync(distDir, { recursive: true, force: true });
 mkdirSync(binDir, { recursive: true });
 copyFileSync(resolve(root, 'SKILL.md'), resolve(distDir, 'SKILL.md'));
+mkdirSync(resolve(distDir, 'agents'), { recursive: true });
+copyFileSync(resolve(root, 'agents/openai.yaml'), resolve(distDir, 'agents/openai.yaml'));
 
 for (const bundle of bundles) {
     const packageRoot = resolve(root, bundle.pkg);

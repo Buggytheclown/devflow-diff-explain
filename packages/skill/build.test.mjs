@@ -28,9 +28,11 @@ beforeAll(() => {
 }, 120_000);
 
 describe('сборка пакета скилла', () => {
-    // Именно `dist/` линкуется в харнес: лишний файл в нём — мусор в установленном скилле.
+    // Именно `dist/` копируется в харнес: лишний файл в нём — мусор в установленном скилле.
     it('dist/ — самодостаточный дистрибутив: SKILL.md, команда и модуль сервера в bin/', () => {
-        expect(readdirSync(distDir).sort()).toEqual(['SKILL.md', 'bin', 'version.json']);
+        expect(readdirSync(distDir).sort()).toEqual(['SKILL.md', 'agents', 'bin', 'version.json']);
+        expect(readdirSync(join(distDir, 'agents'))).toEqual(['openai.yaml']);
+        expect(readFileSync(join(distDir, 'agents/openai.yaml'), 'utf8')).toBe(readFileSync(join(packageRoot, 'agents/openai.yaml'), 'utf8'));
         expect(readdirSync(binDir).sort()).toEqual(['devflow-diff-explain-server.mjs', 'devflow-diff-explain.mjs']);
         expect(statSync(cliPath).isFile()).toBe(true);
         expect(statSync(serverPath).isFile()).toBe(true);

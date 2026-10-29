@@ -1,6 +1,6 @@
 ---
 name: devflow-diff-explain
-description: "Explain a PR in Devflow Diff Explain: guide a colleague through meaningful blocks, ordered files and their full diffs, then answer explicit questions in chat."
+description: "Use only when explicitly invoked as $devflow-diff-explain or selected as «Дифф — объяснить». Do not activate automatically based on task content. Explain a PR in Devflow Diff Explain: guide a colleague through meaningful blocks, ordered files and their full diffs, then answer explicit questions in chat."
 ---
 
 # Devflow Diff Explain

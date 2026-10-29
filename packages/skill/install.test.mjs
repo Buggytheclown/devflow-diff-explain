@@ -10,7 +10,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const root = resolve(packageRoot, '../..');
 const installer = join(root, 'scripts/install-local.mjs');
-const files = ['SKILL.md', 'version.json', 'bin/devflow-diff-explain.mjs', 'bin/devflow-diff-explain-server.mjs'];
+const files = ['SKILL.md', 'agents/openai.yaml', 'version.json', 'bin/devflow-diff-explain.mjs', 'bin/devflow-diff-explain-server.mjs'];
 let temp;
 const backups = [];
 beforeAll(() => {
@@ -33,7 +33,7 @@ it('устанавливает standalone-копию, проверяет сос�
         return result;
     };
     const first = install();
-    expect(first.filesVerified).toBe(4);
+    expect(first.filesVerified).toBe(files.length);
     expect(lstatSync(target).isSymbolicLink()).toBe(false);
     const hash = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
     for (const name of files) expect(hash(join(target, name))).toBe(hash(join(packageRoot, 'dist', name)));

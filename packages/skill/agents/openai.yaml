@@ -1,0 +1,7 @@
+interface:
+  display_name: "Дифф — объяснить"
+  short_description: "Понять PR через архитектуру, блоки и дифф файлов"
+  default_prompt: "Помоги разобраться в изменениях, используя $devflow-diff-explain."
+
+policy:
+  allow_implicit_invocation: false
