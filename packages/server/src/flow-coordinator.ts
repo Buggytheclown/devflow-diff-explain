@@ -1,3 +1,4 @@
+import { stripCodeFence } from './route/raw-result.js';
 import { z } from 'zod';
 import { architectureOverviewResultSchema } from '@sherpa/protocol';
 import fs from 'node:fs';
@@ -100,7 +101,7 @@ export class FlowCoordinator {
         if (diff === undefined) { void this.options.loadDiff(snapshot.diffId).then((value) => { this.diffs.set(value.diffId, value); }).catch(() => undefined); return { kind: 'deferred', errors: ['Saved diff is loading. Retry completion.'] }; }
         if (snapshot.storyContractVersion === 6) {
             let raw: unknown;
-            try { raw = JSON.parse(result); } catch { return { kind: 'rejected', errors: ['Return valid JSON.'] }; }
+            try { raw = JSON.parse(stripCodeFence(result)); } catch { return { kind: 'rejected', errors: ['Return valid JSON.'] }; }
             const flowOnly = architectureOverviewResultSchema.pick({ flow: true }).safeParse(raw);
             const overview = { contractVersion: 6, summary: snapshot.summary, evidence: rawEvidence(snapshot.summaryEvidence),
                 stops: snapshot.stops.map((block) => ({ title: block.title, paragraph: block.paragraph,
@@ -116,7 +117,7 @@ export class FlowCoordinator {
             return { kind: 'accepted', onCommitted: () => { if (this.current(snapshot.snapshotId, task.id)) this.options.store.setFlow(snapshot.snapshotId, flow); } };
         }
         let raw: unknown;
-        try { raw = JSON.parse(result); } catch { return { kind: 'rejected', errors: ['Return valid JSON.'] }; }
+        try { raw = JSON.parse(stripCodeFence(result)); } catch { return { kind: 'rejected', errors: ['Return valid JSON.'] }; }
         const parsed = flowDiagramResultSchema.safeParse(raw);
         if (!parsed.success) return { kind: 'rejected', errors: parsed.error.issues.map((issue) => issue.message) };
         const value = parsed.data;
@@ -143,7 +144,7 @@ export class FlowCoordinator {
         if (snapshot.storyContractVersion === 6) {
             const overview = path.join(dir, 'accepted-overview.json');
             fs.writeFileSync(overview, JSON.stringify({ summary: snapshot.summary, blocks: snapshot.stops.map((block) => ({ title: block.title, paragraph: block.paragraph, nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path), relatedFiles: block.relatedFiles?.map((file) => file.path) })) }), { mode: 0o600 });
-            fs.writeFileSync(schema, JSON.stringify(z.toJSONSchema(architectureOverviewResultSchema.pick({ flow: true }))), { mode: 0o600 });
+            fs.writeFileSync(schema, JSON.stringify(z.toJSONSchema(architectureOverviewResultSchema.pick({ flow: true }), { io: 'input' })), { mode: 0o600 });
             return { type: 'route.diagram' as const, priority: 'background' as const,
                 instructions: 'Repair the architecture diagrams. Return only flow matching the schema. Keep node IDs used by accepted blocks; the description and file explanations are already saved.',
                 contextFiles: [prDiff, overview], resultSchemaFile: schema };

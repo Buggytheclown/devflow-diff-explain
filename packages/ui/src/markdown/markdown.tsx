@@ -6,7 +6,7 @@ import type {
     MarkdownSource,
     TableAlign,
 } from '@sherpa/protocol/markdown';
-import { parseBlocks, parseInline, parseStopBlocks } from '@sherpa/protocol/markdown';
+import { parseBlocks, parseInline, parseExplanationBlocks } from '@sherpa/protocol/markdown';
 import { parseCodeLink } from '@sherpa/protocol';
 import type { CodeLocation } from '@sherpa/protocol';
 import type { CSSProperties, ReactNode } from 'react';
@@ -81,7 +81,7 @@ export function StopMarkdown({ text, onOpenLink }: { text: string; onOpenLink?: 
             </a>
         );
     };
-    return <>{parseStopBlocks(text).map((block, index) => renderBlock(block, index, link))}</>;
+    return <>{parseExplanationBlocks(text).map((block, index) => renderBlock(block, index, link))}</>;
 }
 
 /** Адрес внутреннего перехода; `null` — ссылка внешняя. */

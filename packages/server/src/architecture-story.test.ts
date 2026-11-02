@@ -55,7 +55,7 @@ it('продолжение после лимита и рестарта сохр�
     expect((await read(restarted)).snapshot?.stops.map((block) => block.paragraph)).toEqual(before?.stops.map((block) => block.paragraph));
 });
 
-it('не принимает потерянные файлы, подменённые ID и пропуск файлов при продолжении', () => {
+it('не принимает потерянные файлы, подменённые ID и подмену файлов при продолжении', () => {
     const bad = structuredClone(fixture.outline);
     const firstBad = bad.stops[0]; if (firstBad === undefined) throw new Error('Missing block');
     firstBad.nodeIds = ['missing'];
@@ -67,7 +67,7 @@ it('не принимает потерянные файлы, подменённ�
     const checked = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
     if (!checked.ok) throw new Error(checked.errors.join('\n'));
     const skipped = { ...fixture.body, stops: fixture.body.stops.slice(1) };
-    expect(validateAllFiles(JSON.stringify(skipped), fixture.diff, checked.value.stops).ok).toBe(false);
+    expect(validateAllFiles(JSON.stringify(skipped), fixture.diff, checked.value.stops).ok).toBe(true);
     const duplicate = { ...fixture.body, stops: [fixture.body.stops[0], fixture.body.stops[0]] };
     expect(validateAllFiles(JSON.stringify(duplicate), fixture.diff, checked.value.stops).ok).toBe(false);
     expect(routeSnapshotSchema.safeParse(fixture.snapshot).success).toBe(true);
@@ -119,4 +119,46 @@ it('несколько схем используют общие ID и прове
     expect(validateArchitectureOverview(JSON.stringify(overview), fixture.diff).ok).toBe(true);
     const unsafe = { ...overview, flow: { status: 'ready', diagram: { ...overview.flow.diagram, views: [{ title: 'Unsafe', mermaid: 'flowchart LR\nclick rule callback' }] } } };
     expect(validateArchitectureOverview(JSON.stringify(unsafe), fixture.diff).ok).toBe(false);
+});
+
+it('приложение выводит метаданные из связей блоков и принимает Markdown без повторения узлов', () => {
+    const outline = structuredClone(fixture.outline);
+    const { nodes: _nodes, ...diagram } = outline.flow.diagram;
+    const raw = { ...outline, summary: '# Цель\n\n| Что | Зачем |\n| --- | --- |\n| Правило | Контроль |',
+        evidence: { claims: [{ sources: [], limitation: 'Synthetic fixture.' }] }, flow: { status: 'ready', diagram } };
+    const checked = validateArchitectureOverview(JSON.stringify(raw), fixture.diff);
+    if (!checked.ok) throw new Error(checked.errors.join('\n'));
+    expect(checked.value.flow?.status).toBe('ready');
+    if (checked.value.flow?.status === 'ready') {
+        expect(checked.value.flow.diagram.nodes.map((node) => node.id)).toEqual([...new Set(outline.stops.flatMap((stop) => stop.nodeIds))]);
+    }
+    const malformed = { ...raw, stops: raw.stops.map((stop, index) => index === 0 ? { ...stop, nodeIds: ['[bad'] } : stop) };
+    expect(validateArchitectureOverview(JSON.stringify(malformed), fixture.diff).ok).toBe(false);
+});
+
+it('файлы по путям: произвольная часть и порядок, длинное пояснение; неизвестное и дубликаты отклоняются', () => {
+    const checked = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
+    if (!checked.ok) throw new Error('Invalid outline');
+    const files = fixture.body.stops.flatMap((stop) => stop.files).reverse();
+    const file = files[0]; if (file === undefined) throw new Error('No file');
+    const raw = { contractVersion: 6, files: [{ path: file.path, explanation: '# Детали\n\n' + 'Подробное объяснение. '.repeat(100) }] };
+    const result = validateAllFiles(JSON.stringify(raw), fixture.diff, checked.value.stops);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value[0]?.guidedFiles?.[0]?.path).toBe(file.path);
+    expect(validateAllFiles(JSON.stringify({ ...raw, files: [raw.files[0], raw.files[0]] }), fixture.diff, checked.value.stops).ok).toBe(false);
+    expect(validateAllFiles(JSON.stringify({ ...raw, files: [{ ...raw.files[0], path: 'missing.ts' }] }), fixture.diff, checked.value.stops).ok).toBe(false);
+    expect(validateAllFiles(JSON.stringify(raw), fixture.diff, checked.value.stops, { files: [], introduction: false }).ok).toBe(false);
+});
+
+it('произвольная часть файлов после рестарта продолжается без потери и повторной сдачи', async () => {
+    const { server, dir } = await start();
+    await complete(server, fixture.outline, 'route.skeleton');
+    const files = fixture.body.stops.flatMap((stop) => stop.files).reverse();
+    const first = files[0]; if (first === undefined) throw new Error('No files');
+    await complete(server, { contractVersion: 6, files: [first] }, 'route.section');
+    expect(preparationProgress(await read(server)).files.ready).toBe(1);
+    await server.close();
+    const restarted = (await start(dir)).server;
+    await complete(restarted, { contractVersion: 6, files: files.slice(1) }, 'route.section');
+    await vi.waitFor(async () => { expect(preparationProgress(await read(restarted)).percent).toBe(100); });
 });

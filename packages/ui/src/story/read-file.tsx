@@ -2,7 +2,7 @@ import type { CodeLocation, FileDiff, GuidedAnnotation, UiChatAskAnchor } from '
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { parseStopBlocks } from '@sherpa/protocol/markdown';
+import { parseExplanationBlocks } from '@sherpa/protocol/markdown';
 import { renderBlock } from '../markdown/markdown.tsx';
 import { fetchBlob, fetchFileContent } from '../api.js';
 import type { DiffFileModel } from '../diff/model.js';
@@ -108,7 +108,7 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
             else if (first?.old != null && last?.old != null) select(ranges.fromText('old', first.old, last.old));
         }}>
             {file.image != null ? <ImageBody file={file} image={file.image} loadBlob={loadBlob} /> : model === null ? error === null ? <p data-reading-wait>{t.loading}</p> : null
-                : model.content.kind !== 'text' ? <p>{t.noPatch}</p> : <DiffRows showHunkHeaders model={model} mode="unified" content={null} selection={selection} contextAvailable={false} renderAfterLine={(side, line) => annotations.filter((note) => note.side === side && note.end === line).map((note, index) => <aside className="story-inline-note" key={index} data-reading={`note:${side}:${String(line)}:${String(index)}`}><span>{side === 'old' ? '−' : '+'} {note.start}–{note.end}</span>{parseStopBlocks(note.text).map((part, i) => renderBlock(part, i))}</aside>)} onLineFocus={(side, line) => { select(ranges.choose(side, line)); }} />}
+                : model.content.kind !== 'text' ? <p>{t.noPatch}</p> : <DiffRows showHunkHeaders model={model} mode="unified" content={null} selection={selection} contextAvailable={false} renderAfterLine={(side, line) => annotations.filter((note) => note.side === side && note.end === line).map((note, index) => <aside className="story-inline-note" key={index} data-reading={`note:${side}:${String(line)}:${String(index)}`}><span>{side === 'old' ? '−' : '+'} {note.start}–{note.end}</span>{parseExplanationBlocks(note.text).map((part, i) => renderBlock(part, i))}</aside>)} onLineFocus={(side, line) => { select(ranges.choose(side, line)); }} />}
         </div>
     </div>;
 }

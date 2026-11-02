@@ -46,10 +46,10 @@ export const architectureDiagramSchema = z.object({
     mermaid: architectureMermaidSchema,
     views: z.array(z.object({ title: z.string().trim().min(1).max(160), mermaid: architectureMermaidSchema }).strict()).max(12).optional(),
     nodes: z.array(z.object({
-        id: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/), label: z.string().trim().min(1).max(160),
+        id: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/), label: z.string().trim().min(1).max(160).default('Architecture node'),
         change: z.enum(['existing', 'added', 'modified', 'affected', 'unknown']),
         sources: z.array(flowCitationSchema).max(4), limitation: z.string().trim().min(1).max(400).nullable(),
-    }).strict()).min(1).max(120),
+    }).strict()).max(120).default([]),
     edges: z.array(flowDiagramSchema.shape.edges.element).max(256).optional().default([]),
 }).strict().superRefine((diagram, ctx) => {
     const ids = new Set(diagram.nodes.map((node) => node.id));

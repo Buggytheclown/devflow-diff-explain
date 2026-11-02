@@ -206,6 +206,7 @@ interface Node {
 }
 
 interface Context {
+    readonly readingLinks?: boolean;
     readonly profile: MarkdownProfile;
     readonly lines: readonly string[];
     readonly firstLine: number | undefined;
@@ -223,6 +224,13 @@ export function parseInline(source: string, profile: MarkdownProfile): readonly 
 export function parseBlocks(source: string, firstLine?: number): readonly MarkdownBlock[] {
     const ctx = context('comment', source, firstLine);
     return blocks(tree(commentParser.parse(source, {})), ctx, 0);
+}
+
+/** Полный безопасный Markdown объяснения, включая внутренние ссылки читалки. */
+export function parseExplanationBlocks(source: string): readonly MarkdownBlock[] {
+    const ctx = { ...context('comment', source, undefined), readingLinks: true };
+    return blocks(tree(commentParser.parse(source, {})), ctx, 0).map((block) =>
+        block.kind === 'heading' && block.level < 3 ? { ...block, level: 3 } : block);
 }
 
 /** Блочный разбор описания остановки: блоки для рендера и всё, что нужно валидатору. */
@@ -575,7 +583,7 @@ function inlineNode(node: Node, ctx: Context): InlineNode[] {
             break;
         case 'link_open': {
             const href = token.attrGet('href') ?? '';
-            if (profile === 'comment' ? (SAFE_HREF.test(href) || href.startsWith('#code?')) : profile === 'stop' && (WEB_HREF.test(href) || STOP_HREF.test(href))) {
+            if (profile === 'comment' ? (SAFE_HREF.test(href) || href.startsWith('#code?') || (ctx.readingLinks === true && STOP_HREF.test(href))) : profile === 'stop' && (WEB_HREF.test(href) || STOP_HREF.test(href))) {
                 return [{ kind: 'link', href, children: inline(node.children, ctx) }];
             }
             violate(ctx, 'link');

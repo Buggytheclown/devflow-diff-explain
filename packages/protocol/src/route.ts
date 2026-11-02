@@ -128,7 +128,7 @@ export const rawReadableExampleSchema = z.object({ text: z.string().trim().min(1
 export type ReadableExample = z.infer<typeof readableExampleSchema>;
 export const guidedFileSchema = z.object({
     fileId: hostIdSchema, path: relativeCodePathSchema,
-    explanation: z.string().min(1).max(840).nullable(),
+    explanation: z.string().min(1).nullable(),
     example: readableExampleSchema.nullable().optional(),
     annotations: z.array(guidedAnnotationSchema).max(12),
     status: z.enum(['queued', 'filling', 'ready', 'failed']).optional(),
@@ -422,24 +422,28 @@ export type StorySkeletonResult = z.infer<typeof storySkeletonResultSchema>;
 
 /** Первый этап: цельная картина PR; второй — только пояснения файлов принятого плана. */
 export const architectureOverviewResultSchema = z.object({
-    contractVersion: z.literal(6), summary: z.string().trim().min(1).max(20_000), evidence: rawStoryEvidenceBlockSchema,
+    contractVersion: z.literal(6), summary: z.string().trim().min(1), evidence: rawStoryEvidenceBlockSchema,
     flow: z.union([
         z.object({ status: z.literal('ready'), diagram: architectureDiagramSchema }).strict(),
         z.object({ status: z.enum(['not_applicable', 'unavailable']), reason: z.string().trim().min(1).max(400) }).strict(),
     ]),
     stops: z.array(z.object({
-        title: z.string().trim().min(1).max(160), paragraph: z.string().trim().min(1).max(2000), evidence: rawStoryEvidenceBlockSchema,
+        title: z.string().trim().min(1).max(160), paragraph: z.string().trim().min(1), evidence: rawStoryEvidenceBlockSchema,
         nodeIds: z.array(z.string().min(1)).max(120), files: z.array(relativeCodePathSchema).min(1),
         relatedFiles: z.array(relativeCodePathSchema).max(100),
     }).strict()).min(1).max(100),
 }).strict();
+/** Агент сдаёт файлы по путям; приложение распределяет их по принятым блокам. */
+const explainedFileResultSchema = z.object({
+    path: relativeCodePathSchema, explanation: z.string().trim().min(1),
+    example: rawReadableExampleSchema.nullable().optional(), annotations: z.array(guidedAnnotationSchema).max(12).default([]),
+}).strict();
 export const allFilesResultSchema = z.object({
     contractVersion: z.literal(6), overview: architectureOverviewResultSchema.optional(),
-    stops: z.array(z.object({ planIndex: z.number().int().positive(), files: z.array(z.object({
-        path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(840),
-        example: rawReadableExampleSchema.nullable().optional(), annotations: z.array(guidedAnnotationSchema).max(12),
-    }).strict()).min(1) }).strict()).min(1).max(100),
-}).strict();
+    files: z.array(explainedFileResultSchema).optional(),
+    stops: z.array(z.object({ planIndex: z.number().int().positive(), files: z.array(explainedFileResultSchema).min(1) }).strict()).max(100).default([]),
+}).strict().refine((value) => value.files === undefined ? value.stops.length > 0 : value.files.length > 0 && value.stops.length === 0,
+    'Return nonempty files, or legacy stops, but not both.');
 export type StorySectionResult = z.infer<typeof storySectionResultSchema>;
 
 /** Точный текст для контекста вопроса; одинаковое представление на сервере и в UI. */

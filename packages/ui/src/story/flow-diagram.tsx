@@ -1,7 +1,7 @@
 import { Fragment, useId } from 'react';
 import type { FlowState, ReadableExample, ExplanationBlock } from '@sherpa/protocol';
 import { useLocale } from '../i18n/index.js';
-import { parseStopBlocks } from '@sherpa/protocol/markdown';
+import { parseExplanationBlocks } from '@sherpa/protocol/markdown';
 import { renderBlock } from '../markdown/markdown.tsx';
 
 import { flowCopy, preparationCopy } from '../i18n/story.js';
@@ -13,7 +13,7 @@ export function ExplanationExample({ example }: { example: ReadableExample | nul
     const t = flowCopy[useLocale()];
     if (example == null) return null;
     return <aside className="story-example" data-reading="example"><strong title={t.illustrative}>{t.example}</strong>
-        <div className="md-blocks">{parseStopBlocks(example.text).map((part, i) => renderBlock(part, i))}</div>
+        <div className="md-blocks">{parseExplanationBlocks(example.text).map((part, i) => renderBlock(part, i))}</div>
         <details><summary>{t.exampleSources}</summary>{example.evidence.claims.map((claim, i) => <p key={i}>{claim.quote}{claim.limitation === null ? '' : ` — ${claim.limitation}`}{claim.sources.map((source, j) => <code key={j}>{source.path}{source.kind === 'lines' ? `:${String(source.start)}–${String(source.end)}` : ''}</code>)}</p>)}</details>
     </aside>;
 }

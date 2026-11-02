@@ -93,7 +93,7 @@ test('два этапа: контрастная вертикальная арх�
 test('ошибка Mermaid не даёт 100%; повтор схемы сохраняет готовые блоки и файлы', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium'); await page.goto(server.url); await server.worker.register('codex', 'ru');
     const overview = await server.worker.next();
-    const broken = { ...fixture.outline, flow: { ...fixture.outline.flow, diagram: { ...fixture.diagram, mermaid: 'flowchart TB\nrequest --> handler --> rule --> saved --> rejected\nrule --> ???' } } };
+    const broken = { ...fixture.outline, flow: { ...fixture.outline.flow, diagram: { ...fixture.diagram, mermaid: 'flowchart TB\nrequest --> handler --> rule --> saved --> rejected\nrule --> [broken' } } };
     await server.worker.complete(overview.taskId ?? 0, JSON.stringify(broken));
     const files = await server.worker.next(); expect(files.type).toBe('route.section');
     await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
@@ -121,4 +121,26 @@ test('несколько процессов сохраняют связи с б�
     const files = await server.worker.next();
     await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
+});
+
+test('Mermaid без перечня узлов → связи с блоками; файлы по путям в обратном порядке и полный Markdown', async ({ page, launchSherpa }) => {
+    const server = await launchSherpa('fixture-medium');
+    await page.goto(server.url);
+    await server.worker.register('codex', 'ru');
+    const overview = await server.worker.next();
+    const { nodes: _nodes, ...diagram } = fixture.diagram;
+    await server.worker.complete(overview.taskId ?? 0, JSON.stringify({ ...fixture.outline, flow: { status: 'ready', diagram } }));
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await page.locator('[data-architecture-node="rule"]').click();
+    await expect(page.locator('.story-architecture-selection')).toContainText(fixture.diagram.nodes.find((node) => node.id === 'rule')?.label ?? '');
+    await expect(page.locator('.story-architecture-selection')).toContainText(fixture.outline.stops[0]?.title ?? '');
+    const files = await server.worker.next();
+    const explained = fixture.body.stops.flatMap((stop) => stop.files).reverse().map((file) => ({ path: file.path,
+        explanation: '# Подробности\n\n| Что | Зачем |\n| --- | --- |\n| Проверка | Корректность |\n\n' + 'Пояснение. '.repeat(100) }));
+    await server.worker.complete(files.taskId ?? 0, JSON.stringify({ contractVersion: 6, files: explained }));
+    await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
+    await page.locator('.story-architecture-selection button').first().click();
+    await expect(page.locator('.story-guided .md-table').first()).toBeVisible();
+    await expect(page.locator('.story-guided .md-heading').first()).toContainText('Подробности');
+    await page.screenshot({ path: test.info().outputPath('derived-architecture-markdown.png') });
 });

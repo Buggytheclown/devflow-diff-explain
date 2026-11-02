@@ -1,3 +1,4 @@
+import { stripCodeFence } from './route/raw-result.js';
 import { allFilesResultSchema } from '@sherpa/protocol';
 import { validateArchitectureOverview } from './architecture-story.js';
 import { randomUUID } from 'node:crypto';
@@ -381,7 +382,7 @@ export class RouteOrchestrator {
         let refinement: ReturnType<typeof validateArchitectureOverview> | undefined;
         if (snapshot.storyContractVersion === 6) {
             try {
-                const body = allFilesResultSchema.parse(JSON.parse(result));
+                const body = allFilesResultSchema.parse(JSON.parse(stripCodeFence(result)));
                 if (body.overview !== undefined) {
                     refinement = validateArchitectureOverview(JSON.stringify(body.overview), diff);
                     if (!refinement.ok) return { kind: 'rejected', errors: refinement.errors };

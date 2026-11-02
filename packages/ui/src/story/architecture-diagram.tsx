@@ -27,6 +27,7 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
     const root = useRef<HTMLDivElement>(null);
     const id = `architecture-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+    const [nodes, setNodes] = useState(diagram.nodes);
     const [selected, setSelected] = useState<string | null>(null);
     const [rendered, setRendered] = useState(0);
     const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
@@ -48,9 +49,20 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
                 const focused = element.contains(document.activeElement) ? document.activeElement?.getAttribute('data-architecture-node') : null;
                 layout.current?.();
                 element.replaceChildren(svg);
-                if (element.querySelectorAll('g.node').length !== diagram.nodes.length) throw new Error('Diagram IDs do not match metadata');
-                for (const node of diagram.nodes) {
-                    const target = [...element.querySelectorAll<SVGGElement>('g.node')].find((entry) => entry.getAttribute('data-id') === node.id || new RegExp(`(?:^|-)flowchart-${node.id}-[0-9]+$`).test(entry.id));
+                if (element.querySelectorAll('g.node').length > 120) throw new Error('Too many architecture nodes');
+                const targets = new Map<string, SVGGElement>();
+                const renderedNodes = [...element.querySelectorAll<SVGGElement>('g.node')].map((target) => {
+                    const id = target.getAttribute('data-id') ?? /(?:^|-)flowchart-(.+)-[0-9]+$/.exec(target.id)?.[1];
+                    if (id === undefined) throw new Error('Missing Mermaid node ID');
+                    targets.set(id, target);
+                    const metadata = diagram.nodes.find((node) => node.id === id);
+                    const label = (target.querySelector('.nodeLabel')?.textContent ?? target.querySelector('text')?.textContent ?? id).trim();
+                    return { ...(metadata ?? { id, change: 'existing' as const, sources: [], limitation: null }), label };
+                });
+                if (diagram.nodes.some((node) => !renderedNodes.some((entry) => entry.id === node.id))) throw new Error('Missing annotated diagram node');
+                setNodes(renderedNodes);
+                for (const node of renderedNodes) {
+                    const target = targets.get(node.id);
                     if (target === undefined) throw new Error('Missing diagram node');
                     target.dataset.architectureNode = node.id;
                     target.dataset.readingFocus = `architecture-node:${node.id}`;
@@ -86,7 +98,7 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
             node.setAttribute('aria-pressed', String(active));
         }
     }, [activeBlock, blocks, selected, rendered]);
-    const chosen = diagram.nodes.find((node) => node.id === selected);
+    const chosen = nodes.find((node) => node.id === selected);
     const related = blocks.filter((block) => selected !== null && block.nodeIds?.includes(selected));
     return <div className="story-architecture" data-reading="architecture">
         <div className="story-architecture-toolbar" role="group" aria-label={t.orientation}>

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { RouteSnapshot } from '@sherpa/protocol';
-import { parseStopBlocks } from '@sherpa/protocol/markdown';
+import { parseExplanationBlocks } from '@sherpa/protocol/markdown';
 import { useLocale } from '../i18n/index.js';
 import { renderBlock } from '../markdown/markdown.tsx';
 import { StoryDocument } from './story-document.tsx';
@@ -18,7 +18,7 @@ export function GuidedDocument({ snapshot, page, onVisit, onAsk, renderFile, ren
 }) {
     const t = guidedCopy[useLocale()];
     const blocks = snapshot.tourOrder.flatMap((id) => snapshot.stops.filter((stop) => stop.id === id));
-    const text = (value: string, key: string) => <div className="md-blocks">{parseStopBlocks(value).map((part, i) => <div key={i} data-reading={`${key}:${String(i)}`}>{renderBlock(part, i)}</div>)}</div>;
+    const text = (value: string, key: string) => <div className="md-blocks">{parseExplanationBlocks(value).map((part, i) => <div key={i} data-reading={`${key}:${String(i)}`}>{renderBlock(part, i)}</div>)}</div>;
     return <article className="story-guided" data-guided-page="canvas" data-active-page={page}>
         {onBack === undefined ? null : <button className="ctl story-return" onClick={onBack}>← {returnLabel}</button>}
         <div className="story-overview"><div className="story-overview-content"><h2>{t.description}</h2>{renderDescription ?? <StoryDocument snapshot={{ ...snapshot, stops: [], tourOrder: [] }} onAsk={(id) => { onAsk(id ?? 'intro'); }} hideSources />}
