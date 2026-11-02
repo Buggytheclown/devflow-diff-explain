@@ -253,13 +253,13 @@ it('ссылки рассказа допускают повторение и н�
     expect(validateStorySection(JSON.stringify(valid), [1, 2], diff, 'ru').ok).toBe(false);
 });
 
-it('отклоняет длинные примеры кода, чтобы рассказ оставался коротким', () => {
+it('принимает сохранённый источник длиннее 20 строк, отклоняет недоступный диапазон', () => {
     const diff = mediumDiff();
     const anchor = mediumRawResults().sections[0]?.stops[0]?.anchors[0];
     if (anchor === undefined) throw new Error('No code fixture');
     const example = { kind: 'lines', ...anchor, end: anchor.start + 20 };
     const long = { contractVersion: 2, stops: [{ ...body.stops[0], evidence: { claims: [{ quote: body.stops[0]?.paragraph, sources: [example], limitation: null }] } }] };
-    expect(validateStorySection(JSON.stringify(long), [1], diff, 'ru').ok).toBe(false);
-    example.end = anchor.start + 8;
     expect(validateStorySection(JSON.stringify(long), [1], diff, 'ru').ok).toBe(true);
+    example.end = 999999;
+    expect(validateStorySection(JSON.stringify(long), [1], diff, 'ru').ok).toBe(false);
 });

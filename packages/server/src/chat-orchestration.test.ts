@@ -182,7 +182,7 @@ describe('вопросы об объяснении и коде', () => {
             expect((await ask(server, 'Вопрос')).locale).toBe('ru');
         });
 
-        it('стоп-лист голоса берётся из локали обмена', async () => {
+        it('цитаты и стилистика не отклоняют содержательный ответ', async () => {
             const server = await start();
             const exchange = uiChatAskResponseSchema.parse(
                 await (
@@ -197,10 +197,7 @@ describe('вопросы об объяснении и коде', () => {
             const taskId = leaseChat(server);
             expect(taskId).toBe(exchange.taskId);
 
-            // Русская фраза-заполнитель на английском обмене нарушением не считается.
-            const rejected = complete(server, taskId, 'It is worth noting that the cache is dropped first.');
-            expect(rejected.kind).toBe('rejected');
-            const accepted = complete(server, taskId, 'Важно отметить. The cache is dropped before the write.');
+            const accepted = complete(server, taskId, 'It is worth noting: строка `важно отметить 🎉` приходит из теста.');
             expect(accepted.kind).toBe('accepted');
         });
     });
@@ -244,7 +241,8 @@ describe('вопросы об объяснении и коде', () => {
 
         expect(exchange).toMatchObject({ status: 'queued', answer: null, anchor: ANCHOR });
         expect(task).toMatchObject({ type: 'chat', priority: 'interactive', status: 'queued' });
-        expect(Buffer.byteLength(task?.instructions ?? '', 'utf8')).toBeLessThan(500);
+        expect(Buffer.byteLength(task?.instructions ?? '', 'utf8')).toBeLessThan(8000);
+        expect(task?.instructions).toContain('Available context (read selectively');
         // Хоста у этого сервера нет: диффа и текста файла не будет, общей остаётся методичка.
         expect(task?.contextFiles.map((file) => path.basename(file))).toEqual([
             expect.stringMatching(/^chat-guide-[0-9a-f]{8}\.md$/),
@@ -531,7 +529,7 @@ describe('вопросы об объяснении и коде', () => {
         const server = await start();
         await ask(server);
         const taskId = leaseChat(server);
-        const broken = 'Важно отметить: готово 🎉';
+        const broken = '   ';
 
         for (let rejection = 1; rejection <= MAX_RESULT_REJECTIONS; rejection += 1) {
             const result = complete(server, taskId, broken);

@@ -106,7 +106,7 @@ export function EvidenceSource({ source, diffId, data, token, focusId, onOpen, o
 export function EvidenceClaims({ evidence, renderSource }: { evidence: StoryEvidenceBlock; renderSource: (source: StorySource, index: number) => React.ReactNode }) {
     let sourceIndex = 0;
     return <>{evidence.claims.map((claim, index) => <div className="story-claim" key={index}>
-        <blockquote className="md-blocks"><StopMarkdown text={claim.quote} /></blockquote>
+        <blockquote className="md-blocks"><StopMarkdown text={claim.quote ?? ''} /></blockquote>
         {claim.limitation === null ? null : <p className="story-evidence-limit">{claim.limitation}</p>}
         {claim.sources.map((source) => renderSource(source, sourceIndex++))}
     </div>)}</>;

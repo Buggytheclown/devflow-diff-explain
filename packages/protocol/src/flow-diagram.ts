@@ -5,7 +5,7 @@ export const flowContextRequestSchema = z.object({ path: relativeCodePathSchema,
     .refine((entry) => entry.end >= entry.start && entry.end - entry.start < 80, 'Request at most 80 ordered lines.');
 export const flowContextSchema = flowContextRequestSchema.safeExtend({ id: z.string().min(1), revision: z.string().min(1), text: z.string().max(24_000) });
 export const flowCitationSchema = z.union([
-    codeLocationSchema.safeExtend({ kind: z.literal('patch') }).strict().refine((entry) => entry.end - entry.start < 80, 'Cite at most 80 lines.'),
+    codeLocationSchema.safeExtend({ kind: z.literal('patch') }).strict(),
     z.object({ kind: z.literal('context'), id: z.string().min(1) }).strict(),
 ]);
 const grounded = {
@@ -37,12 +37,14 @@ export const flowDiagramResultSchema = z.object({
     .refine((value) => value.outcome === undefined || (value.diagram === null && value.contextRequests.length === 0 && value.reason !== null),
         'A terminal outcome needs a reason and cannot include a diagram or context requests.');
 const contexts = z.array(flowContextSchema).max(8);
+const architectureMermaidSchema = z.string().trim().min(1).max(40_000)
+        .refine((text) => /^(?:flowchart|graph)\s+(?:TB|TD|BT|LR|RL)\b/.test(text), 'Return a Mermaid flowchart or graph.')
+        .refine((text) => !/%%\{|^\s*click\s|<\s*(?:script|iframe|image|foreignObject)\b|@\s*\{[^}]*\b(?:img|icon)\s*:/im.test(text), 'Use a static flowchart without configuration, callbacks or external assets.');
 /** Свободная компоновка Mermaid; метаданные нужны для источников, подсветки и связи с блоками. */
 export const architectureDiagramSchema = z.object({
     title: z.string().trim().min(1).max(160),
-    mermaid: z.string().trim().min(1).max(40_000)
-        .refine((text) => /^(?:flowchart|graph)\s+(?:TB|TD|BT|LR|RL)\b/.test(text), 'Return a Mermaid flowchart or graph.')
-        .refine((text) => !/%%\{|^\s*click\s|<\s*(?:script|iframe|image|foreignObject)\b|@\s*\{[^}]*\b(?:img|icon)\s*:/im.test(text), 'Use a static flowchart without configuration, callbacks or external assets.'),
+    mermaid: architectureMermaidSchema,
+    views: z.array(z.object({ title: z.string().trim().min(1).max(160), mermaid: architectureMermaidSchema }).strict()).max(12).optional(),
     nodes: z.array(z.object({
         id: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/), label: z.string().trim().min(1).max(160),
         change: z.enum(['existing', 'added', 'modified', 'affected', 'unknown']),
@@ -53,7 +55,7 @@ export const architectureDiagramSchema = z.object({
     const ids = new Set(diagram.nodes.map((node) => node.id));
     if (ids.size !== diagram.nodes.length) ctx.addIssue({ code: 'custom', message: 'Use unique architecture node IDs.' });
     for (const node of diagram.nodes) {
-        if (!new RegExp(`(^|[^a-zA-Z0-9_-])${node.id}(?=$|[^a-zA-Z0-9_-])`, 'm').test(diagram.mermaid)) ctx.addIssue({ code: 'custom', message: `Architecture node ${node.id} is missing from the flowchart.` });
+        if (!new RegExp(`(^|[^a-zA-Z0-9_-])${node.id}(?=$|[^a-zA-Z0-9_-])`, 'm').test([diagram.mermaid, ...(diagram.views ?? []).map((view) => view.mermaid)].join('\n'))) ctx.addIssue({ code: 'custom', message: `Architecture node ${node.id} is missing from the flowchart.` });
         if (node.sources.length === 0 && node.limitation === null) ctx.addIssue({ code: 'custom', message: 'Architecture nodes need saved sources or an explicit evidence limitation.' });
     }
 });
@@ -72,6 +74,6 @@ export type ReadyFlow = z.infer<typeof readyFlowSchema>;
 
 export function flowText(flow: FlowState | undefined): string {
     if (flow?.status !== 'ready') return '';
-    return [...('mermaid' in flow.diagram ? ['Architecture flowchart:', flow.diagram.mermaid] : []), 'Data flow: '+flow.diagram.title, ...flow.diagram.nodes.map((node) => `${node.id}: ${node.label} [${node.change}]${node.limitation === null ? '' : ` (${node.limitation})`}`),
+    return [...('mermaid' in flow.diagram ? ['Architecture flowchart:', flow.diagram.mermaid, ...(flow.diagram.views ?? []).flatMap((view) => [view.title, view.mermaid])] : []), 'Data flow: '+flow.diagram.title, ...flow.diagram.nodes.map((node) => `${node.id}: ${node.label} [${node.change}]${node.limitation === null ? '' : ` (${node.limitation})`}`),
         ...flow.diagram.edges.map((edge) => `${edge.from} -> ${edge.to}: ${edge.label} [${edge.kind}, ${edge.change}]${edge.limitation === null ? '' : ` (${edge.limitation})`}`)].join('\n');
 }

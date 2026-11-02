@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { architectureOverviewResultSchema } from '@sherpa/protocol';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +12,8 @@ export { diagramSourceErrors } from './diagram-sources.js';
 import { CONTEXT_BUDGET_BYTES, prDiffPayload } from './route-payload.js';
 import type { SharedPayloadStore } from './shared-payload.js';
 import { diffKeyOf } from './shared-payload.js';
-import { architectureGuide, validateArchitectureOverview } from './architecture-story.js';
+import { rawEvidence } from './story-evidence.js';
+import { validateArchitectureOverview } from './architecture-story.js';
 
 interface Options {
     store: RouteStore; queue: TaskQueue; host: ReviewSource | null; dir: string; shared: SharedPayloadStore;
@@ -96,7 +99,14 @@ export class FlowCoordinator {
         const diff = this.diffs.get(snapshot.diffId);
         if (diff === undefined) { void this.options.loadDiff(snapshot.diffId).then((value) => { this.diffs.set(value.diffId, value); }).catch(() => undefined); return { kind: 'deferred', errors: ['Saved diff is loading. Retry completion.'] }; }
         if (snapshot.storyContractVersion === 6) {
-            const parsed = validateArchitectureOverview(result, diff);
+            let raw: unknown;
+            try { raw = JSON.parse(result); } catch { return { kind: 'rejected', errors: ['Return valid JSON.'] }; }
+            const flowOnly = architectureOverviewResultSchema.pick({ flow: true }).safeParse(raw);
+            const overview = { contractVersion: 6, summary: snapshot.summary, evidence: rawEvidence(snapshot.summaryEvidence),
+                stops: snapshot.stops.map((block) => ({ title: block.title, paragraph: block.paragraph,
+                    evidence: rawEvidence(block.storyEvidence), nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path),
+                    relatedFiles: block.relatedFiles?.map((file) => file.path) ?? [] })) };
+            const parsed = validateArchitectureOverview(flowOnly.success ? JSON.stringify({ ...overview, flow: flowOnly.data.flow }) : result, diff);
             if (!parsed.ok) return { kind: 'rejected', errors: parsed.errors };
             const checked = parsed.value;
             const identity = (blocks: readonly { title: string; paragraph: string | null; nodeIds?: string[] | undefined; guidedFiles?: readonly { path: string }[] | undefined }[]) => JSON.stringify(blocks.map((block) => ({ title: block.title, paragraph: block.paragraph, nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path) })));
@@ -133,10 +143,10 @@ export class FlowCoordinator {
         if (snapshot.storyContractVersion === 6) {
             const overview = path.join(dir, 'accepted-overview.json');
             fs.writeFileSync(overview, JSON.stringify({ summary: snapshot.summary, blocks: snapshot.stops.map((block) => ({ title: block.title, paragraph: block.paragraph, nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path), relatedFiles: block.relatedFiles?.map((file) => file.path) })) }), { mode: 0o600 });
-            fs.writeFileSync(schema, JSON.stringify(generateJsonSchemas().architectureOverviewResult), { mode: 0o600 });
+            fs.writeFileSync(schema, JSON.stringify(z.toJSONSchema(architectureOverviewResultSchema.pick({ flow: true }))), { mode: 0o600 });
             return { type: 'route.diagram' as const, priority: 'background' as const,
-                instructions: 'Retry only the diagram. Preserve the accepted description, blocks, node IDs and file assignments. Return the overview result schema.',
-                contextFiles: [shared.guide('architecture-overview', architectureGuide('overview', snapshot.provenance.locale ?? 'ru')), prDiff, overview], resultSchemaFile: schema };
+                instructions: 'Repair the architecture diagrams. Return only flow matching the schema. Keep node IDs used by accepted blocks; the description and file explanations are already saved.',
+                contextFiles: [prDiff, overview], resultSchemaFile: schema };
         }
         const guide = shared.guide('flow-diagram', `Explain the overall data flow in ${snapshot.provenance.locale === 'ru' ? 'Russian' : 'English'}.
 Draw a small meaningful source -> transformation -> consumer flow. Order edges along that understandable path, keeping related transitions consecutive. Include necessary unchanged/external context so the change makes sense, not the whole architecture. Usually 3–6 nodes are enough; add only context needed to understand this PR. Use plain short node and arrow labels, ideally 2–5 words. Do not repeat the prose or put caveats in labels: keep precise evidence limits in limitation, which the UI shows in expandable diagram sources. Reuse a node id when a path branches or cycles; never duplicate a node to lay out the picture. Nodes are static; no navigation fields.

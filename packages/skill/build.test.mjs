@@ -81,9 +81,10 @@ describe('сборка пакета скилла', () => {
         expect(skill).toContain('bin/devflow-diff-explain.mjs worker next --pr');
         expect(skill).toContain('--model');
         expect(skill).toContain('DONE');
-        // Правило общего контекста задач: путь под `shared/` читается один раз за сессию.
+        // Общий контекст переиспользуется, а необходимое чтение выбирает агент.
         expect(skill).toContain('`shared/`');
-        expect(skill).toContain('once per session');
+        expect(skill).toContain('reread relevant parts when needed');
+        expect(skill).toContain('there is no requirement to read every file');
         // Файл результата выдаёт задача: свой путь в общем tmp делили бы сессии на одной машине.
         expect(skill).toContain('only to the file path the task gives you');
     });

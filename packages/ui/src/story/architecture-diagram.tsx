@@ -5,7 +5,19 @@ import { flowCopy } from '../i18n/story.js';
 import { Skeleton } from './preparation.tsx';
 
 /** Mermaid сохраняет топологию графа; интерактивность связываем с проверенными ID сами. */
-export function ArchitectureDiagram({ diagram, blocks = [], activeBlock, onVisit, onRetry, connected, onRenderFailure, onLayout }: {
+export function ArchitectureDiagram(props: Parameters<typeof ArchitectureView>[0]) {
+    const diagram = props.diagram;
+    const views = [{ title: diagram.title, mermaid: diagram.mermaid }, ...(diagram.views ?? [])];
+    return <>{views.map((view, index) => {
+        const nodes = diagram.nodes.filter((node) => new RegExp(`(^|[^a-zA-Z0-9_-])${node.id}(?=$|[^a-zA-Z0-9_-])`, 'm').test(view.mermaid));
+        return <section key={index} aria-label={view.title}>
+            {views.length > 1 ? <h3>{view.title}</h3> : null}
+            <ArchitectureView {...props} diagram={{ ...diagram, ...view, nodes }} />
+        </section>;
+    })}</>;
+}
+
+function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry, connected, onRenderFailure, onLayout }: {
     diagram: Diagram; blocks?: readonly Pick<ExplanationBlock, 'id' | 'title' | 'nodeIds'>[] | undefined;
     activeBlock?: string | undefined; onVisit?: ((id: string) => void) | undefined;
     onRetry?: (() => void) | undefined; connected: boolean;

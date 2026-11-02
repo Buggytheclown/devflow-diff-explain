@@ -325,6 +325,21 @@ export class RouteStore {
         this.commit({ ...this.state, snapshot: { ...snapshot, stops } });
     }
 
+    /** Уточнение обзора сохраняет слоты блоков и уже принятые файлы. */
+    refineOverview(overview: AcceptedExplanation): void {
+        const snapshot = this.state.snapshot;
+        if (snapshot === null) return;
+        const stops = snapshot.stops.map((stop, index) => {
+            const block = overview.stops[index];
+            return block === undefined ? stop : { ...stop, title: block.title, paragraph: block.paragraph,
+                nodeIds: block.nodeIds, storyEvidence: block.storyEvidence, relatedFiles: block.relatedFiles };
+        });
+        const updated = { ...snapshot, summary: overview.summary, summaryEvidence: overview.summaryEvidence,
+            flow: overview.flow, stops };
+        if (updated.contentHash !== null) updated.contentHash = contentHashOf(updated);
+        this.commit({ ...this.state, snapshot: updated });
+    }
+
     /** Схема не участвует в готовности файлов и не блокирует основной маршрут. */
     setFlow(snapshotId: string, flow: FlowState): void {
         const snapshot = this.state.snapshot;

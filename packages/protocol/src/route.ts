@@ -434,7 +434,7 @@ export const architectureOverviewResultSchema = z.object({
     }).strict()).min(1).max(100),
 }).strict();
 export const allFilesResultSchema = z.object({
-    contractVersion: z.literal(6),
+    contractVersion: z.literal(6), overview: architectureOverviewResultSchema.optional(),
     stops: z.array(z.object({ planIndex: z.number().int().positive(), files: z.array(z.object({
         path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(840),
         example: rawReadableExampleSchema.nullable().optional(), annotations: z.array(guidedAnnotationSchema).max(12),

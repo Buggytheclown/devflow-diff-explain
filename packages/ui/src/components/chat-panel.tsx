@@ -1,6 +1,6 @@
 import type { AgentNote, ChatAnchor, ChatExplanation, ChatExchange, CodeLocation, UiChatAskAnchor, UiTask, WorkerStatus } from '@sherpa/protocol';
 import type { KeyboardEvent, ReactNode, RefObject } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { MessageKey, Translate } from '../i18n/index.js';
 import { useT } from '../i18n/index.js';
@@ -175,6 +175,7 @@ export function ChatPanel(props: ChatPanelProps) {
     const activity = chatActivityState(worker, exchanges);
     const queued = activity === 'queued' ? queueBannerText(tasks) : null;
     const running = [...exchanges].reverse().find((exchange) => exchange.status === 'running') ?? null;
+    const activeExchange = running ?? feed.find(({ exchange }) => exchange.status === 'queued')?.exchange ?? null;
     const failedExchangeId = [...feed]
         .reverse()
         .find(({ exchange }) => exchange.status === 'failed' || exchange.status === 'cancelled')?.exchange.id;
@@ -203,6 +204,8 @@ export function ChatPanel(props: ChatPanelProps) {
     const errorRef = useRef<HTMLDivElement | null>(null);
     const handledScrollRequest = useRef<number | null>(null);
     const [sending, setSending] = useState(false);
+    const [cancelling, setCancelling] = useState(false);
+    const cancelPending = useRef(false);
     const [composerError, setComposerError] = useState<string | null>(null);
     const [clock, setClock] = useState(() => props.now ?? Date.now());
     /**
@@ -221,6 +224,13 @@ export function ChatPanel(props: ChatPanelProps) {
         setComposer({ handled: handledPrefill, text: value });
         props.onComposerTextChange?.(value);
     };
+    useLayoutEffect(() => {
+        const textarea = textareaRef.current;
+        if (textarea !== null) {
+            textarea.style.height = 'auto';
+            textarea.style.height = `${String(textarea.scrollHeight)}px`;
+        }
+    }, [text]);
     // Каретка — в конец подставленного текста: React после коммита восстанавливает выделение
     // сфокусированного поля и иначе вернул бы её в начало.
     const focusComposerEnd = useCallback(() => {
@@ -300,7 +310,7 @@ export function ChatPanel(props: ChatPanelProps) {
     const connected = worker.kind === 'connected';
     const submit = (): void => {
         const question = text.trim();
-        if (!connected || sending || question === '') {
+        if (!connected || sending || activeExchange !== null || question === '') {
             return;
         }
         setSending(true);
@@ -315,6 +325,21 @@ export function ChatPanel(props: ChatPanelProps) {
                 setComposerError(error instanceof Error ? error.message : String(error));
             },
         );
+    };
+
+    const stop = (): void => {
+        if (activeExchange === null || cancelPending.current) {
+            return;
+        }
+        cancelPending.current = true;
+        setCancelling(true);
+        setComposerError(null);
+        void onCancel(activeExchange.id).catch((error: unknown) => {
+            setComposerError(error instanceof Error ? error.message : String(error));
+        }).finally(() => {
+            cancelPending.current = false;
+            setCancelling(false);
+        });
     };
 
     // `updatedAt` меняется с каждой строкой прогресса; `createdAt` — стабильная точка отсчёта и переживает reload.
@@ -365,7 +390,6 @@ export function ChatPanel(props: ChatPanelProps) {
                             note={note}
                             {...(exchange.id === failedExchangeId ? { errorRef } : {})}
                             cancelledLease={cancelledLeaseExchangeIds.has(exchange.id)}
-                            onCancel={onCancel}
                             onRetry={onRetry}
                             onNavigate={onNavigate}
                             onNavigateCode={props.onNavigateCode}
@@ -385,6 +409,7 @@ export function ChatPanel(props: ChatPanelProps) {
                 <textarea
                     ref={textareaRef}
                     className="chat-panel__textarea"
+                    rows={1}
                     aria-label={t('chat.composer.aria')}
                     value={text}
                     disabled={!connected || sending}
@@ -406,13 +431,16 @@ export function ChatPanel(props: ChatPanelProps) {
                     </span>
                     <button
                         type="button"
-                        className="ctl ctl--primary chat-panel__send"
-                        aria-label={t('chat.composer.send')}
-                        title={t('chat.composer.send')}
-                        disabled={!connected || sending || text.trim() === ''}
-                        onClick={submit}
+                        className={`ctl ctl--primary chat-panel__send${activeExchange === null ? '' : ' chat-panel__send--stop'}`}
+                        aria-label={t(cancelling ? 'chat.stopping' : activeExchange === null ? 'chat.composer.send' : 'chat.stop')}
+                        title={t(cancelling ? 'chat.stopping' : activeExchange === null ? 'chat.composer.send' : 'chat.stop')}
+                        disabled={activeExchange === null ? !connected || sending || text.trim() === '' : cancelling}
+                        onClick={activeExchange === null ? submit : stop}
                     >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 20V4m-6 6 6-6 6 6" /></svg>
+                        {activeExchange === null ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 20V4m-6 6 6-6 6 6" /></svg> : <>
+                            <svg className={`chat-panel__stop-ring${connected ? ' chat-panel__stop-ring--active' : ''}`} width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true"><circle cx="18" cy="18" r="16" stroke="currentColor" strokeWidth="2" strokeDasharray="72 29" strokeLinecap="round" /></svg>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                        </>}
                     </button>
                 </div>
                 {composerError === null ? null : (
@@ -430,7 +458,6 @@ function ChatExchangeView({
     note,
     errorRef,
     cancelledLease,
-    onCancel,
     onRetry,
     onNavigate,
     onNavigateCode,
@@ -443,7 +470,6 @@ function ChatExchangeView({
     readonly note: AgentNote | null;
     readonly errorRef?: RefObject<HTMLDivElement | null>;
     readonly cancelledLease: boolean;
-    readonly onCancel: (exchangeId: number) => Promise<void>;
     readonly onRetry: (exchangeId: number) => Promise<void>;
     readonly onNavigate: (anchor: ChatAnchor) => void;
     readonly onNavigateCode?: ((location: CodeLocation, diffId: string) => void) | undefined;
@@ -533,27 +559,9 @@ function ChatExchangeView({
                     <div className="chat-message__author visually-hidden">agent</div>
                     {typingVisible ? (
                         <div className="chat-message__activity">
-                            <span className="chat-message__typing" aria-hidden="true">
-                                <i />
-                                <i />
-                                <i />
-                            </span>
-                            <span>{longRunning ? t('chat.answering.long') : t('chat.answering')}</span>
+                            <span>{exchange.progressText ?? (longRunning ? t('chat.answering.long') : t('chat.answering'))}</span>
                         </div>
                     ) : null}
-                    {exchange.progressText === null ? null : (
-                        <div className="chat-message__progress">{exchange.progressText}</div>
-                    )}
-                    <button
-                        type="button"
-                        className="ctl ctl--ghost chat-message__action"
-                        disabled={actionPending}
-                        onClick={() => {
-                            run(onCancel);
-                        }}
-                    >
-                        {t('chat.stop')}
-                    </button>
                 </div>
             ) : exchange.status === 'failed' || exchange.status === 'cancelled' ? (
                 <div className="chat-message chat-message--agent chat-message--failed" ref={errorRef} role="alert">

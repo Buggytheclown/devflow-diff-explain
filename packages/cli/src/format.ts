@@ -21,7 +21,7 @@ export function formatTask(task: Task, resultFile: string, prKey: string): strin
         '',
         task.instructions,
         '',
-        `Context: ${task.contextFiles.length === 0 ? 'none' : task.contextFiles.join('\n')}`,
+        ...(task.type === 'chat' && task.instructions.includes('Available context (read selectively;') ? [] : [`Context: ${task.contextFiles.length === 0 ? 'none' : task.contextFiles.join('\n')}`]),
     ];
 
     if (task.resultSchemaFile !== undefined) {
@@ -97,7 +97,7 @@ export function formatCompleteResponse(response: TaskCompleteResponse, taskId: n
             return [
                 `The result of task sherpa/${String(taskId)} was rejected:`,
                 ...response.errors.map((error, index) => `  ${String(index + 1)}. ${error}`),
-                `Fix it and call \`devflow-diff-explain task complete ${String(taskId)} --file ${file} --pr ${prKey}\` again.`,
+                ...(response.errors.some((error) => error.includes('now closed with an error')) ? [] : [`Fix it and call \`devflow-diff-explain task complete ${String(taskId)} --file ${file} --pr ${prKey}\` again.`]),
             ].join('\n');
         case 'noop':
             return `${response.message}\nCall \`devflow-diff-explain worker next --pr ${prKey}\` for the next task.`;

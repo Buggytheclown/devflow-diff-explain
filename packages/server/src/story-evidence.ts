@@ -10,8 +10,8 @@ export function storyEvidenceResolver(diff: PrDiff) {
         const errors: string[] = [];
         const quotes = new Set<string>();
         const claims = block.claims.map((claim) => {
-            if (!text.includes(claim.quote) || quotes.has(claim.quote)) errors.push(`Quote must occur in its paragraph and be unique: ${claim.quote}`);
-            quotes.add(claim.quote);
+            if (claim.quote !== undefined && (!text.includes(claim.quote) || quotes.has(claim.quote))) errors.push(`Quote must occur in its paragraph and be unique: ${claim.quote}`);
+            if (claim.quote !== undefined) quotes.add(claim.quote);
             const sources = claim.sources.flatMap((source) => {
                 const file = index.file(source.path, source.kind === 'file' ? 'new' : source.side);
                 if (file === null) { errors.push(`Source file is missing or ambiguous: ${source.path}`); return []; }
@@ -46,13 +46,16 @@ export function storyEvidenceContext(evidence: StoryExplanationEvidence, diff: P
     const blocks = focus === undefined || focus === 'intro'
         ? [{ id: 'intro', evidence: evidence.introduction }, ...sections]
         : [...sections.filter((entry) => entry.id === focus), { id: 'intro', evidence: evidence.introduction }, ...sections.filter((entry) => entry.id !== focus)];
+    const seen = new Set<string>();
     return [...(evidence.flow === undefined ? [] : ['# Saved data-flow context', JSON.stringify(evidence.flow), ...[...evidence.flow.diagram.nodes, ...evidence.flow.diagram.edges].flatMap((item) => item.sources.flatMap((source) => {
         if (source.kind !== 'patch') return [];
+        const key = JSON.stringify(source); if (seen.has(key)) return []; seen.add(key);
         const lines = index.range(index.file(source.path, source.side), source);
         return lines === null ? [`[UNAVAILABLE: saved flow range ${source.path}]`] : [`Flow source: ${source.path} ${source.side}:${String(source.start)}-${String(source.end)}`, ...lines.map((line) => line.raw)];
     }))]), '# Saved explanation evidence', '', ...blocks.flatMap((block) => [`## ${block.id}`, '', ...block.evidence.claims.flatMap((claim) => [
-        `Claim: ${claim.quote}`, ...(claim.limitation === null ? [] : [`Evidence limit: ${claim.limitation}`]),
+        ...(claim.quote === undefined ? [] : [`Claim: ${claim.quote}`]), ...(claim.limitation === null ? [] : [`Evidence limit: ${claim.limitation}`]),
         ...claim.sources.flatMap((source) => {
+            const key = JSON.stringify(source); if (seen.has(key)) return []; seen.add(key);
             const file = index.byId(source.fileId);
             if (file === null) return [`[UNAVAILABLE: saved source ${source.path}]`];
             if (source.kind === 'file') return [fileMetadata(file)];
@@ -66,4 +69,13 @@ export function storyEvidenceContext(evidence: StoryExplanationEvidence, diff: P
 
 function fileMetadata(file: FileDiff): string {
     return `File: ${file.path}; old path: ${file.oldPath ?? file.path}; change: ${file.changeType}; binary: ${String(file.binary)}\n${file.patch?.split('@@')[0] ?? '[No textual patch]'}`;
+}
+
+/** Служебный fileId принадлежит хранилищу, а не входному контракту модели. */
+export function rawEvidence(block: StoryEvidenceBlock | undefined): RawStoryEvidenceBlock | undefined {
+    return block === undefined ? undefined : { claims: block.claims.map((claim) => ({ ...claim,
+        sources: claim.sources.map((source) => source.kind === 'file'
+            ? { kind: 'file', path: source.path }
+            : { kind: 'lines', path: source.path, side: source.side, start: source.start, end: source.end }),
+    })) };
 }

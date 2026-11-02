@@ -1,4 +1,4 @@
-import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixture, architectureStoryFixture } from '@sherpa/fixtures';
+import { fixtureIteration, routeFixtures, guidedStoryFixture, readableStoryFixture, architectureStoryFixture, chatFixtures } from '@sherpa/fixtures';
 import { useState, type ReactNode } from 'react';
 import { FloatingChat } from '../../story/floating-chat.js';
 import { ChatLauncher } from '../../story/chat-launcher.js';
@@ -40,10 +40,12 @@ const noop = (): void => undefined;
 
 const renderSource = (source: StorySource, section: string, index: number) => <EvidenceSource key={`${section}:${String(index)}`} source={source} diffId={diff.diffId} data={data} token="gallery" focusId={`${section}:${String(index)}`} onOpen={noop} onSelect={noop} onLayout={noop} />;
 
-function QuietChatGallery({ attached = false, offline = false, inFrame = false, headerActions }: { attached?: boolean; offline?: boolean; inFrame?: boolean; headerActions?: ReactNode }) {
+function QuietChatGallery({ attached = false, offline = false, inFrame = false, headerActions, activity }: { attached?: boolean; offline?: boolean; inFrame?: boolean; headerActions?: ReactNode; activity?: 'queued' | 'running' }) {
+    const exchanges = activity === undefined ? [] : chatFixtures('medium')?.exchanges.filter((exchange) => exchange.status === activity) ?? [];
     const panel = <ChatPanel headerActions={headerActions}
         worker={offline ? { kind: 'never' } : { kind: 'connected', workerId: 'gallery', harness: 'codex', model: 'gpt', registeredAt: '2026-10-28T10:00:00Z', lastSeenAt: '2026-10-28T10:00:00Z' }}
-        tasks={[]} exchanges={[]} notes={[]} loading={false} error={null} reconnectCommand="devflow-diff-explain worker next --pr fixture-medium"
+        tasks={[]} exchanges={exchanges} notes={[]} loading={false} error={null} reconnectCommand="devflow-diff-explain worker next --pr fixture-medium"
+        now={Date.parse(exchanges[0]?.createdAt ?? '2026-10-28T10:00:00Z') + 500}
         anchor={null} fileAttachment={attached ? { fileId: sourceRef.fileId, path: sourceRef.path } : undefined} contextCommit={snapshot.commit}
         focusRequest={0} scrollRequest={null} onScrollRequestHandled={noop} onClose={noop} onRemoveAnchor={noop}
         onAsk={() => Promise.reject(new Error('Gallery only'))} onCancel={() => Promise.resolve()} onRetry={() => Promise.resolve()} onNavigate={noop} onNavigateToNote={noop}
@@ -59,6 +61,9 @@ export const STORY_STATES: readonly GalleryState[] = [
     { id: 'chat-launcher-running-unread', group: 'Чат', title: 'Свёрнутый чат · новый ответ и следующий вопрос', render: () => <ChatLauncher open={false} onOpen={noop} activity="running" unreadCount={1} /> },
     { id: 'chat-launcher-paused', group: 'Чат', title: 'Свёрнутый чат · ожидание подключения агента', render: () => <ChatLauncher open={false} onOpen={noop} activity="paused" /> },
     { id: 'chat-floating', group: 'Чат', title: 'Плавающий чат · файл возле ввода', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery attached inFrame headerActions={headerActions} />}</FloatingChat> },
+    { id: 'chat-composer-running', group: 'Чат', title: 'Ответ · стоп и вращение вместо отправки', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery activity="running" inFrame headerActions={headerActions} />}</FloatingChat> },
+    { id: 'chat-composer-queued', group: 'Чат', title: 'Очередь · отмена из поля ввода', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery activity="queued" inFrame headerActions={headerActions} />}</FloatingChat> },
+    { id: 'chat-composer-paused', group: 'Чат', title: 'Отключение · стоп без вращения', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery activity="running" offline inFrame headerActions={headerActions} />}</FloatingChat> },
     { id: 'chat-quiet-empty', group: 'Чат', title: 'Пустой чат · вопрос по всему PR', render: () => <QuietChatGallery /> },
     { id: 'chat-explicit-file', group: 'Чат', title: 'Явно прикреплённый файл возле ввода', render: () => <QuietChatGallery attached /> },
     { id: 'chat-quiet-offline', group: 'Чат', title: 'Отключение · команда скрыта до запроса', render: () => <QuietChatGallery offline /> },
@@ -113,6 +118,7 @@ export const GUIDED_STORY_STATES: readonly GalleryState[] = [
     { id: 'route-collapsed', group: 'По диффу', title: 'Маршрут · блоки свёрнуты до выбора', render: () => <aside className="story-nav" style={{ position: 'static', width: 420, height: 720 }}><GuidedNavigation snapshot={architecture.snapshot} diff={architecture.diff} page="intro" onVisit={noop} /></aside> },
     { id: 'guided-arcanum-tree', group: 'По диффу', title: 'Смысловые заголовки и дерево каталогов · строки и пояснения', render: () => <aside className="story-nav" style={{ position: 'static', width: 420, height: 720 }}><GuidedNavigation snapshot={architecture.snapshot} diff={architecture.diff} page={`file:${architecture.first.fileId}`} onVisit={noop} /></aside> },
     { id: 'overview-compact-ready', group: 'По диффу', title: 'Готовность · компактная строка с подробностями', render: () => <Preparation route={{ phase: 'ready', smallPr: false, snapshot: architecture.snapshot, failure: null, stale: null }} connected /> },
+    { id: 'architecture-processes', group: 'По диффу', title: 'Архитектура · несколько процессов с общими узлами', render: () => <main className="story-main"><FlowDiagram flow={{ status: 'ready', contexts: [], diagram: { ...architecture.diagram, views: [{ title: 'Сохранение результата', mermaid: 'flowchart LR\nrule --> saved' }] } }} blocks={architecture.snapshot.stops} /></main> },
     { id: 'architecture-contrast', group: 'По диффу', title: 'Архитектура · контраст при конфликтующих цветах модели', render: () => <main className="story-main"><FlowDiagram flow={{ status: 'ready', contexts: [], diagram: { ...architecture.diagram, mermaid: architecture.diagram.mermaid + '\nclassDef faint fill:#ffffff,color:#eeeeee,stroke:#ffffff\nclass request,handler,rule,saved,rejected faint' } }} /></main> },
     { id: 'architecture-overview', group: 'По диффу', title: 'Архитектура · развилки, группы и связь с блоками', render: () => <main className="story-main"><GuidedDocument snapshot={architecture.snapshot} page="intro" onVisit={noop} onAsk={noop} renderFile={() => null} /></main> },
     { id: 'architecture-files-pending', group: 'По диффу', title: 'Два этапа · обзор готов, файлы ещё разбираются', render: () => <main className="story-main"><Preparation route={{ phase: 'filling', smallPr: false, snapshot: { ...architecture.snapshot, stops: architecture.snapshot.stops.map((block) => ({ ...block, status: 'queued', guidedFiles: block.guidedFiles?.map((file) => ({ ...file, explanation: null, status: 'queued' })) })) }, failure: null, stale: null }} connected /><FlowDiagram flow={architecture.snapshot.flow} blocks={architecture.snapshot.stops} /></main> },

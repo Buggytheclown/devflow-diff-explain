@@ -68,6 +68,7 @@ export const ru = {
     'chat.answering': 'Отвечаю',
     'chat.answering.long': 'Всё ещё работаю',
     'chat.stop': 'Остановить',
+    'chat.stopping': 'Останавливаю…',
     'chat.retry': 'Повторить',
     'chat.answer.missing': 'Ответ не получен.',
     'chat.answer.cancelled': 'Вопрос отменён.',

@@ -17,6 +17,9 @@ test('весь PR по умолчанию; явный файл → строки 
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Как устроен весь PR?');
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).press('Enter');
     const first = await server.worker.next(); expect(first.type).toBe('chat');
+    expect(first.stdout).toContain('Как устроен весь PR?');
+    expect(first.stdout).toContain('Pinned code version:');
+    expect(first.stdout).toContain('Available context (read selectively');
     await server.worker.complete(first.taskId ?? 0, 'Этот PR меняет правило и его применение в обработчике.');
 
     await page.getByRole('button', { name: 'Закрыть чат', exact: true }).click();
@@ -31,7 +34,8 @@ test('весь PR по умолчанию; явный файл → строки 
     await page.screenshot({ path: test.info().outputPath('quiet-chat-file-attachment.png') });
     await page.getByRole('textbox', { name: 'Вопрос агенту' }).press('Enter');
     const attached = await server.worker.next(); expect(attached.type).toBe('chat');
-    const patch = attached.stdout.split('\n').find((line) => line.includes('attached-file-patch-'));
+    const patchEntry = attached.stdout.split('\n').find((line) => line.includes('attached-file-patch-'));
+    const patch = patchEntry === undefined ? undefined : JSON.parse(patchEntry.slice(patchEntry.indexOf('): ') + 3)) as string;
     expect(patch).toBeDefined(); expect(await fs.readFile(patch?.trim() ?? '', 'utf8')).toContain(originalPath);
     await server.worker.complete(attached.taskId ?? 0, 'Файл участвует в проверке и применении правила.');
 

@@ -101,7 +101,24 @@ test('ошибка Mermaid не даёт 100%; повтор схемы сохр�
     await expect(page.locator('[role=progressbar]')).not.toHaveAttribute('aria-valuenow', '100');
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();
     const retry = await server.worker.next(); expect(retry.type).toBe('route.diagram');
-    expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify(fixture.outline))).stdout).not.toContain('rejected');
+    expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ flow: fixture.outline.flow }))).stdout).not.toContain('rejected');
     await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
+});
+
+test('несколько процессов сохраняют связи с блоками и файлами', async ({ page, launchSherpa }) => {
+    const server = await launchSherpa('fixture-medium');
+    await page.goto(server.url);
+    await server.worker.register('codex', 'ru');
+    const task = await server.worker.next();
+    const flow = { ...fixture.outline.flow, diagram: { ...fixture.diagram,
+        views: [{ title: 'Сохранение результата', mermaid: 'flowchart LR\nrule --> saved' }] } };
+    await server.worker.complete(task.taskId ?? 0, JSON.stringify({ ...fixture.outline, flow }));
+    await expect(page.locator('.story-architecture-scroll')).toHaveCount(2);
+    await expect(page.locator('[data-architecture-node="rule"]')).toHaveCount(2);
+    await page.locator('[data-architecture-node="rule"]').last().click();
+    await expect(page.locator('.story-architecture-selection').last()).toContainText(fixture.outline.stops[0]?.title ?? '');
+    const files = await server.worker.next();
+    await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
 });

@@ -1,3 +1,5 @@
+import { allFilesResultSchema } from '@sherpa/protocol';
+import { validateArchitectureOverview } from './architecture-story.js';
 import { randomUUID } from 'node:crypto';
 import { FlowCoordinator } from './flow-coordinator.js';
 
@@ -376,6 +378,19 @@ export class RouteOrchestrator {
             return this.deferUntilDiff();
         }
 
+        let refinement: ReturnType<typeof validateArchitectureOverview> | undefined;
+        if (snapshot.storyContractVersion === 6) {
+            try {
+                const body = allFilesResultSchema.parse(JSON.parse(result));
+                if (body.overview !== undefined) {
+                    refinement = validateArchitectureOverview(JSON.stringify(body.overview), diff);
+                    if (!refinement.ok) return { kind: 'rejected', errors: refinement.errors };
+                    const identity = (stops: readonly { guidedFiles?: readonly { path: string }[] | undefined }[]) =>
+                        JSON.stringify(stops.map((stop) => stop.guidedFiles?.map((file) => file.path)));
+                    if (identity(refinement.value.stops) !== identity(snapshot.stops)) return { kind: 'rejected', errors: ['Keep accepted block order and primary file assignments when refining the overview.'] };
+                }
+            } catch { /* Основной валидатор ниже сообщает ошибки JSON и схемы. */ }
+        }
         const locale = snapshotLocale(snapshot);
         const validation = validateStorySection(result, binding.planIndexes, diff, locale, snapshot.stops, snapshot.storyContractVersion, binding.assignment);
         if (!validation.ok) {
@@ -387,6 +402,7 @@ export class RouteOrchestrator {
         return {
             kind: 'accepted',
             onCommitted: () => {
+                if (refinement?.ok) this.store.refineOverview(refinement.value);
                 this.store.applyFillings(fillings, provenance);
                 this.reconcile();
             },

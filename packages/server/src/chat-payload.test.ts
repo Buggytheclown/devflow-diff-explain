@@ -142,7 +142,7 @@ describe('chat payload с якорем', () => {
             'route-context.md',
             'history.md',
         ]);
-        // Первые два пути общие: их модель читает один раз за сессию.
+        // Первые два пути общие: при необходимости модель переиспользует уже прочитанное.
         expect(first.contextFiles.slice(0, 2)).toEqual(second.contextFiles.slice(0, 2));
         expect(first.contextFiles[0]?.startsWith(path.join(sharedDir, 'guides'))).toBe(true);
         expect(first.contextFiles[1]?.startsWith(path.join(sharedDir, 'diff', diffKeyOf(mediumDiff()), 'files'))).toBe(
@@ -152,7 +152,7 @@ describe('chat payload с якорем', () => {
         expect(path.dirname(first.contextFiles[2] ?? '')).not.toBe(path.dirname(second.contextFiles[2] ?? ''));
         expect(first.contextFiles.slice(2).every((file) => file.startsWith(payloadDir))).toBe(true);
         expect(first.contextFiles.every((file) => fs.existsSync(file))).toBe(true);
-        expect(fs.readFileSync(first.contextFiles[0] ?? '', 'utf8')).toContain('# Task: answer the reviewer question');
+        expect(fs.readFileSync(first.contextFiles[0] ?? '', 'utf8')).toContain('Answer the reviewer\'s question.');
         expect(fs.readFileSync(first.contextFiles[1] ?? '', 'utf8')).toContain(`File: ${anchor.path}`);
         expect(fs.readFileSync(first.contextFiles[2] ?? '', 'utf8')).toContain(context.question);
         const routeContext = fs.readFileSync(first.contextFiles[4] ?? '', 'utf8');
@@ -168,11 +168,39 @@ describe('chat payload с якорем', () => {
         expect(routeContext).toContain('## Pull request summary');
         expect(routeContext).toContain(coveringStop?.title);
         expect(first.resultSchemaFile).toBeUndefined();
-        expect(Buffer.byteLength(first.instructions, 'utf8')).toBeLessThan(500);
-        // Правило общего контекста: путь под `shared/` читается один раз за сессию.
-        expect(first.instructions).toContain('shared/');
-        expect(first.instructions).toContain('once per session');
-        expect(fs.readFileSync(first.contextFiles[0] ?? '', 'utf8')).toContain('once per session');
+        expect(Buffer.byteLength(first.instructions, 'utf8')).toBeLessThan(8000);
+        // Чтение выбирает агент; инструкция не требует перечитывания общих файлов.
+        expect(first.instructions).toContain('reuse evidence already known');
+        expect(fs.readFileSync(first.contextFiles[0] ?? '', 'utf8')).toContain('read or search additional sources when needed');
+    });
+
+    it('показывает вопрос, закреплённую версию и карту источников без чтения файлов', async () => {
+        const diff = mediumDiff();
+        const question = 'Почему изменился порядок?\nЧто будет при отказе?';
+        const input = await materialize({ question, anchor: null, pr: META, diff, fileContent: null, route: READY_ROUTE, history: [exchange(1)] });
+
+        expect(input.instructions).toContain(question.replace('\n', '\\n'));
+        expect(input.instructions).toContain(JSON.stringify({ diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit }));
+        expect(input.instructions).toContain('Available context (read selectively');
+        expect(input.instructions).toContain('Saved PR diff; search by file or symbol as needed');
+        expect(input.instructions).toContain('Recent completed questions and answers');
+        expect(input.instructions).not.toContain('Read the guide first, then every context file');
+        for (const file of input.contextFiles) {
+            expect(input.instructions).toContain(`(${String(fs.statSync(file).size)} bytes): ${JSON.stringify(file)}`);
+        }
+        expect(input.instructions).not.toContain('### Plan order');
+        expect(input.instructions).not.toContain('diff --git');
+    });
+
+    it('ограничивает превью длинного вопроса, сохраняя полный текст по указанному пути', async () => {
+        const question = 'Длинный вопрос '.repeat(2000) + 'КОНЕЦ ВОПРОСА';
+        const input = await materialize({ question, anchor: null, pr: META, diff: null, fileContent: null, route: EMPTY_ROUTE, history: [] });
+        expect(input.instructions).toContain('Pinned code version: unavailable');
+        expect(input.instructions).toContain('[TRUNCATED:');
+        expect(input.instructions).not.toContain('КОНЕЦ ВОПРОСА');
+        expect(Buffer.byteLength(input.instructions, 'utf8')).toBeLessThan(8000);
+        const questionFile = input.contextFiles.find((file) => path.basename(file) === 'question.md');
+        expect(fs.readFileSync(questionFile ?? '', 'utf8')).toContain(question);
     });
 
     it('два вопроса к одному файлу делят один общий путь и не переписывают его', async () => {
@@ -510,6 +538,6 @@ describe('общий бюджет chat payload', () => {
         expect(fileContext).toContain(`${String(anchor.start)} | line ${String(anchor.start)}`);
         expect(fileContext).not.toContain('The surrounding file did not fit in the chat payload budget.');
         expect(fileContext).toContain('[TRUNCATED: later file lines omitted');
-        expect(Buffer.byteLength(payload.instructions, 'utf8')).toBeLessThan(500);
+        expect(Buffer.byteLength(payload.instructions, 'utf8')).toBeLessThan(8000);
     });
 });

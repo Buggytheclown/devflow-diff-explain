@@ -65,6 +65,7 @@ export const en: Dictionary = {
     'chat.answering': 'Answering',
     'chat.answering.long': 'Still working',
     'chat.stop': 'Stop',
+    'chat.stopping': 'Stopping…',
     'chat.retry': 'Retry',
     'chat.answer.missing': 'No answer came back.',
     'chat.answer.cancelled': 'Question cancelled.',

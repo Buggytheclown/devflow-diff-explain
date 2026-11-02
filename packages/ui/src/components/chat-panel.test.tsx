@@ -190,6 +190,7 @@ describe('лента чат-панели', () => {
         vi.useFakeTimers();
         vi.setSystemTime('2026-09-01T10:00:00.000Z');
         const running = exchange(1, 'running', {
+            progressText: null,
             createdAt: '2026-09-01T10:00:00.000Z',
             updatedAt: '2026-09-01T10:00:00.000Z',
         });
@@ -214,15 +215,64 @@ describe('лента чат-панели', () => {
                 },
             ],
         });
-        expect(host.textContent).toContain('Отвечаю');
+        expect(host.textContent).toContain('Проверяю ещё один вызов');
+        expect(host.textContent).not.toContain('Отвечаю');
         act(() => {
             vi.advanceTimersByTime(59_700);
         });
-        expect(host.textContent).toContain('Отвечаю');
+        expect(host.textContent).toContain('Проверяю ещё один вызов');
+        render({ exchanges: [{ ...running, progressText: null }] });
         act(() => {
             vi.advanceTimersByTime(1);
         });
         expect(host.textContent).toContain('Всё ещё работаю');
+    });
+
+    it('останавливает текущий ответ из композера один раз и сохраняет черновик', async () => {
+        let finish!: () => void;
+        const onCancel = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+        const onAsk = vi.fn();
+        const { host, render } = mountPanel({
+            exchanges: [exchange(1, 'queued'), exchange(2, 'running')],
+            composerText: 'Следующий вопрос', onCancel, onAsk,
+        });
+        const button = host.querySelector<HTMLButtonElement>('.chat-panel__send');
+        expect(button?.getAttribute('aria-label')).toBe('Остановить');
+        expect(button?.disabled).toBe(false);
+        expect(host.querySelector('.chat-message__action')).toBeNull();
+        act(() => {
+            host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            button?.click();
+            button?.click();
+        });
+        expect(onAsk).not.toHaveBeenCalled();
+        expect(onCancel).toHaveBeenCalledExactlyOnceWith(2);
+        expect(button?.disabled).toBe(true);
+        expect(button?.getAttribute('aria-label')).toBe('Останавливаю…');
+        await act(async () => { finish(); await Promise.resolve(); });
+        render({ exchanges: [exchange(2, 'cancelled')] });
+        expect(button?.getAttribute('aria-label')).toBe('Отправить');
+        expect(host.querySelector('textarea')?.value).toBe('Следующий вопрос');
+        expect(host.querySelector('.chat-panel__stop-ring')).toBeNull();
+    });
+
+    it('отменяет ожидающий вопрос и показывает ошибку остановки с возможностью повтора', async () => {
+        const onCancel = vi.fn().mockRejectedValueOnce(new Error('Нет связи')).mockResolvedValueOnce(undefined);
+        const { host } = mountPanel({ exchanges: [exchange(1, 'queued')], onCancel });
+        const button = host.querySelector<HTMLButtonElement>('.chat-panel__send');
+        await act(async () => { button?.click(); await Promise.resolve(); });
+        expect(host.querySelector('[role="alert"]')?.textContent).toBe('Нет связи');
+        expect(button?.disabled).toBe(false);
+        await act(async () => { button?.click(); await Promise.resolve(); });
+        expect(onCancel).toHaveBeenNthCalledWith(2, 1);
+        expect(host.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it('после отключения убирает вращение, сохраняя возможность отмены', () => {
+        const { host } = mountPanel({ worker: { kind: 'never' }, exchanges: [exchange(1, 'running')] });
+        expect(host.querySelector('.chat-panel__stop-ring')).not.toBeNull();
+        expect(host.querySelector('.chat-panel__stop-ring--active')).toBeNull();
+        expect(host.querySelector<HTMLButtonElement>('.chat-panel__send')?.disabled).toBe(false);
     });
 
     it('держание отменённой задачи ставит строку под её обмен, а новый вопрос — в очередь за ней', () => {

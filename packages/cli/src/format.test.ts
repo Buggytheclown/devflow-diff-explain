@@ -116,6 +116,12 @@ describe('ответы на complete', () => {
         expect(output).toContain('devflow-diff-explain task complete 42 --file /work/answer.md');
     });
 
+    it('терминальный отказ не предлагает сдавать закрытую задачу снова', () => {
+        const output = formatCompleteResponse({ kind: 'rejected', errors: ['Task is now closed with an error. Call worker next.'] }, 42, RESULT_FILE, 'arcanum-1');
+        expect(output).not.toContain('Fix it');
+        expect(output).toContain('worker next');
+    });
+
     it('noop печатает сообщение сервера', () => {
         const output = formatCompleteResponse(
             { kind: 'noop', message: 'Task sherpa/42 is already finished.' },

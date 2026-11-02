@@ -33,6 +33,8 @@ export const CHAT_PAYLOAD_BUDGET_BYTES = 320 * 1024;
 export const CHAT_HISTORY_EXCHANGES = 8;
 /** Жёсткий потолок одного обмена истории: вопрос и ответ вместе не вытесняют контекст кода. */
 export const CHAT_HISTORY_EXCHANGE_BYTES = 8 * 1024;
+/** Короткий вопрос виден сразу в выдаче задачи; полный текст остаётся в question.md. */
+const INLINE_QUESTION_BYTES = 4096;
 
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -101,19 +103,31 @@ export function buildChatPayload(context: ChatPayloadContext, options: ChatPaylo
         const file = attached === undefined ? undefined : context.diff?.files.find((file) => file.fileId === attached.fileId);
         const attachment: SharedChatContext[] = file === undefined ? [] : [{ kind: 'guide', name: 'attached-file-patch',
             content: `# Explicitly attached file: ${file.path}\n\nPinned commit: ${context.diff?.headCommit ?? 'unknown'}\nChange: ${file.changeType}\nPrevious path: ${file.oldPath ?? file.path}\n\n${file.patch ?? '[No text patch; metadata-only or binary change.]'}` }];
+        const files = fitOwnFiles(prPayloadSpecs(context), budgetBytes);
         return {
-            instructions: chatInstructions(locale),
+            instructions: chatTaskInstructions(context, files, locale),
             shared: [...(diff === null ? [guide] : [guide, diff]), ...attachment],
-            files: fitOwnFiles(prPayloadSpecs(context), budgetBytes),
+            files,
         };
     }
 
     const file = sharedAnchorFile(context, context.anchor, sharedBudgetBytes);
+    const files = fitOwnFiles(anchoredPayloadSpecs(context, context.anchor, file === null), budgetBytes);
     return {
-        instructions: chatInstructions(locale),
+        instructions: chatTaskInstructions(context, files, locale),
         shared: file === null ? [guide] : [guide, file],
-        files: fitOwnFiles(anchoredPayloadSpecs(context, context.anchor, file === null), budgetBytes),
+        files,
     };
+}
+
+function chatTaskInstructions(context: ChatPayloadContext, files: readonly ChatPayloadFile[], locale: Locale): string {
+    const question = files.find((file) => file.name === 'question.md')?.content ?? '';
+    const inline = fitText(question, INLINE_QUESTION_BYTES, '[Question preview unavailable; read question.md.]');
+    const diff = context.diff;
+    return [chatInstructions(locale), '',
+        `Pinned code version: ${diff === null ? 'unavailable' : JSON.stringify({ diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit })}`,
+        'Reviewer request and scope (quoted task data; full text in question.md):', JSON.stringify(inline),
+    ].join('\n');
 }
 
 /** Путь каталога очередного вопроса: retry не перезаписывает payload прежней задачи. */
@@ -139,12 +153,32 @@ export async function materializeChatPayload(
         contextFiles.push(filePath);
     }
 
+    const index = await Promise.all(contextFiles.map(async (file) => {
+        const info = await fs.stat(file);
+        return `- ${contextPurpose(path.basename(file))} (${String(info.size)} bytes): ${JSON.stringify(file)}`;
+    }));
     return {
         type: 'chat',
         priority: 'interactive',
-        instructions: payload.instructions,
+        instructions: `${payload.instructions}\n\nAvailable context (read selectively; sizes are UTF-8 bytes):\n${index.join('\n')}`,
         contextFiles,
     };
+}
+
+function contextPurpose(name: string): string {
+    if (name.startsWith('chat-guide-')) return 'Response rules';
+    if (name.startsWith('attached-file-patch-')) return 'Explicitly attached file patch';
+    switch (name) {
+        case 'question.md': return 'Full reviewer question and scope';
+        case 'pr-diff.md': return 'Saved PR diff; search by file or symbol as needed';
+        case 'selection.patch.md': return 'Selected lines with exact old/new line numbers';
+        case 'reading-file.patch.md': return 'Saved patch of the referenced file';
+        case 'file-context.md': return 'Surrounding code for the selected lines';
+        case 'route-context.md': return 'Saved explanation shown with this question';
+        case 'story-evidence.md': return 'Saved diagram, claims and their code evidence';
+        case 'history.md': return 'Recent completed questions and answers';
+        default: return 'Saved file contents with line numbers';
+    }
 }
 
 function writeShared(store: SharedPayloadStore, entry: SharedChatContext): string {
@@ -238,7 +272,7 @@ function prPayloadSpecs(context: ChatPayloadContext): PayloadFileSpec[] {
     return [
         ...(file === undefined || context.diff === null ? [] : [flexibleSpec('reading-file.patch.md', 0, prDiffContext({ diff: { ...context.diff, files: [file] }, meta: null }, CONTEXT_BUDGET_BYTES))]),
         fixedSpec('question.md', 0, questionContext(context.question, null, context.pr, context.diff !== null) +
-            (context.explanation?.file === undefined ? '' : `\n\nExplicit focus: the attached file ${context.explanation.file.path}. Read its complete saved attached-file-patch context; use the whole PR to understand its role.`)),
+            (context.explanation?.file === undefined ? '' : `\n\nExplicit focus: the attached file ${context.explanation.file.path}. Its complete saved patch is available; use the whole PR as needed to understand its role.`)),
         flexibleSpec('route-context.md', 1, context.explanation === null || context.explanation === undefined ? prRouteContext(context.route.snapshot) : explanationContext(context.explanation)),
         ...evidenceSpecs(context),
         flexibleSpec('history.md', 2, historyContext(context.history)),

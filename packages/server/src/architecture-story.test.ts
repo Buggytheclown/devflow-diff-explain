@@ -79,7 +79,7 @@ it('ошибка отрисовки отражается в прогрессе, 
     server.route.reportDiagramFailure(saved.snapshotId);
     expect(preparationProgress((await read(server))).status).toBe('partial');
     server.route.retryDiagram(saved.snapshotId); server.route.retryDiagram(saved.snapshotId);
-    await complete(server, fixture.outline, 'route.diagram');
+    await complete(server, { flow: fixture.outline.flow }, 'route.diagram');
     expect((await read(server)).snapshot?.stops).toEqual(saved.stops);
     expect(preparationProgress((await read(server))).percent).toBe(100);
     expect(architectureGuide('overview', 'ru')).not.toContain('3–6');
@@ -94,4 +94,29 @@ it('повтор одного блока после общей ошибки не
     await complete(server, { ...fixture.body, stops: fixture.body.stops.slice(0, 1) }, 'route.section');
     await vi.waitFor(async () => { expect((await read(server)).phase).toBe('failed'); });
     expect((await read(server)).snapshot?.stops.map((block) => block.status)).toEqual(['ready', 'failed']);
+});
+
+it('уточнение обзора сохраняет принятые файлы и переживает рестарт', async () => {
+    const { server, dir } = await start();
+    await complete(server, fixture.outline, 'route.skeleton');
+    const first = fixture.body.stops[0]; if (first === undefined) throw new Error('No files');
+    await complete(server, { contractVersion: 6, stops: [{ ...first, files: first.files.slice(0, 1) }] }, 'route.section');
+    const before = (await read(server)).snapshot;
+    const overview = { ...fixture.outline, summary: 'Уточнённая архитектура.', evidence: { claims: [{ sources: [], limitation: 'Synthetic test.' }] } };
+    await complete(server, { contractVersion: 6, overview, stops: [{ ...first, files: first.files.slice(1) }, ...fixture.body.stops.slice(1)] }, 'route.section');
+    const refined = (await read(server)).snapshot;
+    expect(refined?.summary).toBe(overview.summary);
+    expect(refined?.stops.map((block) => block.id)).toEqual(before?.stops.map((block) => block.id));
+    expect(refined?.stops[0]?.guidedFiles?.[0]).toEqual(before?.stops[0]?.guidedFiles?.[0]);
+    await server.close();
+    const restarted = (await start(dir)).server;
+    expect((await read(restarted)).snapshot?.summary).toBe(overview.summary);
+});
+
+it('несколько схем используют общие ID и проверяемые источники', () => {
+    const overview = structuredClone(fixture.outline);
+    overview.flow.diagram = { ...overview.flow.diagram, views: [{ title: 'Второй процесс', mermaid: 'flowchart LR\nrule --> saved' }] };
+    expect(validateArchitectureOverview(JSON.stringify(overview), fixture.diff).ok).toBe(true);
+    const unsafe = { ...overview, flow: { status: 'ready', diagram: { ...overview.flow.diagram, views: [{ title: 'Unsafe', mermaid: 'flowchart LR\nclick rule callback' }] } } };
+    expect(validateArchitectureOverview(JSON.stringify(unsafe), fixture.diff).ok).toBe(false);
 });

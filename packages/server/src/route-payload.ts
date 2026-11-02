@@ -438,7 +438,7 @@ function fileListBlock(diff: PrDiff): string {
         `## Changed files (${String(diff.files.length)}, complete list)`,
         '',
         'This list is never truncated, even when patches below are. Every file here must be accounted',
-        'for by the route: placed in a stop, or knowingly left to the synthetic last stop.',
+        'for by the route: assign every changed file to a primary block.',
         '',
         '| file # | file | change | +/- | notes |',
         '|---|---|---|---|---|',

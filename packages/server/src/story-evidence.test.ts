@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 
 import { mediumDiff, mediumReadySnapshot } from './route/fixture-support.js';
 import { contentHashOf } from './route-store.js';
-import { explanationEvidence, storyEvidenceContext, storyEvidenceResolver } from './story-evidence.js';
+import { explanationEvidence, storyEvidenceContext, storyEvidenceResolver, rawEvidence } from './story-evidence.js';
 
 const base = mediumDiff();
 const original = base.files[0];
@@ -62,4 +62,12 @@ it('сохраняет чтение старого снапшота, а v2 тр�
     const claim = accepted.value.claims[0];
     if (claim === undefined) throw new Error('No claim');
     expect(contentHashOf(modern)).not.toBe(contentHashOf({ ...modern, summaryEvidence: { claims: [{ ...claim, limitation: 'Other evidence limit.' }] } }));
+});
+
+it('повтор схемы преобразует сохранённые источники во входной контракт без служебных ID', () => {
+    const accepted = storyEvidenceResolver(diff)(block, 'Меняется порядок.');
+    if (!accepted.ok) throw new Error('Invalid evidence');
+    expect(rawStoryEvidenceBlockSchema.parse(rawEvidence(accepted.value))).toEqual(block);
+    const withoutQuote = { claims: [{ sources: block.claims[0]?.sources ?? [], limitation: null }] };
+    expect(storyEvidenceResolver(diff)(rawStoryEvidenceBlockSchema.parse(withoutQuote), 'Краткое объяснение.').ok).toBe(true);
 });

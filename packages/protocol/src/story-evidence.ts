@@ -3,8 +3,7 @@ import { z } from 'zod';
 
 import { codeLocationSchema, relativeCodePathSchema } from './code-link.js';
 
-const lines = codeLocationSchema.safeExtend({ kind: z.literal('lines') }).strict()
-    .refine((value) => value.end - value.start < 20, 'Keep a source within 20 lines.');
+const lines = codeLocationSchema.safeExtend({ kind: z.literal('lines') }).strict();
 const file = z.object({ kind: z.literal('file'), path: relativeCodePathSchema }).strict();
 export const rawStorySourceSchema = z.union([lines, file]);
 export const storySourceSchema = z.union([
@@ -13,7 +12,7 @@ export const storySourceSchema = z.union([
 
 function evidence<T extends z.ZodType>(source: T) {
     return z.object({ claims: z.array(z.object({
-        quote: z.string().trim().min(1).max(4000),
+        quote: z.string().trim().min(1).max(4000).optional(),
         sources: z.array(source).max(8),
         limitation: z.string().trim().min(1).max(4000).nullable(),
     }).strict().refine((claim) => claim.sources.length > 0 || claim.limitation !== null,

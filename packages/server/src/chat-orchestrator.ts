@@ -28,7 +28,6 @@ import { rememberIterationDiff } from './iteration-store.js';
 import { LEGACY_DIFF_ID } from './iterations/index.js';
 import type { EnqueueInput, TaskQueue, TaskRecord, TaskResultAcceptance } from './queue.js';
 import type { RouteStore } from './route-store.js';
-import { voiceErrors } from './route/voice.js';
 import type { SettingsStore } from './settings-store.js';
 import type { SharedPayloadStore } from './shared-payload.js';
 import { holdsPayload } from './shared-payload.js';
@@ -443,7 +442,7 @@ export class ChatOrchestrator {
     private resultErrors(result: string, exchange: ChatExchange): string[] {
         const diffId = exchange.explanation?.diffId ?? exchange.anchor?.diffId;
         const diff = diffId === undefined ? null : this.iterations?.get(diffId)?.diff ?? null;
-        return [...chatResultErrors(result, localeOf(exchange)), ...chatCodeLinkErrors(result, diff, exchange.anchor)];
+        return [...chatResultErrors(result), ...chatCodeLinkErrors(result, diff, exchange.anchor)];
     }
 
     private async loadPinnedContext(host: ReviewSource, diffId: string, meta?: PrMeta | null): Promise<PrContext> {
@@ -488,11 +487,11 @@ interface PrContext {
     readonly headCommit: string | null;
 }
 
-function chatResultErrors(result: string, locale: Locale): string[] {
+function chatResultErrors(result: string): string[] {
     if (result.trim() === '') {
         return ['The chat answer is empty. Return a non-empty Markdown answer.'];
     }
-    return voiceErrors('answer', result, locale);
+    return [];
 }
 
 /** Язык обмена; `null` несут обмены до миграции 020 — они русские. */
