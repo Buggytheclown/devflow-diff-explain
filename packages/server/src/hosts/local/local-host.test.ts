@@ -232,6 +232,7 @@ describe('локальный хост на рабочем дереве', () => {
             publishVerdicts: ['comment'],
             fileViewedSync: false,
             fileContent: true,
+            sourceAtRevision: true,
             commentIssues: false,
             commentResolve: false,
             editPublished: true,

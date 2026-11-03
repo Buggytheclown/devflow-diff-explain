@@ -66,7 +66,7 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
                     if (target === undefined) throw new Error('Missing diagram node');
                     target.dataset.architectureNode = node.id;
                     target.dataset.readingFocus = `architecture-node:${node.id}`;
-                    target.classList.add(`architecture-node--${node.change}`);
+                    target.classList.add(`architecture-node--${diagram.nodes.some((entry) => entry.id === node.id) ? node.change : 'context'}`);
                     // Inline !important сильнее правил с ID, которые Mermaid создаёт из classDef.
                     // Цвет задаётся токенами приложения, а не оформлением, выбранным моделью.
                     paint(target, { opacity: '1' });
@@ -75,7 +75,7 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
                             'stroke-width': 'var(--architecture-highlight-width, 2px)', 'stroke-dasharray': 'var(--architecture-node-dash, none)', 'fill-opacity': '1', 'stroke-opacity': '1' });
                     }
                     target.setAttribute('role', 'button'); target.setAttribute('tabindex', '0');
-                    target.setAttribute('aria-label', `${node.label} · ${t[node.change]}`);
+                    target.setAttribute('aria-label', `${node.label} · ${diagram.nodes.some((entry) => entry.id === node.id) ? t[node.change] : t.context}`);
                     const select = () => { setSelected(node.id); };
                     target.addEventListener('click', select);
                     target.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } });
@@ -108,7 +108,7 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
         {status === 'loading' ? <Skeleton diagram label={t.pending} /> : null}
         {status === 'error' ? <p className="story-notice" role="alert">{t.renderError}{onRetry === undefined ? null : <button className="ctl" disabled={!connected} onClick={onRetry}>{t.retry}</button>}</p> : null}
         <div className="story-architecture-scroll" data-direction={direction} ref={root} aria-label={diagram.title} />
-        {chosen === undefined ? null : <aside className="story-architecture-selection" aria-live="polite"><strong>{chosen.label}</strong><span>{t[chosen.change]}</span>{chosen.limitation === null ? null : <p>{chosen.limitation}</p>}
+        {chosen === undefined ? null : <aside className="story-architecture-selection" aria-live="polite"><strong>{chosen.label}</strong><span>{diagram.nodes.some((node) => node.id === chosen.id) ? t[chosen.change] : t.context}</span>{chosen.limitation === null ? null : <p>{chosen.limitation}</p>}
             {related.map((block) => <button className="ctl" key={block.id} data-reading-focus={`architecture-block:${block.id}`} onClick={() => { onVisit?.(block.id); }}>{block.title} →</button>)}
         </aside>}
     </div>;

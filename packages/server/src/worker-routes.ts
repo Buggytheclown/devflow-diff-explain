@@ -30,6 +30,7 @@ import type { WorkerRegistry } from './worker-registry.js';
 
 export interface WorkerRoutesOptions {
     readonly queue: TaskQueue;
+    readonly prepareResult?: (taskId: number, result: string) => Promise<string>;
     readonly registry: WorkerRegistry;
     /** Присутствие UI: его уход завершает воркера, когда открытых задач не осталось. */
     readonly presence: UiPresence;
@@ -131,10 +132,12 @@ export function createWorkerRoutes(options: WorkerRoutesOptions): Route[] {
             handle: handlingRpcFailures(async (ctx) => {
                 const request = await readWorkerRequest(ctx, completeBodySchema);
                 heartbeat(ctx, request.workerId, () => options.registry.touch(request.workerId));
+                const prepared = options.prepareResult === undefined || options.queue.getTask(request.taskId)?.workerId !== request.workerId ? request.result : await options.prepareResult(request.taskId, request.result);
+                options.registry.touch(request.workerId);
                 const body: TaskCompleteResponse = options.queue.complete(
                     request.workerId,
                     request.taskId,
-                    request.result,
+                    prepared,
                 );
                 return { status: 200, body };
             }),

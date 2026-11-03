@@ -71,6 +71,7 @@ const WITH_VERDICTS: readonly Verdict[] = ['request_changes', 'ship'];
 const CAPABILITIES: Omit<HostCapabilities, 'publishVerdicts'> = {
     fileViewedSync: false,
     fileContent: true,
+    sourceAtRevision: true,
     commentIssues: false,
     // Issue локально нет — резолвить по комментарию нечего, resolve живёт на треде.
     commentResolve: false,
@@ -571,6 +572,18 @@ export class LocalHost implements ReviewHost, FeedbackHost {
      * `MAX_FILE_BYTES`). Стороны читаются сейчас, а не лежат в снимке, поэтому снимок сперва
      * догоняется: иначе номера строк разошлись бы с патчем итерации, на которую ссылается `fileId`.
      */
+    async getSourceAtRevision(filePath: string, revision: string): Promise<string | null> {
+        const record = (await this.history()).find((entry) => entry.headCommit === revision);
+        const repo = await this.repo();
+        if (record !== undefined) {
+            const file = record.files.find((entry) => entry.path === filePath);
+            if (file !== undefined) return file.blob === null ? null : this.options.iterations.blob(file.blob);
+        }
+        const ref = record?.baseCommit ?? revision;
+        try { return (await repo.vcs.show(ref, repo.prefix === '' ? filePath : `${repo.prefix}/${filePath}`)).toString('utf8'); }
+        catch { return null; }
+    }
+
     async getFileContent(fileId: HostId): Promise<FileContent | null> {
         const snapshot = await this.rebuild(false);
         const entry = snapshot.entries.get(fileId);

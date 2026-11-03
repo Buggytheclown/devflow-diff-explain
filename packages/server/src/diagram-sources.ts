@@ -1,4 +1,5 @@
 import type { FlowDiagram, PrDiff, FlowContext } from '@sherpa/protocol';
+import { sourceEvidence } from './saved-sources.js';
 import { savedPatchIndex } from './saved-patch.js';
 
 /** Проверяем наличие всех строк, а не только попадание концов в разные ханки. */
@@ -10,6 +11,10 @@ export function diagramSourceErrors(diagram: FlowDiagram, diff: PrDiff, contexts
         for (const source of item.sources) {
             if (source.kind === 'context') {
                 if (!contexts.some((entry) => entry.id === source.id && entry.revision === diff.headCommit)) errors.push(`Unknown saved context: ${source.id}`);
+                continue;
+            }
+            if (source.sourceId !== undefined) {
+                if (sourceEvidence(diff, source) === null) errors.push(`Unknown pinned source: ${source.sourceId}`);
                 continue;
             }
             const lines = index.range(index.file(source.path, source.side), source);

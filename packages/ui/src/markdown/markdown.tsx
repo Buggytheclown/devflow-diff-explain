@@ -1,3 +1,4 @@
+import { SavedSourceLink } from '../story/saved-source.js';
 import type {
     HeadingLevel,
     InlineNode,
@@ -31,6 +32,7 @@ export function Markdown({ text, profile, onCodeLink }: { text: string; profile:
         return <>{inlineNodes(parseInline(text, 'route'))}</>;
     }
     const link: LinkRenderer = (node, key) => {
+        if (node.href.startsWith('#source?')) return <SavedSourceLink key={key} href={node.href}>{inlineNodes(node.children)}</SavedSourceLink>;
         if (node.href.startsWith('#code?')) {
             const location = parseCodeLink(node.href);
             if (location === null || onCodeLink === undefined) return <Fragment key={key}>{inlineNodes(node.children)}</Fragment>;
@@ -58,6 +60,7 @@ export type StopLink =
  */
 export function StopMarkdown({ text, onOpenLink }: { text: string; onOpenLink?: (link: StopLink) => void }) {
     const link: LinkRenderer = (node, key) => {
+        if (node.href.startsWith('#source?')) return <SavedSourceLink key={key} href={node.href}>{inlineNodes(node.children)}</SavedSourceLink>;
         const target = stopLinkOf(node.href);
         if (target === null) {
             // Чужая ссылка уводит из читалки — только новой вкладкой и без реферера.
@@ -285,6 +288,7 @@ function inlineNodes(nodes: readonly InlineNode[], link?: LinkRenderer): ReactNo
             case 'strike':
                 return <del key={index}>{inlineNodes(node.children, link)}</del>;
             case 'link':
+                if (node.href.startsWith('#source?')) return <SavedSourceLink key={index} href={node.href}>{inlineNodes(node.children)}</SavedSourceLink>;
                 if (link !== undefined) {
                     return link(node, index);
                 }

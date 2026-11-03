@@ -280,3 +280,6 @@ body:has(.story-app) { min-width: 0; }
 .story-chat .chat-panel__resize { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; }
 
 .story-overview { margin-bottom: 3rem; }
+
+/* Окружение не означает доказанное отсутствие изменений. */
+.architecture-node--context { --architecture-node-dash: 3 5; }

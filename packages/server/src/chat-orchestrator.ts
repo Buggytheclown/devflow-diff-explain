@@ -127,6 +127,7 @@ export class ChatOrchestrator {
         if (explanation !== undefined && (context.diff?.diffId !== explanation.diffId || context.headCommit !== explanation.commit)) {
             throw new RpcFailure('bad_request', 'Не удалось получить код показанной версии ПР.');
         }
+        if (explanation === undefined && context.diff !== null) explanation = { snapshotId: null, diffId: context.diff.diffId, commit: context.diff.headCommit, text: '' };
         const anchor = resolveAskAnchor(requested, context.diff);
         const attached = explanation?.file;
         if (attached !== undefined && (requested !== null || !context.diff?.files.some((file) => file.fileId === attached.fileId && file.path === attached.path))) {

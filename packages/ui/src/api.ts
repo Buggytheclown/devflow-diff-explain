@@ -2,6 +2,7 @@ import type { ChatExchange, ChatExplanation, FileContent, Locale, PrDiff, Priori
 import { rpcErrorSchema, UI_ENDPOINTS, uiCancelResponseSchema, uiChatAskResponseSchema, uiChatCancelResponseSchema, uiChatResponseSchema, uiChatRetryResponseSchema, uiEnqueueResponseSchema, uiReviewDiffResponseSchema, uiReviewFileContentResponseSchema, uiReviewRouteResponseSchema, uiRouteFillStopResponseSchema, uiRouteGenerateResponseSchema, uiSettingsResponseSchema } from '@sherpa/protocol';
 import type { z } from 'zod';
 
+import { savedSourceSchema, SAVED_SOURCE_ENDPOINT } from '@sherpa/protocol';
 import { activeT } from './i18n/index.js';
 import { uiReviewWriteAckSchema } from '@sherpa/protocol';
 import { withTreeOrder } from './tree/file-order.js';
@@ -54,6 +55,10 @@ export async function fetchReviewDiff(token: string, selection?: ReviewDiffSelec
  * Содержимое файла для «Expand context». Зовётся только при `capabilities.fileContent`;
  * `null` — у этого файла содержимого нет (binary, слишком большой).
  */
+export async function fetchSavedSource(token: string, id: string) {
+    return get(`${SAVED_SOURCE_ENDPOINT}?id=${encodeURIComponent(id)}`, token, savedSourceSchema);
+}
+
 export async function fetchFileContent(token: string, fileId: string, diffId?: string): Promise<FileContent | null> {
     const path = `${UI_ENDPOINTS.reviewFileContent}?fileId=${encodeURIComponent(fileId)}${diffId === undefined ? '' : `&diffId=${encodeURIComponent(diffId)}`}`;
     return (await get(path, token, uiReviewFileContentResponseSchema)).content;

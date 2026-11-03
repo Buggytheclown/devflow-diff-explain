@@ -492,6 +492,7 @@ export const MIGRATIONS: readonly Migration[] = [
         name: '023-section-assignment',
         sql: `ALTER TABLE route_tasks ADD COLUMN assignment TEXT;`,
     },
+    { name: '024-saved-sources', sql: `CREATE TABLE saved_sources (id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE saved_file_content (id TEXT PRIMARY KEY, data TEXT NOT NULL);` },
 ];
 
 /** Ключ версии схемы в таблице `meta`. */

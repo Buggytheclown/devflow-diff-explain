@@ -583,7 +583,7 @@ function inlineNode(node: Node, ctx: Context): InlineNode[] {
             break;
         case 'link_open': {
             const href = token.attrGet('href') ?? '';
-            if (profile === 'comment' ? (SAFE_HREF.test(href) || href.startsWith('#code?') || (ctx.readingLinks === true && STOP_HREF.test(href))) : profile === 'stop' && (WEB_HREF.test(href) || STOP_HREF.test(href))) {
+            if (profile === 'comment' ? (SAFE_HREF.test(href) || (href.startsWith('#code?') || href.startsWith('#source?')) || (ctx.readingLinks === true && STOP_HREF.test(href))) : profile === 'stop' && (WEB_HREF.test(href) || STOP_HREF.test(href))) {
                 return [{ kind: 'link', href, children: inline(node.children, ctx) }];
             }
             violate(ctx, 'link');

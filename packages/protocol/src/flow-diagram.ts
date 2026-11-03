@@ -5,7 +5,7 @@ export const flowContextRequestSchema = z.object({ path: relativeCodePathSchema,
     .refine((entry) => entry.end >= entry.start && entry.end - entry.start < 80, 'Request at most 80 ordered lines.');
 export const flowContextSchema = flowContextRequestSchema.safeExtend({ id: z.string().min(1), revision: z.string().min(1), text: z.string().max(24_000) });
 export const flowCitationSchema = z.union([
-    codeLocationSchema.safeExtend({ kind: z.literal('patch') }).strict(),
+    codeLocationSchema.safeExtend({ kind: z.literal('patch'), sourceId: z.string().optional() }).strict(),
     z.object({ kind: z.literal('context'), id: z.string().min(1) }).strict(),
 ]);
 const grounded = {

@@ -47,7 +47,7 @@ export function FlowDiagram({ flow, onRetry, connected = false, blocks, activeBl
     };
     return <section className="story-flow" aria-labelledby={id} data-reading="flow">
         <h3 id={id}>{diagram.title}</h3>
-        <ul className="story-flow-legend" aria-label={t.title}>{(['existing', 'added', 'modified', ...('mermaid' in diagram ? ['affected' as const] : []), 'unknown'] as const).map((change) => <li className={`story-flow--${change}`} key={change}>{t[change]}</li>)}</ul>
+        <ul className="story-flow-legend" aria-label={t.title}>{'mermaid' in diagram ? <li className="story-flow--context">{t.context}</li> : null}{(['existing', 'added', 'modified', ...('mermaid' in diagram ? ['affected' as const] : []), 'unknown'] as const).map((change) => <li className={`story-flow--${change}`} key={change}>{t[change]}</li>)}</ul>
         {[...diagram.nodes, ...diagram.edges].some((entry) => entry.change === 'unknown' || entry.limitation !== null) ? <p className="story-flow-limit">{pt.diagramLimited}</p> : null}
         {'mermaid' in diagram ? <ArchitectureDiagram onLayout={onLayout} diagram={diagram} blocks={blocks} activeBlock={activeBlock} onVisit={onVisit} onRetry={onRetry} onRenderFailure={onRenderFailure} connected={connected} /> : <><div className="story-flow-graph" role="list">{rows.map((row, i) => <div className={`story-flow-edge${row.length === 2 ? ' story-flow-edge--chain' : ''}`} role="listitem" key={i}>
             {node(row[0]?.from ?? '')}{row.map((edge, j) => <Fragment key={j}><div className={`story-flow-arrow story-flow--${edge.change}`}><span>{edge.label}</span><span className="story-flow-line" aria-hidden="true">→</span><small>{t[edge.kind]} · {t[edge.change]}</small></div>{node(edge.to)}</Fragment>)}

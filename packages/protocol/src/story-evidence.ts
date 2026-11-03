@@ -3,8 +3,8 @@ import { z } from 'zod';
 
 import { codeLocationSchema, relativeCodePathSchema } from './code-link.js';
 
-const lines = codeLocationSchema.safeExtend({ kind: z.literal('lines') }).strict();
-const file = z.object({ kind: z.literal('file'), path: relativeCodePathSchema }).strict();
+const lines = codeLocationSchema.safeExtend({ kind: z.literal('lines'), sourceId: z.string().optional() }).strict();
+const file = z.object({ kind: z.literal('file'), path: relativeCodePathSchema, sourceId: z.string().optional() }).strict();
 export const rawStorySourceSchema = z.union([lines, file]);
 export const storySourceSchema = z.union([
     lines.safeExtend({ fileId: z.string().min(1) }), file.extend({ fileId: z.string().min(1) }),

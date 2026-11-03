@@ -1,3 +1,4 @@
+import { SavedSourceView } from './saved-source.js';
 import type { CodeLocation, FileDiff, StoryEvidenceBlock, StorySource, UiChatAskAnchor } from '@sherpa/protocol';
 import { useCallback, useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 
@@ -39,7 +40,11 @@ export function EvidenceDisclosure({ evidence, open, onToggle, children, legacy 
     </div>;
 }
 
-export function EvidenceSource({ source, diffId, data, token, focusId, onOpen, onSelect, anchor = null, onLayout, onMediaLayout }: {
+export function EvidenceSource(props: Parameters<typeof PatchEvidenceSource>[0]) {
+    return props.source.sourceId === undefined ? <PatchEvidenceSource {...props} /> : <SavedSourceView id={props.source.sourceId} token={props.token} />;
+}
+
+function PatchEvidenceSource({ source, diffId, data, token, focusId, onOpen, onSelect, anchor = null, onLayout, onMediaLayout }: {
     source: StorySource; diffId: string; data: StoryData; token: string; focusId: string;
     onOpen: (fileId: string, location?: CodeLocation) => void; onSelect: (anchor: UiChatAskAnchor, text: string | null) => void; anchor?: UiChatAskAnchor | null; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
 }) {

@@ -1,5 +1,5 @@
 import type { ServerResponse } from 'node:http';
-import type { PrDiff, ReviewSource } from '@sherpa/protocol';
+import type { PrDiff, ReviewSource, FileContent } from '@sherpa/protocol';
 import { UI_ENDPOINTS, uiReviewBlobRequestSchema, uiReviewDiffRequestSchema, uiReviewDiffResponseSchema, uiReviewFileContentRequestSchema, uiReviewFileContentResponseSchema } from '@sherpa/protocol';
 import type { BlobCache } from './blob-cache.js';
 import { RpcFailure } from './errors.js';
@@ -13,6 +13,7 @@ import { call, hostOf, messageOf, optionalParam, parseQuery, respond } from './h
 
 export interface ReadRoutesOptions {
     host: ReviewSource | null;
+    pinnedContent?: (diff: PrDiff, file: PrDiff['files'][number]) => Promise<FileContent | null>;
     iterations?: IterationStore | null;
     iterationFeed?: Pick<IterationFeed, 'active'> | null;
     prMeta: Pick<PrMetaCache, 'get'>;
@@ -56,6 +57,12 @@ export function createReadRoutes(options: ReadRoutesOptions): Route[] {
                     throw new RpcFailure('bad_request', 'В запросе содержимого файла нет параметра fileId.');
                 }
 
+                const pinnedContent = options.pinnedContent;
+                if (request.data.diffId !== undefined && pinnedContent !== undefined && host.getSourceAtRevision !== undefined) {
+                    const diff = options.iterations?.get(request.data.diffId)?.diff;
+                    const file = diff?.files.find((entry) => entry.fileId === request.data.fileId);
+                    if (diff !== undefined && file !== undefined) return respond(uiReviewFileContentResponseSchema, { content: await call(() => pinnedContent(diff, file)) });
+                }
                 const getContent = host.getFileContent?.bind(host);
                 if (getContent === undefined) {
                     // UI при `capabilities.fileContent: false` сюда не ходит; если пришёл — это

@@ -1,3 +1,4 @@
+import { RpcFailure } from './errors.js';
 import http from 'node:http';
 import { hostname } from 'node:os';
 
@@ -20,6 +21,8 @@ import { createRequestListener } from './http.js';
 import { DEFAULT_IDLE_SECONDS, IdleWatch } from './idle.js';
 import { IterationFeed } from './iteration-feed.js';
 import { IterationStore } from './iteration-store.js';
+import { SavedSources, withSavedSources } from './saved-sources.js';
+import { SAVED_SOURCE_ENDPOINT, savedSourceSchema } from '@sherpa/protocol';
 import { DEFAULT_LISTEN_HOST, uiHostForListenHost } from './listen-host.js';
 import {
     claimManifest,
@@ -288,16 +291,30 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             settings: settingsStore,
             registry: workerRegistry,
         });
+        const savedSources = new SavedSources(db, source?.host ?? null);
         queue.setResultAcceptor(
             (task, result) =>
-                routeOrchestrator.acceptResult(task, result) ??
-                chatOrchestrator.acceptResult(task, result) ??
-                null,
+                withSavedSources(savedSources, () => routeOrchestrator.acceptResult(task, result) ??
+                chatOrchestrator.acceptResult(task, result) ?? null),
         );
 
         routes.push(
+            { method: 'GET', path: SAVED_SOURCE_ENDPOINT, handle: (ctx) => {
+                const saved = savedSources.get(ctx.url.searchParams.get('id') ?? '');
+                return saved === null ? { status: 404, body: { error: 'Source unavailable' } } : { status: 200, body: savedSourceSchema.parse(saved) };
+            } },
             ...createWorkerRoutes({
                 queue,
+                prepareResult: async (taskId, result) => {
+                    const task = queue.getTask(taskId);
+                    if (task?.status !== 'leased' || Buffer.byteLength(result, 'utf8') > 256 * 1024) return result;
+                    const exchange = chatStore.exchangeForTask(taskId)?.exchange;
+                    const diffId = routeStore.bindings().get(taskId)?.diffId ?? exchange?.explanation?.diffId ?? exchange?.anchor?.diffId;
+                    const diff = diffId == null ? null : iterationStore.get(diffId)?.diff;
+                    if (diff == null) return result;
+                    try { return await savedSources.prepare(diff, result, task.type === 'chat'); }
+                    catch (error) { throw new RpcFailure('bad_request', error instanceof Error ? error.message : 'Pinned source is unavailable.'); }
+                },
                 registry: workerRegistry,
                 presence: uiPresence,
                 longPollSeconds: options.longPollSeconds ?? LONG_POLL_DEFAULT_SECONDS,
@@ -320,7 +337,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 shutdownSignal: shutdownController.signal,
             }),
             ...createReadRoutes({
-                host: source?.host ?? null, prMeta, iterations: iterationStore, iterationFeed,
+                host: source?.host ?? null, prMeta, iterations: iterationStore, iterationFeed, pinnedContent: (diff, file) => savedSources.file(diff, file),
                 blobs: new BlobCache(sherpaDir, blobsDirOf(sherpaDir, prKey)),
             }),
             // Настройки глобальные: ручка не зависит ни от ревью-хоста, ни от стейта этого PR.

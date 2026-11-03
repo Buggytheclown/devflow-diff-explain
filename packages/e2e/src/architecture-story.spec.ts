@@ -144,3 +144,21 @@ test('Mermaid без перечня узлов → связи с блоками;
     await expect(page.locator('.story-guided .md-heading').first()).toContainText('Подробности');
     await page.screenshot({ path: test.info().outputPath('derived-architecture-markdown.png') });
 });
+
+test('внешний источник сохраняется на версии вопроса и открывается без нового ответа агента', async ({ page, launchSherpa }) => {
+    const server = await launchSherpa('fixture-medium'); await page.goto(server.url);
+    await server.worker.register('codex', 'ru');
+    const overview = await server.worker.next(); await server.worker.complete(overview.taskId ?? 0, JSON.stringify(fixture.outline));
+    const files = await server.worker.next(); await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
+    await page.getByRole('button', { name: 'Чат', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Вопрос агенту' }).fill('Кто вызывает проверку?');
+    await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    const question = await server.worker.next();
+    await server.worker.complete(question.taskId ?? 0, 'Вызывает [caller](#source?path=context%2Fcaller.ts&side=new&start=1&end=3).');
+    await page.getByRole('link', { name: 'caller', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Сохранённый источник' })).toContainText('return validate();');
+    await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await page.reload();
+    await page.getByRole('link', { name: 'caller', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Сохранённый источник' })).toContainText('context/caller.ts');
+});

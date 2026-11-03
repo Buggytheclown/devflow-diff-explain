@@ -189,6 +189,7 @@ export class FixtureHost implements ReviewHost {
     setFileViewed?: (fileId: HostId, viewed: boolean) => Promise<void>;
 
     /** Есть только когда хост фикстуры умеет содержимое файлов (`capabilities.fileContent`). */
+    getSourceAtRevision?: (path: string, revision: string) => Promise<string | null>;
     getFileContent?: (fileId: HostId) => Promise<FileContent | null>;
 
     /** Есть только когда хост фикстуры умеет байты картинок (`capabilities.blobs`). */
@@ -223,6 +224,16 @@ export class FixtureHost implements ReviewHost {
         }
         if (this.data.pr.capabilities.fileContent) {
             this.getFileContent = (fileId) => this.loadFileContent(fileId);
+            capabilities.sourceAtRevision = true;
+            this.getSourceAtRevision = (path, revision) => {
+                const iteration = this.data.iterations.find((entry) => entry.diff.headCommit === revision || entry.diff.baseCommit === revision);
+                if (iteration === undefined) return Promise.resolve(null);
+                if (path === 'context/caller.ts') return Promise.resolve('export function caller() {\n  return validate();\n}\n');
+                const old = iteration.diff.baseCommit === revision;
+                const file = iteration.diff.files.find((entry) => (old ? entry.oldPath ?? entry.path : entry.path) === path);
+                const content = file === undefined || file.binary ? null : fileContentOf(file);
+                return Promise.resolve(content === null ? null : old ? content.oldText : content.newText);
+            };
         }
         if (this.data.pr.capabilities.blobs) {
             this.getBlob = (blobId) => this.loadBlob(blobId);

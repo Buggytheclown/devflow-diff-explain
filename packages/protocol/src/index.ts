@@ -2,6 +2,7 @@
  * Контракт CLI↔сервер (`docs/protocol.md §3–§5, §9`; `docs/architecture.md §5`).
  * Канон — zod-схемы; типы выводятся из них, JSON-схемы генерятся из них же.
  */
+export * from './saved-source.js';
 export * from './chat.js';
 export * from './code-link.js';
 export * from './constants.js';

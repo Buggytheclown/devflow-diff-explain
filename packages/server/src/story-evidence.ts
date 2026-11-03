@@ -1,5 +1,6 @@
 import type { FileDiff, PrDiff, RawStoryEvidenceBlock, StoryEvidenceBlock, StoryExplanationEvidence, RouteSnapshot } from '@sherpa/protocol';
 
+import { sourceEvidence } from './saved-sources.js';
 import { savedPatchIndex } from './saved-patch.js';
 import type { RouteValidation } from './route/types.js';
 
@@ -13,6 +14,11 @@ export function storyEvidenceResolver(diff: PrDiff) {
             if (claim.quote !== undefined && (!text.includes(claim.quote) || quotes.has(claim.quote))) errors.push(`Quote must occur in its paragraph and be unique: ${claim.quote}`);
             if (claim.quote !== undefined) quotes.add(claim.quote);
             const sources = claim.sources.flatMap((source) => {
+                if (source.kind === 'lines' && source.sourceId !== undefined) {
+                    const saved = sourceEvidence(diff, source);
+                    if (saved === null) { errors.push(`Unknown pinned source: ${source.sourceId}`); return []; }
+                    return [{ ...source, fileId: saved.id }];
+                }
                 const file = index.file(source.path, source.kind === 'file' ? 'new' : source.side);
                 if (file === null) { errors.push(`Source file is missing or ambiguous: ${source.path}`); return []; }
                 if (source.kind === 'lines' && index.range(file, source) === null) {
@@ -56,6 +62,7 @@ export function storyEvidenceContext(evidence: StoryExplanationEvidence, diff: P
         ...(claim.quote === undefined ? [] : [`Claim: ${claim.quote}`]), ...(claim.limitation === null ? [] : [`Evidence limit: ${claim.limitation}`]),
         ...claim.sources.flatMap((source) => {
             const key = JSON.stringify(source); if (seen.has(key)) return []; seen.add(key);
+            if (source.sourceId !== undefined) return [`Saved revision source: ${source.sourceId} (${source.path})`];
             const file = index.byId(source.fileId);
             if (file === null) return [`[UNAVAILABLE: saved source ${source.path}]`];
             if (source.kind === 'file') return [fileMetadata(file)];
@@ -76,6 +83,6 @@ export function rawEvidence(block: StoryEvidenceBlock | undefined): RawStoryEvid
     return block === undefined ? undefined : { claims: block.claims.map((claim) => ({ ...claim,
         sources: claim.sources.map((source) => source.kind === 'file'
             ? { kind: 'file', path: source.path }
-            : { kind: 'lines', path: source.path, side: source.side, start: source.start, end: source.end }),
+            : { kind: 'lines', path: source.path, side: source.side, start: source.start, end: source.end, ...(source.sourceId === undefined ? {} : { sourceId: source.sourceId }) }),
     })) };
 }
