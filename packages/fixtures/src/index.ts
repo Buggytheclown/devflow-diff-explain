@@ -3,7 +3,6 @@
  * Сервер выбирает его по prKey вида `fixture-<name>` (см. `hosts/select.ts`) — дев и e2e.
  */
 export { FixtureHost, makeFixtureHost } from './fixture-host.js';
-export type { FixtureHostOptions } from './fixture-host.js';
 export {
     FIXTURE_NAMES,
     fixtureData,

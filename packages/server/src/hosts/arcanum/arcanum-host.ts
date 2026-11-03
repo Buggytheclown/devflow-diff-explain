@@ -1,27 +1,19 @@
-import { randomUUID } from 'node:crypto';
+import type { ReviewSource } from '@sherpa/protocol';
 
 import type {
-    Comment,
-    CommentDraft,
     FileContent,
     FileDiff,
     FileImage,
     HostId,
     ImageSide,
     Iteration,
-    Lens,
-    LensZone,
     PrDiff,
     PrMeta,
     PrState,
-    PublishResult,
     ReviewerVerdict,
-    ReviewHost,
     ReviewUser,
-    Thread,
-    Verdict,
 } from '@sherpa/protocol';
-import { commentDraftSchema, IMAGE_BLOB_MAX_BYTES, imageMimeOf, verdictSchema } from '@sherpa/protocol';
+import { IMAGE_BLOB_MAX_BYTES, imageMimeOf } from '@sherpa/protocol';
 
 import { RpcFailure } from '../../errors.js';
 
@@ -29,70 +21,26 @@ import { ArcCli } from './arc-cli.js';
 import type { ArcanumClientOptions, FetchLike } from './client.js';
 import { ArcanumClient } from './client.js';
 import { countPatchStats, splitPatchByFile } from './patch.js';
-import type {
-    AppliedReviewRules,
-    FileRuleIndex,
-    FileRuleVerdict,
-    ReviewRule,
-} from './review-rules.js';
-import {
-    appliedReviewRules,
-    isAppliedReviewRule,
-    isSummonedReviewer,
-    loadFileReviewRules,
-    summoningReviewRules,
-} from './review-rules.js';
-import { ruleZonePath } from './rules/subpaths.js';
-import type { ArcChangelistEntry, ArcDiffSet, ArcReviewRule } from './schemas.js';
+import type { ArcChangelistEntry, ArcDiffSet } from './schemas.js';
 import {
     ACTIVE_DIFF_FIELDS,
     activeDiffSchema,
     CHANGELIST_FIELDS,
     changelistSchema,
-    COMMENT_ACK_FIELDS,
-    COMMENT_FIELDS,
-    commentAckSchema,
-    commentSchema,
-    commentsSchema,
     DIFF_SETS_FIELDS,
     diffSetsSchema,
-    DRAFT_IDS_FIELDS,
-    draftIdsSchema,
-    PCI_FIELDS,
-    pciSchema,
     POLL_FIELDS,
     pollSchema,
     PR_REF_FIELDS,
     prRefSchema,
-    publishedDraftsSchema,
-    resolveMembersSchema,
     REVIEW_REQUEST_FIELDS,
-    REVIEW_RULES_FIELDS,
     reviewRequestSchema,
-    reviewRulesSchema,
 } from './schemas.js';
 import type { TokenSource } from './token.js';
 import { arcTokenSource } from './token.js';
-import { arcanumUser, buildThreads, isBotLogin, isoTime, toSingleComment } from './threads.js';
+import { arcanumUser, isBotLogin, isoTime } from './metadata.js';
 
-    /**
- * Хост-адаптер Арканума: чтение и запись.
- *
- * Опорные решения (`docs/architecture.md`, `docs/architecture.md`):
- * - реактивности нет — общий поллер дёргает дешёвую ручку и будит подписки: `watchThreads`
- *   перечитывает треды, `watchIterations` — список итераций;
- * - Арканум отдаёт только метаданные: мету PR, итерации, changelist, треды, правила, линзы;
- *   текст диффа и байты сторон читаются локальным `arc` по хэшам changelist (`arc-cli.ts`),
- *   поэтому ревью требует живого смонтированного чекаута, а фолбэка в Арканум за контентом нет;
- * - `headCommit` — merge-коммит итерации, не HEAD ветки; дифф считается между `base` и `merge`;
- * - `generated` и линза «мои» считаются per-file матчингом правил ревью a.yaml, без эвристик
- *   (`review-rules.ts`); данные не собрались — деградация, не падение;
- * - дифф и линзы кэшируются на итерацию, ключ кэша — id активного диффсета;
- * - запись сходится через тот же поллинг: своих ревизий адаптер не дёргает;
- * - адаптер обслуживает оба тенанта Арканума — Аркадию и Cloudia. Тенант PR (`vcs.arc_repo_name`)
- *   выбирает чекаут `arc`, репозиторий в ручках правил ревью и веб-ссылки; PCI DSS есть только
- *   у Аркадии.
- */
+    /** Read-only источник: метаданные, закреплённый код, версии и изображения. */
 
 /** Интервал общего поллера: тик — один запрос дешёвой ручки на 90 байт, чаще не нужно. */
 const POLL_INTERVAL_MS = 7_000;
@@ -100,17 +48,11 @@ const POLL_INTERVAL_MS = 7_000;
 /** Веб Аркадии и Cloudia: под ним живёт просмотр файла с blame; ссылку на сам PR даёт мета. */
 const WEB_BASE_URL = 'https://a.yandex-team.ru';
 
-/** Единственный тенант Арканума со скоупом PCI DSS (`allow_pci_dss` репо-дескриптора). */
-const PCI_TENANT = 'arcadia';
-
     /**
  * Потолок содержимого для «Expand context»: на файлах такого размера расширение бессмысленно —
  * UI и так сворачивает дифф длиннее 2000 строк. Размер известен из changelist до запроса.
  */
 const MAX_CONTENT_BYTES = 2_000_000;
-
-/** Черновик остался черновиком: ручка выборочной публикации не назвала его среди опубликованных. */
-const PUBLISH_REFUSED = 'Арканум не подтвердил публикацию этого черновика.';
 
 export interface ArcanumHostOptions {
     /** Числовой id PR (он же review-request и pull-request). */
@@ -169,13 +111,9 @@ interface IterationCache {
     /** Элементы changelist итерации по `entry_id`: из них берутся хэши блобов сторон файла. */
     entries?: Map<string, ArcChangelistEntry>;
     /** Вердикты правил ревью по путям — считаются вместе с диффом (`generated` живёт в нём же). */
-    fileRules?: FileRuleIndex;
     /** Список итераций: пины тредов перечитывают его на каждом снапшоте, а меняется он с пушем. */
     iterations?: Promise<Iteration[]>;
     /** Применённые правила PR, суженные до призвавших меня; деградация не сбрасывает дифф. */
-    appliedRules?: Promise<Degradable<AppliedReviewRules | null>>;
-    ownership?: Promise<Degradable<Lens | null>>;
-    extra?: Promise<Degradable<Lens[]>>;
 }
 
 /**
@@ -196,8 +134,7 @@ interface PrRef {
     readonly url: string;
 }
 
-export class ArcanumHost implements ReviewHost {
-    readonly ownershipSource = 'a.yaml';
+export class ArcanumHost implements ReviewSource {
 
     private readonly prId: number;
     private readonly client: ArcanumClient;
@@ -223,13 +160,6 @@ export class ArcanumHost implements ReviewHost {
     private activeDiffCache: ActiveDiffCache | null = null;
 
     /**
-     * Последний прочитанный снапшот тредов: по нему `setCommentResolved` узнаёт, есть ли у
-     * комментария issue. Отдельной ручки «один комментарий» у адаптера нет, а список комментариев
-     * PR стоит дорого — перечитывается он только когда снапшот issue не подтверждает.
-     */
-    private lastThreads: Thread[] | null = null;
-
-    /**
      * Тенант и веб-ссылка PR: у PR они не меняются, поэтому один запрос на процесс. Отказ кэш
      * не отравляет — следующий вызов спросит заново.
      */
@@ -247,11 +177,6 @@ export class ArcanumHost implements ReviewHost {
                 ...options.transport,
             });
         this.pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
-    }
-
-    /** Логин из последнего ответа Арканума; сеть ради whoami не вызывается. */
-    currentUser(): string | null {
-        return this.client.currentUser();
     }
 
     async getPr(): Promise<PrMeta> {
@@ -282,43 +207,20 @@ export class ArcanumHost implements ReviewHost {
             checks: null,
             updatedAt: isoTime(pr.updated_at),
             capabilities: {
-                publishVerdicts: publishVerdictsOf(pr.caps?.disable_sticky_ships),
-                fileViewedSync: true,
+                publishVerdicts: [],
+                fileViewedSync: false,
                 fileContent: true,
                 sourceAtRevision: true,
-                commentIssues: true,
-                commentResolve: true,
+                commentIssues: false,
+                commentResolve: false,
                 // Без личности править своё опубликованное не с чем сверить — возможности нет.
-                editPublished: viewer !== null,
+                editPublished: false,
                 iterations: true,
                 blobs: true,
             },
             verdicts: verdictsOf(pr.review?.reviewers ?? []),
             viewer,
         };
-    }
-
-    /**
-     * Смена статуса ревью (`common_status`) — хост-специфичная подписка поверх того же дешёвого
-     * полла: по ней сервер перечитывает мету и узнаёт, что кто-то отшипил PR раньше.
-     * В `ReviewHost` её нет намеренно: это заплатка под API Арканума, а не общая механика.
-     */
-    watchStatus(onChange: () => void): () => void {
-        let started = false;
-        let last: string | null = null;
-
-        return this.subscribePoll((poll, alive) => {
-            const status = poll?.commonStatus ?? null;
-            if (status === null) {
-                return Promise.resolve();
-            }
-            if (started && status !== last && alive()) {
-                onChange();
-            }
-            last = status;
-            started = true;
-            return Promise.resolve();
-        });
     }
 
     /**
@@ -425,167 +327,6 @@ export class ArcanumHost implements ReviewHost {
         });
     }
 
-    getThreads(): Promise<Thread[]> {
-        return this.loadThreads();
-    }
-
-    /**
-     * Поллинг вместо подписки: дешёвая ручка раз в `pollIntervalMs`, и только
-     * если `updated_at` или активная итерация сдвинулись — перечитывание тредов. Снапшот отдаётся
-     * лишь когда он действительно изменился; ошибка тика подписку не роняет.
-     */
-    watchThreads(onChange: (threads: Thread[]) => void): () => void {
-        /** Начального снапшота ещё не было: до него отпечаток не даёт права пропустить тик. */
-        let started = false;
-        let lastStamp: string | null = null;
-        let lastSnapshot: string | null = null;
-
-        return this.subscribePoll(async (poll, alive) => {
-            const stamp = poll === null ? null : stampOf(poll);
-            // До первого снапшота отпечаток необязателен: не ответил — просто читаем треды.
-            if (started && (stamp === null || stamp === lastStamp)) {
-                return;
-            }
-
-            const threads = await this.loadThreads();
-            // Отпечаток потребляется только после удачного перечитывания: иначе моргнувшая
-            // сеть съела бы изменение навсегда — следующие тики видели бы тот же отпечаток.
-            lastStamp = stamp;
-            started = true;
-            const snapshot = JSON.stringify(threads);
-            if (snapshot !== lastSnapshot) {
-                lastSnapshot = snapshot;
-                // Между чтением тредов и вызовом колбэка подписку могли снять — тогда никого не будим.
-                if (alive()) {
-                    onChange(threads);
-                }
-            }
-        });
-    }
-
-/**
-     * Черновик уходит в Арканум сразу (двухступенчатая модель, `docs/spec.md`, принцип 6).
-     * Две ручки на три случая контракта `CommentDraft`: `parentId` — ответ в тред отдельной
-     * ручкой (якорь не передаётся, тред принадлежит корню); иначе общая ручка комментариев, где
-     * `anchor` даёт инлайн в активной итерации, а `anchor: null` — комментарий уровня PR
-     * (он получит отрицательный id, знаковое соглашение хоста) — этот выбор делает `newCommentBody`.
-     *
-     * `Idempotency-Key` один на логический вызов и переживает внутренние ретраи клиента: повтор
-     * с тем же ключом возвращает тот же комментарий, а не дубль (проверено живьём на write-ручках).
-     * Ключ буфера черновиков — тот же механизм, но живущий дольше процесса: повтор
-     * записи через минуты уходит с ключом первой попытки.
-     * Наружу отдаётся комментарий из ответа ручки — перечитывать список незачем.
-     */
-    async saveDraft(draft: CommentDraft, options?: { idempotencyKey?: string }): Promise<Comment> {
-        const parsed = commentDraftSchema.parse(draft);
-        const request = { headers: { 'Idempotency-Key': options?.idempotencyKey ?? randomUUID() } };
-
-        if (parsed.parentId !== null) {
-            const reply = await this.client.postJson(
-                `${commentPath(parsed.parentId)}/replies`,
-                {
-                    content: parsed.body,
-                    draft: true,
-                    ...(parsed.issue === undefined ? {} : { issue_status: parsed.issue ? 'open' : 'not_issue' }),
-                },
-                commentSchema,
-                { fields: COMMENT_FIELDS },
-                request,
-            );
-            return toSingleComment(reply);
-        }
-
-        const created = await this.client.postJson(
-            `/v1/review-requests/${String(this.prId)}/comments`,
-            await this.newCommentBody(parsed),
-            commentSchema,
-            { fields: COMMENT_FIELDS },
-            request,
-        );
-        return toSingleComment(created);
-    }
-
-    updateDraft(commentId: HostId, body: string, issue?: boolean): Promise<void> {
-        return this.patchComment(commentId, {
-            content: body,
-            ...(issue === undefined ? {} : { issue_status: issue ? 'open' : 'not_issue' }),
-        });
-    }
-
-    /** Удаление черновика физическое (у опубликованного было бы soft) — проверено живьём. */
-    deleteDraft(commentId: HostId): Promise<void> {
-        return this.client.sendVoid('DELETE', commentPath(commentId));
-    }
-
-    /**
-     * Статус issue ставится на корне треда. Наша модель считает закрытым и `dropped`, но пишем
-     * только каноничную пару: `dropped` — решение человека в UI Арканума, не наше.
-     */
-    setThreadResolved(threadId: HostId, resolved: boolean): Promise<void> {
-        return this.patchComment(threadId, { issue_status: resolved ? 'resolved' : 'open' });
-    }
-
-    /**
-     * Resolve отдельного комментария — тот же PATCH статуса, что у треда, но по любому
-     * issue-комментарию. Комментарий без issue отклоняется: в Арканума такой PATCH завёл бы
-     * issue там, где его не было, а ревьюер нажал бы кнопку, которой у комментария нет.
-     */
-    async setCommentResolved(commentId: HostId, resolved: boolean): Promise<void> {
-        await this.requireIssueComment(commentId);
-        await this.patchComment(commentId, { issue_status: resolved ? 'resolved' : 'open' });
-    }
-
-    /** Правка опубликованного — тот же PATCH, что у черновика: Арканум их не различает. */
-    updateComment(commentId: HostId, body: string, issue?: boolean): Promise<void> {
-        return this.updateDraft(commentId, body, issue);
-    }
-
-    /** Удаление опубликованного у Арканума мягкое: комментарий получает `deleted_at`. */
-    deleteComment(commentId: HostId): Promise<void> {
-        return this.client.sendVoid('DELETE', commentPath(commentId));
-    }
-
-/**
-     * Публикация пакетом: свои черновики → выборочная публикация → вердикт. Вердикт применяется,
-     * только если опубликовались все (`docs/spec.md`): частичный провал оставляет ревью незавершённым,
-     * а несдавшиеся черновики — черновиками. `comment` вердикта не применяет вовсе.
-     */
-    async publishBatch(verdict: Verdict): Promise<PublishResult> {
-        const parsed = verdictSchema.parse(verdict);
-        // Доступность зависит от PR только у стики-шипа: остальные режимы Арканум принимает всегда,
-        // и шапку ради них не перечитываем.
-        if (parsed === 'sticky_ship') {
-            const pr = await this.client.getJson(
-                `/v1/review-requests/${String(this.prId)}`,
-                { fields: REVIEW_REQUEST_FIELDS },
-                reviewRequestSchema,
-            );
-            if (!publishVerdictsOf(pr.caps?.disable_sticky_ships).includes(parsed)) {
-                throw new RpcFailure('bad_request', 'Sticky ship на этом PR выключен его настройками.');
-            }
-        }
-        const published = await this.publishDrafts(await this.myDrafts());
-
-        const verdictApplied = published.failed.length === 0;
-        if (verdictApplied) {
-            await this.applyVerdict(parsed);
-        }
-        return { ...published, verdictApplied };
-    }
-
-    /**
-     * Синхронизация «просмотрено» с хостом: `PUT …/reviewed-files` — инкрементальный upsert,
-     * идемпотентный по природе. После успеха кэшированный дифф правится точечно: состояние хоста
-     * известно ровно, а перечитывать changelist с патчем ради одного флага дорого.
-     */
-    async setFileViewed(fileId: HostId, viewed: boolean): Promise<void> {
-        await this.client.sendVoid('PUT', `/v1/review-requests/${String(this.prId)}/reviewed-files`, {
-            entry_ids: [fileId],
-            reviewed: viewed,
-        });
-        await this.rememberViewed(fileId, viewed);
-    }
-
 /**
      * Содержимое файла по обе стороны — топливо «Expand context» (`docs/spec.md`). Хэши блобов
      * живут в changelist, поэтому сначала гарантируем дифф итерации, потом читаем стороны из
@@ -645,202 +386,6 @@ export class ArcanumHost implements ReviewHost {
             return null;
         }
         return this.arc.showBytes(await this.tenant(), blobId);
-    }
-
-    async ownershipLens(): Promise<Lens | null> {
-        const active = await this.activeDiff();
-        const cache = this.iteration(active.diffSetId);
-        const pending = (cache.ownership ??= this.loadOwnership(active).catch((error: unknown) => {
-            this.forget(cache);
-            throw error;
-        }));
-
-        const result = await pending;
-        // Деградировавшую линзу в кэше не держим: моргнувшая ручка не свойство итерации.
-        if (result.degraded && cache.ownership === pending) {
-            delete cache.ownership;
-        }
-        return result.value;
-    }
-
-    async extraLenses(): Promise<Lens[]> {
-        // Скоуп PCI DSS есть только у Аркадии: у остальных тенантов линзы нет вовсе — это
-        // не деградация, и ручку `pci-dss` дёргать незачем.
-        if ((await this.tenant()) !== PCI_TENANT) {
-            return [];
-        }
-
-        const active = await this.activeDiff();
-        const cache = this.iteration(active.diffSetId);
-        const pending = (cache.extra ??= this.loadPci(active).catch((error: unknown) => {
-            this.forget(cache);
-            throw error;
-        }));
-
-        const result = await pending;
-        if (result.degraded && cache.extra === pending) {
-            delete cache.extra;
-        }
-        return result.value;
-    }
-
-    /**
-     * Тело создания комментария: у уровня PR — текст и выбранный issue-статус, у инлайна ещё
-     * якорь активной итерации. Без `diff_side`/`diff_line` Арканум деградирует якорь до файла
-     * целиком — ровно то, что означает `position: null` в контракте.
-     */
-    private async newCommentBody(draft: CommentDraft): Promise<Record<string, unknown>> {
-        const base = {
-            content: draft.body,
-            draft: true,
-            ...(draft.issue === undefined ? {} : { issue_status: draft.issue ? 'open' : 'not_issue' }),
-        };
-        if (draft.anchor === null) {
-            return base;
-        }
-
-        const active = await this.activeDiff();
-        const position = draft.anchor.position;
-        return {
-            ...base,
-            entry_id: draft.anchor.fileId,
-            file_path: draft.anchor.path,
-            diff_set_xid: String(active.diffSetId),
-            ...(position === null
-                ? {}
-                : { diff_side: position.side, diff_line: position.line, diff_size: position.size }),
-        };
-    }
-
-    /** Правка комментария: ответ узкий — важно только, что она легла на запрошенный объект. */
-    private async patchComment(commentId: HostId, body: Record<string, unknown>): Promise<void> {
-        const ack = await this.client.patchJson(commentPath(commentId), body, commentAckSchema, {
-            fields: COMMENT_ACK_FIELDS,
-        });
-        if (String(ack.id) !== commentId) {
-            throw new RpcFailure(
-                'host_unavailable',
-                `Арканум подтвердил правку не того комментария: ${String(ack.id)} вместо ${commentId}.`,
-            );
-        }
-    }
-
-    /** Свои черновики: флаг `draft` Арканум шлёт только автору, чужих в этом списке не бывает. */
-    private async myDrafts(): Promise<number[]> {
-        const comments = await this.client.getJson(
-            `/v1/review-requests/${String(this.prId)}/comments`,
-            { fields: DRAFT_IDS_FIELDS },
-            draftIdsSchema,
-        );
-        return comments
-            .filter((comment) => comment.draft === true && comment.deleted_at === undefined)
-            .map((comment) => comment.id);
-    }
-
-    /**
-     * Выборочная публикация (`POST /review-requests/draft-comments`, без id PR в пути): id
-     * разъезжаются по знаковым пространствам Арканума — инлайновые в `comment_for_diff_ids`,
-     * уровня PR в `comment_for_review_ids`, знак не меняется.
-     *
-     * Живьём ответ приходил в конверте `{"data": {"published": […]}}`, но swagger его форму
-     * не описывает вовсе — принимаем и конверт, и голый вид: ошибка в догадке рвала бы
-     * `publishBatch` уже после того, как комментарии опубликованы.
-     *
-     * Непризнанное ответом сверяется с состоянием хоста, и только оставшееся едет в `failed`.
-     */
-    private async publishDrafts(drafts: readonly number[]): Promise<Omit<PublishResult, 'verdictApplied'>> {
-        if (drafts.length === 0) {
-            return { publishedCommentIds: [], failed: [] };
-        }
-
-        const response = await this.client.postJson(
-            '/v1/review-requests/draft-comments',
-            {
-                comment_for_diff_ids: drafts.filter((id) => id > 0),
-                comment_for_review_ids: drafts.filter((id) => id < 0),
-            },
-            publishedDraftsSchema,
-            {},
-            { envelope: 'optional' },
-        );
-
-        const published = new Set(response.published);
-        const missing = drafts.filter((id) => !published.has(id));
-        if (missing.length > 0) {
-            for (const id of await this.publishedSilently(missing)) {
-                published.add(id);
-            }
-        }
-
-        return {
-            publishedCommentIds: drafts.filter((id) => published.has(id)).map(String),
-            failed: drafts
-                .filter((id) => !published.has(id))
-                .map((id) => ({ commentId: String(id), message: PUBLISH_REFUSED })),
-        };
-    }
-
-    /**
-     * Кто из непризнанных ответом черновиков опубликован на самом деле. Ручка публикации
-     * неидемпотентна, но ретраится (429/5xx/обрыв): сработавшая первая попытка с потерянным
-     * ответом не назовёт эти id в ответе повтора, и честно опубликованные комментарии уехали бы
-     * в `failed`, а вердикт остался бы неприменённым. Поэтому спрашиваем состояние хоста:
-     * черновик, переставший быть черновиком, опубликован.
-     *
-     * Стёртый в это же время из UI Арканума черновик тоже посчитается опубликованным — гонка
-     * экзотическая, а цена ошибки в другую сторону выше. Само перечитывание — уточнение, не
-     * условие успеха: не сложилось — верим ответу ручки.
-     */
-    private async publishedSilently(missing: readonly number[]): Promise<number[]> {
-        let stillDrafts: Set<number>;
-        try {
-            stillDrafts = new Set(await this.myDrafts());
-        } catch (error) {
-            process.stderr.write(
-                `sherpa-server: черновики Арканума после публикации не перечитались: ${messageOf(error)}\n`,
-            );
-            return [];
-        }
-        return missing.filter((id) => !stillDrafts.has(id));
-    }
-
-    /**
-     * Вердикт на активной итерации: стики-шип — та же ручка с `?sticky=true`; ответы этих ручек
-     * нам не нужны (204 у шипа, `{"data":"<статус>"}` у request-for-changes) — итоговое состояние
-     * PR UI перечитывает через `getPr`. У `comment` вердикта нет — в Арканум ничего не уходит.
-     */
-    private async applyVerdict(verdict: Verdict): Promise<void> {
-        const request = VERDICT_REQUESTS[verdict];
-        if (request === null) {
-            return;
-        }
-        const active = await this.activeDiff();
-        const basePath = `/v1/review-requests/${String(this.prId)}/diff-sets/${String(active.diffSetId)}`;
-        await this.client.sendVoid('POST', `${basePath}/${request.path}`, undefined, request.query);
-    }
-
-    /**
-     * Отметка «просмотрено» в кэшированном диффе. Файлы пересобираются, а не правятся на месте:
-     * ранее отданный наружу `PrDiff` мутировать нельзя. Деградировавший дифф не трогаем — его
-     * выбросит читатель переименований, и подмена кэша сорвала бы ему это.
-     */
-    private async rememberViewed(fileId: HostId, viewed: boolean): Promise<void> {
-        const cache = this.cache;
-        if (cache?.diff === undefined) {
-            return;
-        }
-
-        const pending = cache.diff;
-        const current = await pending.catch(() => null);
-        // Пока ждали, итерация могла смениться, а дифф — выпасть из кэша: чинить тогда нечего.
-        if (current === null || current.degraded || cache.diff !== pending) {
-            return;
-        }
-
-        const files = current.value.files.map((file) =>
-            file.fileId === fileId ? { ...file, viewed } : file,
-        );
-        cache.diff = Promise.resolve({ ...current, value: { ...current.value, files } });
     }
 
     private async withActiveDiffLoaded(blobId: HostId): Promise<number | undefined> {
@@ -950,20 +495,10 @@ export class ArcanumHost implements ReviewHost {
         cache.entries = new Map(entries.map((entry) => [entry.entry_id, entry]));
         this.rememberImageBlobs(entries);
 
-        // Обе досборки независимы: текст диффа идёт из локального `arc`, правила — из Арканума.
-        const [chunks, rules] = await Promise.all([
-            this.arcChunks(active.baseCommit, active.mergeCommit, entries),
-            this.loadRuleIndex(active, entries),
-        ]);
-        if (rules.value !== null) {
-            cache.fileRules = rules.value;
-        } else {
-            delete cache.fileRules;
-        }
-
+        const chunks = await this.arcChunks(active.baseCommit, active.mergeCommit, entries);
         const ref = await this.prRef();
         const files = entries.map((entry) =>
-            toFileDiff(entry, chunks, active.mergeCommit, rules.value?.get(entry.path), {
+            toFileDiff(entry, chunks, active.mergeCommit, {
                 ...ref,
                 headCommit: active.headCommit,
             }),
@@ -975,7 +510,7 @@ export class ArcanumHost implements ReviewHost {
             headCommit: active.mergeCommit,
             files,
         };
-        return rules.degraded ? degraded(diff) : settled(diff);
+        return settled(diff);
     }
 
     /**
@@ -995,297 +530,6 @@ export class ArcanumHost implements ReviewHost {
         const paths = diffPathsOf(entries);
         const patch = await this.arc.diff(await this.tenant(), base, head, paths);
         return splitPatchByFile(patch, paths);
-    }
-
-    /**
-     * Per-file вердикты правил ревью a.yaml: `generated`, зоны и кандидаты линзы «мои»
-     * растут из одного расчёта, поэтому он делается один раз — здесь, вместе с диффом.
-     *
-     * Провал abc/preview — деградация: `generated` не ставится никому, а линза «мои» уходит на
-     * каталожный путь. Фильтр фактически применённых правил загружается отдельно: его отказ
-     * не должен сбрасывать дорогой кэш диффа и полного preview-индекса.
-     */
-    private async loadRuleIndex(
-        active: ActiveDiff,
-        entries: readonly ArcChangelistEntry[],
-    ): Promise<Degradable<FileRuleIndex | null>> {
-        try {
-            const index = await loadFileReviewRules(this.client, {
-                repo: await this.tenant(),
-                commit: active.mergeCommit,
-                paths: entries.map((entry) => entry.path),
-            });
-            return settled(index);
-        } catch (error) {
-            process.stderr.write(
-                `sherpa-server: правила ревью a.yaml Арканума недоступны: ${messageOf(error)}\n`,
-            );
-            return degraded(null);
-        }
-    }
-
-    /** Успешный applied-фильтр кэшируется на итерацию; деградация повторяет только эту ручку. */
-    private async cachedAppliedReviewRules(
-        cache: IterationCache,
-    ): Promise<Degradable<AppliedReviewRules | null>> {
-        const pending = (cache.appliedRules ??= this.loadAppliedReviewRules());
-        const result = await pending;
-        if (result.degraded && cache.appliedRules === pending) {
-            delete cache.appliedRules;
-        }
-        return result;
-    }
-
-    /**
-     * Фактически применённые правила PR, суженные до призвавших меня. Пустой ответ
-     * ненадёжен и не сужает линзу, а вот «правила есть, но меня никто не призвал» — надёжный
-     * ответ: линза остаётся пустой, а не раскрывается в надмножество preview.
-     */
-    private async loadAppliedReviewRules(): Promise<Degradable<AppliedReviewRules | null>> {
-        const me = this.client.currentUser();
-        try {
-            const response = await this.client.getJson(
-                `/v1/review-requests/${String(this.prId)}`,
-                { fields: REVIEW_RULES_FIELDS },
-                reviewRulesSchema,
-            );
-            const rules = response.review?.rules ?? [];
-            if (isSummonedReviewer(rules, me)) {
-                const summoning = summoningReviewRules(rules, me);
-                const dropped = rules.length - summoning.length;
-                if (dropped > 0) {
-                    process.stderr.write(
-                        `sherpa-server: правил ревью, которые вас не призывали, отброшено ${String(dropped)} из ${String(rules.length)}\n`,
-                    );
-                }
-                // Правило a.yaml с явными `reviewers` приходит без ролей и в пары ничего не кладёт:
-                // если меня призвало такое, безролевые preview-правила считаем применёнными —
-                // иначе линза схлопнется в ноль. Все призвавшие ролевые — шум не пускаем.
-                const matchRulesWithoutRoles = summoning.some(
-                    (rule) => (rule.roles ?? []).length === 0,
-                );
-                return settled(appliedReviewRules(summoning, { matchRulesWithoutRoles }));
-            }
-            // Молчим, когда `reviewers_names` не пришло вовсе: это не «меня не призвали»,
-            // а Арканум без полей призыва — прежнее поведение и без объяснений.
-            if (rules.some((rule) => rule.reviewers_names !== undefined)) {
-                process.stderr.write(
-                    'sherpa-server: вы не в списке ревьюеров правил этого PR — линза «мои» считается по членству в ролях\n',
-                );
-            }
-            const applied = appliedReviewRules(rules, { matchRulesWithoutRoles: true });
-            if (applied.pairs.size > 0) {
-                return settled(applied);
-            }
-            process.stderr.write(
-                'sherpa-server: применённые правила ревью Арканума пусты; линза «мои» использует надмножество preview\n',
-            );
-        } catch (error) {
-            process.stderr.write(
-                `sherpa-server: применённые правила ревью Арканума недоступны: ${messageOf(error)}; линза «мои» использует надмножество preview\n`,
-            );
-        }
-        return degraded(null);
-    }
-
-    private async loadThreads(): Promise<Thread[]> {
-        const active = await this.activeDiff();
-        const [all, activeComments, iterationCommits] = await Promise.all([
-            this.client.getJson(
-                `/v1/review-requests/${String(this.prId)}/comments`,
-                { fields: COMMENT_FIELDS },
-                commentsSchema,
-            ),
-            this.client.getJson(
-                `/v1/review-requests/${String(this.prId)}/diff-sets/${String(active.diffSetId)}/comments`,
-                { fields: COMMENT_FIELDS },
-                commentsSchema,
-            ),
-            this.iterationCommits(active),
-        ]);
-        const threads = buildThreads({ all, active: activeComments, iterationCommits });
-        this.lastThreads = threads;
-        return threads;
-    }
-
-    /**
-     * Комментарий с issue по последнему известному снапшоту тредов. Снапшот отстаёт от записей
-     * ревьюера на тик опроса, поэтому и «комментария нет» (только что создали), и «есть, но без
-     * issue» (только что включили свитчер) — повод перечитать треды один раз. Отказ — лишь по
-     * свежему чтению, а не запись вслепую.
-     */
-    private async requireIssueComment(commentId: HostId): Promise<void> {
-        let found = findComment(this.lastThreads ?? [], commentId);
-        if (found?.issue !== true) {
-            found = findComment(await this.loadThreads(), commentId);
-        }
-        if (found === null) {
-            throw new RpcFailure('bad_request', `Комментария ${commentId} нет среди комментариев этого PR.`);
-        }
-        if (!found.issue) {
-            throw new RpcFailure(
-                'bad_request',
-                `Комментарий ${commentId} не открывает issue — закрывать в нём нечего.`,
-            );
-        }
-    }
-
-    /**
-     * Ревьюируемые коммиты итераций по их id — из них тред получает пин к итерации своего
-     * исходного якоря. Список не сложился — треды всё равно нужнее пина: пустая карта.
-     */
-    private async iterationCommits(active: ActiveDiff): Promise<Map<string, string>> {
-        const cache = this.iteration(active.diffSetId);
-        try {
-            // Кэш на итерацию: список меняется пушем, а пуш меняет id активного диффсета.
-            // Провалившееся обещание не задерживается — следующий снапшот попробует снова.
-            const pending = (cache.iterations ??= this.listIterations().catch((error: unknown) => {
-                delete cache.iterations;
-                throw error;
-            }));
-            const iterations = await pending;
-            return new Map(iterations.map((iteration) => [iteration.diffId, iteration.headCommit]));
-        } catch (error) {
-            process.stderr.write(
-                `sherpa-server: список итераций Арканума недоступен: ${messageOf(error)}; пины тредов пусты\n`,
-            );
-            return new Map();
-        }
-    }
-
-    /**
-     * Линза «мои файлы»: файл мой, если его покрывает хотя бы одно применённое правило
-     * ревью, среди людей которого есть мой логин и которое призвало меня в этот PR.
-     * Полный индекс приезжает вместе с диффом, а маленький applied-фильтр кэшируется отдельно
-     * на итерацию.
-     *
-     * Не собрался per-file расчёт — деградируем до каталожной гранулярности (зона = каталог
-     * владеющего a.yaml): линза грубее, но живая. Не сработал и он — линза выключается с
-     * объяснением, продукт не падает.
-     */
-    private async loadOwnership(active: ActiveDiff): Promise<Degradable<Lens | null>> {
-        const { diff, cache } = await this.cachedDiff(active);
-        const me = this.client.currentUser();
-        const index = cache.fileRules;
-        if (me === null) {
-            return degraded(
-                lens(
-                    'mine',
-                    'My files',
-                    [],
-                    'Arcanum did not tell who you are — ownership is unavailable.',
-                    null,
-                ),
-            );
-        }
-        if (index === undefined) {
-            return this.loadOwnershipByConfigDir(active, diff, me);
-        }
-
-        const applied = await this.cachedAppliedReviewRules(cache);
-        const paths = diff.files
-            .filter((file) => isMine(index.get(file.path), me, applied.value))
-            .map((file) => file.path);
-        const zones = ownershipZones(diff.files, index, me, applied.value);
-        const value =
-            paths.length === 0
-                ? lens('mine', 'My files', [], 'No files of this PR are in your review zones.', zones)
-                : lens('mine', 'My files', paths, null, zones);
-        return applied.degraded ? degraded(value) : settled(value);
-    }
-
-    /**
-     * Запасной путь линзы «мои» — гранулярность каталога a.yaml: правила ревью PR → роли
-     * → логины (роли берутся только из ответа API, сырые строки a.yaml резолвятся в пустоту) →
-     * каталоги владеющих a.yaml → файлы диффа под ними. Результат всегда деградировавший: в кэше
-     * он не задерживается, и следующий вызов снова пробует точный расчёт.
-     *
-     * Это уже запасной путь, поэтому наружу он не бросает: любая сорвавшаяся ручка гасит линзу
-     * с объяснением — ревью без ownership живёт, без списка файлов не живёт.
-     */
-    private async loadOwnershipByConfigDir(
-        active: ActiveDiff,
-        diff: PrDiff,
-        me: string,
-    ): Promise<Degradable<Lens | null>> {
-        let ruleList: readonly ArcReviewRule[];
-        try {
-            const rules = await this.client.getJson(
-                `/v1/review-requests/${String(this.prId)}`,
-                { fields: REVIEW_RULES_FIELDS },
-                reviewRulesSchema,
-            );
-            // Тот же критерий призыва, что и в точном расчёте: каталожная гранулярность грубее,
-            // но шум чужих правил в неё возвращаться не должен.
-            ruleList = summoningReviewRules(rules.review?.rules ?? [], me);
-        } catch {
-            return degraded(lens('mine', 'My files', [], 'Arcanum could not resolve review rule members.'));
-        }
-
-        const roles = [...new Set(ruleList.flatMap((rule) => rule.roles ?? []))];
-        if (roles.length === 0) {
-            return degraded(lens('mine', 'My files', [], 'This PR has no review rules to derive ownership from.'));
-        }
-
-        let membersByRole: Record<string, { login: string }[]>;
-        try {
-            const resolved = await this.client.postJson(
-                '/codenavigation/abc/resolve-members',
-                { roles, diffSetId: active.diffSetId },
-                resolveMembersSchema,
-            );
-            membersByRole = resolved.members_by_role;
-        } catch {
-            // Недокументированная ручка UI: сломалась — линза деградирует, продукт живёт.
-            return degraded(lens('mine', 'My files', [], 'Arcanum could not resolve review rule members.'));
-        }
-
-        const zones = ruleList
-            .filter((rule) => (rule.roles ?? []).some((role) => hasMember(membersByRole[role], me)))
-            .flatMap((rule) => (rule.configs ?? []).map((config) => zoneOf(config.path)));
-        const paths = diff.files.filter((file) => inZones(file.path, zones)).map((file) => file.path);
-
-        // Всегда деградировавшая: точный расчёт должен получить ещё один шанс на следующем вызове.
-        return degraded(
-            paths.length === 0
-                ? lens('mine', 'My files', [], 'No files of this PR are in your review zones.')
-                : lens('mine', 'My files', paths, null),
-        );
-    }
-
-    /** PCI DSS: готовое пересечение файлов ревьюируемого коммита со скоупом аудита. */
-    private async loadPci(active: ActiveDiff): Promise<Degradable<Lens[]>> {
-        const { diff } = await this.cachedDiff(active);
-
-        let scope: string[];
-        let published: boolean;
-        try {
-            const pci = await this.client.getJson(
-                `/v1/pci-dss/commits/${active.mergeCommit}`,
-                { fields: PCI_FIELDS },
-                pciSchema,
-            );
-            scope = pci.files ?? [];
-            published = pci.commit.state !== 'unknown';
-        } catch {
-            return degraded([lens('pci', 'PCI DSS', [], 'The PCI DSS scope is unavailable right now.')]);
-        }
-
-        const inScope = new Set(scope);
-        const paths = diff.files.filter((file) => inScope.has(file.path)).map((file) => file.path);
-        if (paths.length > 0) {
-            return settled([lens('pci', 'PCI DSS', paths, null)]);
-        }
-        return settled([
-            lens(
-                'pci',
-                'PCI DSS',
-                [],
-                published
-                    ? 'No files of this PR are in the PCI DSS scope.'
-                    : 'The PCI DSS scope is not published for this commit yet.',
-            ),
-        ]);
     }
 
     /**
@@ -1408,7 +652,7 @@ export class ArcanumHost implements ReviewHost {
 
     /**
      * Общий поллер: один таймер и один запрос дешёвой ручки на тик для всех подписчиков
-     * (`watchThreads`, `watchIterations`). Поллинг стартует с первым подписчиком и гаснет
+     * (`watchIterations`). Поллинг стартует с первым подписчиком и гаснет
      * с последним; ошибка тика подписку не роняет.
      */
     private subscribePoll(handler: PollHandler): () => void {
@@ -1493,35 +737,6 @@ export function makeArcanumHost(options: ArcanumHostOptions): ArcanumHost {
     return new ArcanumHost(options);
 }
 
-/** Комментарий по id в снапшоте тредов; null — такого в снапшоте нет. */
-function findComment(threads: readonly Thread[], commentId: HostId): Comment | null {
-    const visit = (comment: Comment): Comment | null => {
-        if (comment.id === commentId) {
-            return comment;
-        }
-        for (const reply of comment.replies) {
-            const found = visit(reply);
-            if (found !== null) {
-                return found;
-            }
-        }
-        return null;
-    };
-
-    for (const thread of threads) {
-        const found = visit(thread.root);
-        if (found !== null) {
-            return found;
-        }
-    }
-    return null;
-}
-
-/** Ручки одного комментария живут вне пути PR; отрицательный id уходит в путь как есть. */
-function commentPath(commentId: HostId): string {
-    return `/v1/review-requests-comments/${encodeURIComponent(commentId)}`;
-}
-
 /**
  * Элемент changelist + кусок патча `arc` → файл контракта. `verdict` несёт признак `generated`
  * из правил ревью a.yaml.
@@ -1534,7 +749,6 @@ function toFileDiff(
     entry: ArcChangelistEntry,
     chunks: ReadonlyMap<string, string>,
     mergeCommit: string,
-    verdict: FileRuleVerdict | undefined,
     web: WebFileRef,
 ): FileDiff {
     // Внутри переименованного каталога Арканум склеивает `path` удалённого файла из нового имени
@@ -1563,7 +777,7 @@ function toFileDiff(
         // Правила ревью в иерархии a.yaml есть, а файл не покрыт ни одним — осознанное исключение
         // из ревью, то есть машинный файл. Остальные вердикты признака не дают: ни «ревью
         // не настроено», ни неизвестное покрытие под битым правилом, ни провал расчёта.
-        generated: verdict?.kind === 'uncovered',
+        generated: false,
         additions: stats.additions,
         deletions: stats.deletions,
         patch: binary ? null : patch,
@@ -1745,24 +959,6 @@ function verdictsOf(
     return verdicts;
 }
 
-/**
- * Режимы публикации на этом PR: без вердикта, шип и запрос правок — всегда, стики-шип — пока его
- * не выключили настройки PR (поля нет — считаем выключенным).
- */
-function publishVerdictsOf(disableStickyShips: boolean | undefined): Verdict[] {
-    return disableStickyShips === false
-        ? ['comment', 'ship', 'sticky_ship', 'request_changes']
-        : ['comment', 'ship', 'request_changes'];
-}
-
-/** Ручка вердикта на diff-set; null — у режима вердикта нет. */
-const VERDICT_REQUESTS: Readonly<Record<Verdict, { path: string; query: Record<string, string> } | null>> = {
-    comment: null,
-    ship: { path: 'ship', query: {} },
-    sticky_ship: { path: 'ship', query: { sticky: 'true' } },
-    request_changes: { path: 'request-for-changes', query: {} },
-};
-
 /** Личность ревьюера: логин владельца токена; null — Арканум его ещё не назвал. */
 function viewerOf(login: string | null): ReviewUser | null {
     return login === null ? null : arcanumUser(login, null, false);
@@ -1778,128 +974,6 @@ function prStateOf(state: string, commonStatus: string): PrState {
 /** Ответ полный — свойство итерации: кэшируется до смены диффсета. */
 function settled<T>(value: T): Degradable<T> {
     return { value, degraded: false };
-}
-
-/** Ответ неполон из-за сломавшейся ручки: значение отдаём, но кэшировать его нельзя. */
-function degraded<T>(value: T): Degradable<T> {
-    return { value, degraded: true };
-}
-
-function lens(
-    id: string,
-    label: string,
-    paths: readonly string[],
-    note: string | null,
-    zones: readonly LensZone[] | null = null,
-): Lens {
-    // Пустая линза приходит выключенной с объяснением — так же, как в фикстурах (`docs/spec.md`).
-    return {
-        id,
-        label,
-        paths: [...paths],
-        available: paths.length > 0,
-        note,
-        zones: zones?.map((zone) => ({ ...zone, paths: [...zone.paths] })) ?? null,
-    };
-}
-
-/** Правила, делающие файл моим: покрывающее правило с моим логином, применённое к этому PR. */
-function mineRules(
-    verdict: FileRuleVerdict | undefined,
-    login: string,
-    applied: AppliedReviewRules | null,
-): readonly ReviewRule[] {
-    return verdict?.kind === 'covered'
-        ? verdict.rules.filter(
-              (rule) => rule.members.has(login) && isAppliedReviewRule(rule, applied),
-          )
-        : [];
-}
-
-/** Файл мой, если применённое покрывающее правило содержит мой логин. */
-function isMine(
-    verdict: FileRuleVerdict | undefined,
-    login: string,
-    applied: AppliedReviewRules | null,
-): boolean {
-    return mineRules(verdict, login, applied).length > 0;
-}
-
-/**
- * Каждый покрытый файл попадает в одну зону — к самой глубокой статической границе правила.
- *
- * Признак `mine` зоны считается тем же предикатом, что и `paths` линзы, а мой файл раскладывается
- * по глубочайшему из **моих** правил: иначе файл, который я ревьюирую по правилу предка, показался
- * бы в чужой зоне (глубочайшее правило — соседней команды), и сегмент «моя зона» рисовал бы серые
- * строки «вне вашей зоны» на своих же файлах.
- */
-function ownershipZones(
-    files: readonly FileDiff[],
-    index: FileRuleIndex,
-    login: string,
-    applied: AppliedReviewRules | null,
-): LensZone[] {
-    const zones = new Map<string, LensZone>();
-    for (const file of files) {
-        const verdict = index.get(file.path);
-        if (verdict?.kind !== 'covered') {
-            continue;
-        }
-        const myRules = mineRules(verdict, login, applied);
-        const mine = myRules.length > 0;
-        const selected = deepestRule(file.path, mine ? myRules : verdict.rules);
-        if (selected === null) {
-            continue;
-        }
-        const key = JSON.stringify([selected.path, mine, selected.rule.alias]);
-        const existing = zones.get(key);
-        if (existing === undefined) {
-            zones.set(key, {
-                path: selected.path,
-                mine,
-                owner: selected.rule.alias,
-                paths: [file.path],
-            });
-        } else {
-            existing.paths.push(file.path);
-        }
-    }
-    return [...zones.values()];
-}
-
-function deepestRule(path: string, rules: readonly ReviewRule[]): { rule: ReviewRule; path: string } | null {
-    let selected: { rule: ReviewRule; path: string } | null = null;
-    for (const rule of rules) {
-        const zonePath = ruleZonePath(rule, path);
-        if (selected === null || pathDepth(zonePath) >= pathDepth(selected.path)) {
-            selected = { rule, path: zonePath };
-        }
-    }
-    return selected;
-}
-
-function pathDepth(path: string): number {
-    return path === '' ? 0 : path.split('/').length;
-}
-
-function hasMember(members: { login: string }[] | undefined, login: string): boolean {
-    return members?.some((member) => member.login === login) ?? false;
-}
-
-/** Зона правила — каталог владеющего a.yaml; путь приходит от корня репозитория с ведущим `/`. */
-function zoneOf(configPath: string): string {
-    const withoutLeadingSlash = configPath.replace(/^\/+/, '');
-    const lastSlash = withoutLeadingSlash.lastIndexOf('/');
-    return lastSlash === -1 ? '' : withoutLeadingSlash.slice(0, lastSlash);
-}
-
-function inZones(path: string, zones: readonly string[]): boolean {
-    return zones.some((zone) => zone === '' || path === zone || path.startsWith(`${zone}/`));
-}
-
-/** Отпечаток состояния PR: сдвинулся — что-то изменилось, треды пора перечитать. */
-function stampOf(poll: PollSnapshot): string {
-    return `${poll.updatedAt}#${String(poll.activeDiffSetId)}`;
 }
 
 function messageOf(error: unknown): string {

@@ -15,7 +15,6 @@ import { fileIterationsStore, MAX_LOCAL_ITERATIONS, memoryIterationsStore } from
 import type { LocalHostOptions } from './local-host.js';
 import { LocalHost } from './local-host.js';
 import { MAX_FILE_BYTES } from './snapshot.js';
-import { memoryThreadsStore } from './threads-store.js';
 import type { CommandRunner } from './vcs.js';
 
 /**
@@ -57,7 +56,6 @@ describe('история итераций локального хоста', () =
             projectDir: fake.projectDir,
             base: null,
             branch: fake.branch,
-            threads: memoryThreadsStore(),
             iterations,
             pollIntervalMs: 600_000,
             ...overrides,

@@ -1,5 +1,5 @@
 import { makeFixtureHost } from '@sherpa/fixtures';
-import type { PrMeta, ReviewHost } from '@sherpa/protocol';
+import type { PrMeta, ReviewSource } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PrMetaCache } from './pr-meta.js';
@@ -28,9 +28,9 @@ describe('кеш меты PR', () => {
     }
 
     /** Хост с подменяемым `getPr`; вызовы считает сам мок. */
-    function hostOf(getPr: () => Promise<PrMeta>): { host: ReviewHost; getPr: ReturnType<typeof vi.fn> } {
+    function hostOf(getPr: () => Promise<PrMeta>): { host: ReviewSource; getPr: ReturnType<typeof vi.fn> } {
         const mock = vi.fn(getPr);
-        return { host: { getPr: mock } as unknown as ReviewHost, getPr: mock };
+        return { host: { getPr: mock } as unknown as ReviewSource, getPr: mock };
     }
 
     it('до первого успеха отдаёт null и подписчиков не будит', async () => {

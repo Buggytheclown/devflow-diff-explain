@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readableStoryFixture } from '@sherpa/fixtures';
-import type { ReviewHost } from '@sherpa/protocol';
+import type { ReviewSource } from '@sherpa/protocol';
 import { FlowCoordinator, diagramSourceErrors } from './flow-coordinator.js';
 import { openDatabase } from './db.js';
 import type { SherpaDatabase } from './db.js';
@@ -20,7 +20,7 @@ describe('независимая схема закреплённого пото�
     let dir: string; let db: SherpaDatabase; let store: RouteStore; let queue: TaskQueue; let flow: FlowCoordinator;
     const readSource = vi.fn<(path: string, revision: string) => Promise<string | null>>();
     function start() {
-        flow = new FlowCoordinator({ store, queue, host: { getPr: () => Promise.resolve({ capabilities: { sourceAtRevision: true } }), getSourceAtRevision: readSource } as unknown as ReviewHost,
+        flow = new FlowCoordinator({ store, queue, host: { getPr: () => Promise.resolve({ capabilities: { sourceAtRevision: true } }), getSourceAtRevision: readSource } as unknown as ReviewSource,
             dir: path.join(dir, 'flow'), shared: new SharedPayloadStore(path.join(dir, 'shared'), () => []), loadDiff: () => Promise.resolve(fixture.diff) });
         queue.setResultAcceptor((task, result) => flow.acceptResult(task, result)); flow.start();
     }

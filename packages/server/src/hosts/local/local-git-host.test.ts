@@ -8,7 +8,6 @@ import { gitAvailable, makeGitRepo } from './git-fixture.js';
 import { gitVcs } from './git-vcs.js';
 import { memoryIterationsStore } from './iterations-store.js';
 import { LocalHost } from './local-host.js';
-import { memoryThreadsStore } from './threads-store.js';
 import { commandRunnerIn } from './vcs.js';
 
 /**
@@ -40,7 +39,6 @@ describe.skipIf(!gitAvailable)('локальный хост на git-репоз�
             projectDir,
             base: options.base ?? null,
             branch: 'feature',
-            threads: memoryThreadsStore(),
             iterations: memoryIterationsStore(),
             pollIntervalMs: 600_000,
         });
@@ -105,18 +103,6 @@ describe.skipIf(!gitAvailable)('локальный хост на git-репоз�
             statusLabel: 'local',
         });
         expect(pr.author.login).toBe('Sherpa Tester');
-    });
-
-    it('зона ревьюера — весь дифф, источник зон — `git diff`', async () => {
-        seedBranch();
-        repo.write('src/a.ts', 'const a = 2;\n');
-        repo.write('notes.md', '# notes\n');
-        const host = makeHost();
-
-        const lens = await host.ownershipLens();
-
-        expect(host.ownershipSource).toBe('git diff');
-        expect([...lens.paths].sort()).toEqual(['notes.md', 'src/a.ts']);
     });
 
     it('явная база сравнивает с назначенным коммитом', async () => {

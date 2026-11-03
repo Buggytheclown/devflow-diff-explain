@@ -1,17 +1,16 @@
 import { afterAll } from 'vitest';
 
-import { describeReviewHostContract } from '../review-host-contract.js';
+import { describeReviewSourceContract } from '../review-source-contract.js';
 
 import type { GitFixture } from './git-fixture.js';
 import { copyGitRepo, gitAvailable, makeGitRepo } from './git-fixture.js';
 import { gitVcs } from './git-vcs.js';
 import { memoryIterationsStore } from './iterations-store.js';
 import { LocalHost } from './local-host.js';
-import { memoryThreadsStore } from './threads-store.js';
 import { commandRunnerIn } from './vcs.js';
 
 /**
- * Контрактный набор `ReviewHost` на локальном хосте с бэкендом `git`: живой `git` во временном
+ * Контрактный набор `ReviewSource` на локальном хосте с бэкендом `git`: живой `git` во временном
  * репозитории. «Пуш» здесь — правка файла в рабочем дереве и принудительный опрос.
  */
 
@@ -45,7 +44,6 @@ function makeHost(): LocalHost {
         projectDir: repo.root,
         base: null,
         branch: 'feature',
-        threads: memoryThreadsStore(),
         iterations: memoryIterationsStore(),
         pollIntervalMs: POLL_INTERVAL_MS,
     });
@@ -79,7 +77,7 @@ function service(port: number): string {
     return `${['export function serve() {', `    const port = ${String(port)};`, '    listen(port);', '    log("up");', '}'].join('\n')}\n`;
 }
 
-describeReviewHostContract('LocalHost/git', makeHost, {
+describeReviewSourceContract('LocalHost/git', makeHost, {
     // `user.name` из конфига временного репозитория (`git-fixture.ts`).
     viewer: 'Sherpa Tester',
     slow: true,

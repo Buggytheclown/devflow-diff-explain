@@ -1,12 +1,11 @@
-import { describeReviewHostContract } from '../review-host-contract.js';
+import { describeReviewSourceContract } from '../review-source-contract.js';
 
 import { GithubHost } from './github-host.js';
-import { memoryIdempotencyStore } from './idempotency-store.js';
 import type { MockGithubControl, MockGithubOptions } from './mock-transport.js';
 import { makeMockGithubFetch, MOCK_NUMBER, MOCK_OWNER, MOCK_REPO, MOCK_VIEWER } from './mock-transport.js';
 
 /**
- * Контрактный набор `ReviewHost` на записанном API GitHub: чтение и запись целиком.
+ * Контрактный набор `ReviewSource` на записанном API GitHub: чтение и запись целиком.
  * «Пуш» здесь — ручка мока, которая уводит голову ветки на новый коммит.
  */
 
@@ -24,7 +23,7 @@ function makeHost(options: MockGithubOptions = {}): GithubHost {
         fetch: makeMockGithubFetch({ ...options, control }),
         token: () => Promise.resolve(TOKEN),
         pollIntervalMs: 20,
-        idempotency: memoryIdempotencyStore(),
+
         transport: { retryAttempts: 1 },
     });
     pushes.set(host, control);
@@ -39,10 +38,10 @@ function push(host: GithubHost): void {
     control();
 }
 
-describeReviewHostContract('GitHubHost (записанный API)', () => makeHost(), { advance: push });
+describeReviewSourceContract('GitHubHost (записанный API)', () => makeHost(), { advance: push });
 
 // Свой PR: GitHub запрещает автору любой вердикт, из режимов публикации остаются только комментарии.
-describeReviewHostContract(
+describeReviewSourceContract(
     'GitHubHost (свой PR)',
     () => makeHost({ prOverrides: { author: { login: MOCK_VIEWER, __typename: 'User' } } }),
     { advance: push },

@@ -4,16 +4,15 @@ import path from 'node:path';
 
 import { afterAll } from 'vitest';
 
-import { describeReviewHostContract } from '../review-host-contract.js';
+import { describeReviewSourceContract } from '../review-source-contract.js';
 
 import { arcVcs } from './arc-vcs.js';
 import { FakeArc } from './fake-arc.js';
 import { memoryIterationsStore } from './iterations-store.js';
 import { LocalHost } from './local-host.js';
-import { memoryThreadsStore } from './threads-store.js';
 
 /**
- * Контрактный набор `ReviewHost` на локальном хосте с бэкендом `arc`: подставной `arc` поверх
+ * Контрактный набор `ReviewSource` на локальном хосте с бэкендом `arc`: подставной `arc` поверх
  * настоящего временного каталога. «Пуш» здесь — правка файла в рабочем дереве и принудительный
  * опрос. Тот же набор на настоящем `git` — `local-git-host.contract.test.ts`.
  */
@@ -33,7 +32,7 @@ afterAll(() => {
     }
 });
 
-function makeHost(verdicts: string | null = null): LocalHost {
+function makeHost(): LocalHost {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sherpa-local-'));
     checkouts.push(root);
 
@@ -46,8 +45,6 @@ function makeHost(verdicts: string | null = null): LocalHost {
         projectDir: fake.projectDir,
         base: null,
         branch: fake.branch,
-        verdicts,
-        threads: memoryThreadsStore(),
         iterations: memoryIterationsStore(),
         pollIntervalMs: POLL_INTERVAL_MS,
     });
@@ -98,10 +95,10 @@ async function advance(host: LocalHost): Promise<void> {
 /** Логин фейкового чекаута по умолчанию. */
 const VIEWER = 'reviewer';
 
-describeReviewHostContract('LocalHost/arc', () => makeHost(), { viewer: VIEWER, advance });
+describeReviewSourceContract('LocalHost/arc', () => makeHost(), { viewer: VIEWER, advance });
 
 // Режим `--verdicts`: тот же контракт, но публикация — Request changes и Ship вместо Comment.
-describeReviewHostContract('LocalHost/arc --verdicts', () => makeHost('on ship, commit and open a PR'), {
+describeReviewSourceContract('LocalHost/arc --verdicts', () => makeHost(), {
     viewer: VIEWER,
     advance,
 });

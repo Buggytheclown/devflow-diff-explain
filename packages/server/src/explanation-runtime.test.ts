@@ -9,8 +9,6 @@ import { get, postJson, makeTempSherpaDir, removeTempSherpaDir } from './test-su
 describe('сервер объяснения подключает только нужные возможности', () => {
     let dir: string; let server: SherpaServer;
     const host = makeFixtureHost('medium');
-    const watch = vi.spyOn(host, 'watchThreads');
-    const threads = vi.spyOn(host, 'getThreads');
     beforeEach(async () => {
         vi.clearAllMocks(); dir = await makeTempSherpaDir();
         server = await startServer({ prKey: 'fixture-medium', sherpaDir: dir, reviewSourceFactory: () => ({ name: 'fixture', host }) });
@@ -20,7 +18,7 @@ describe('сервер объяснения подключает только н
         const abort = new AbortController();
         const response = await fetch(`http://127.0.0.1:${String(server.port)}${UI_ENDPOINTS.events}?token=${server.token}`, { signal: abort.signal });
         await response.body?.getReader().read(); abort.abort();
-        expect(watch).not.toHaveBeenCalled(); expect(threads).not.toHaveBeenCalled();
+        expect('watchThreads' in host).toBe(false); expect('getThreads' in host).toBe(false);
         for (const endpoint of [UI_ENDPOINTS.reviewPublish, UI_ENDPOINTS.reviewSaveDraft, UI_ENDPOINTS.reviewThreadResolved, UI_ENDPOINTS.reviewFileViewed]) {
             expect((await postJson(server.port, endpoint, {}, server.token)).status).toBe(404);
         }

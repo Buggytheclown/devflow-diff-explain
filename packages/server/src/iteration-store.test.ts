@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { Iteration, PrDiff, ReviewHost } from '@sherpa/protocol';
+import type { Iteration, PrDiff, ReviewSource } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SherpaDatabase } from './db.js';
@@ -169,7 +169,7 @@ describe('хранилище итераций', () => {
     it('rememberIterationDiff кладёт активную итерацию и молчит на чужом диффе', async () => {
         const store = new IterationStore({ db: open() });
         const active = iterationOf('iter-1', '2026-09-01T10:00:00.000Z', 'active');
-        const host = { listIterations: () => Promise.resolve([active]) } as unknown as ReviewHost;
+        const host = { listIterations: () => Promise.resolve([active]) } as unknown as ReviewSource;
 
         await rememberIterationDiff(store, host, diffOf('iter-1', ['src/index.ts']));
         expect(store.get('iter-1')?.iteration).toEqual(active);
@@ -187,7 +187,7 @@ describe('хранилище итераций', () => {
 
     it('падение хоста запись не роняет — ошибка уходит в stderr', async () => {
         const store = new IterationStore({ db: open() });
-        const host = { listIterations: () => Promise.reject(new Error('хост прилёг')) } as unknown as ReviewHost;
+        const host = { listIterations: () => Promise.reject(new Error('хост прилёг')) } as unknown as ReviewSource;
 
         const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
         try {

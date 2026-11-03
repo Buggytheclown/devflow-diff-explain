@@ -283,15 +283,6 @@ describe('фикстура medium', () => {
         }
     });
 
-    it('несёт generated-файлы, и PCI-линза с ними пересекается', () => {
-        const generated = data.diff.files.filter((file) => file.generated).map((file) => file.path);
-        expect(generated.length).toBeGreaterThanOrEqual(2);
-
-        const pci = data.extraLenses.find((lens) => lens.id === 'pci');
-        expect(pci?.paths.length).toBeGreaterThanOrEqual(2);
-        expect(pci?.paths.some((path) => generated.includes(path))).toBe(true);
-    });
-
     it('линза ownership покрывает часть файлов, но не все', () => {
         const paths = data.ownership?.paths ?? [];
         expect(paths.length).toBeGreaterThan(0);

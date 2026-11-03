@@ -1,29 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { makeMockGithubFetch, RATE_LIMIT_ON_MUTATION } from './mock-transport.js';
 import * as queries from './queries.js';
 import {
-    addReviewThreadMutationSchema,
-    addReviewThreadReplyMutationSchema,
     blobAliasesResponseSchema,
-    codeownersResponseSchema,
-    commentMutationSchema,
     fileContentResponseSchema,
     filesResponseSchema,
-    orgTeamsResponseSchema,
     prResponseSchema,
-    resolveThreadMutationSchema,
-    reviewBodyResponseSchema,
-    reviewMutationSchema,
-    submitReviewMutationSchema,
-    threadCommentsResponseSchema,
-    threadsPageResponseSchema,
-    tickResponseSchema,
-    unresolveThreadMutationSchema,
-    updateReviewBodyMutationSchema,
-    verdictMutationSchema,
-    viewedMutationSchema,
     viewerResponseSchema,
 } from './schemas.js';
 
@@ -39,63 +22,11 @@ const ALIASES = ['o0'];
 /** Пара «текст операции → схема, которой адаптер разбирает её ответ». */
 const OPERATIONS: readonly { readonly name: string; readonly query: string; readonly schema: z.ZodType }[] = [
     { name: 'PR_QUERY', query: queries.PR_QUERY, schema: prResponseSchema },
-    { name: 'TICK_QUERY', query: queries.TICK_QUERY, schema: tickResponseSchema },
-    { name: 'THREADS_PAGE_QUERY', query: queries.THREADS_PAGE_QUERY, schema: threadsPageResponseSchema },
-    { name: 'THREAD_COMMENTS_QUERY', query: queries.THREAD_COMMENTS_QUERY, schema: threadCommentsResponseSchema },
     { name: 'FILES_QUERY', query: queries.FILES_QUERY, schema: filesResponseSchema },
-    { name: 'REVIEW_BODY_QUERY', query: queries.REVIEW_BODY_QUERY, schema: reviewBodyResponseSchema },
     { name: 'VIEWER_QUERY', query: queries.VIEWER_QUERY, schema: viewerResponseSchema },
     { name: 'FILE_CONTENT_QUERY', query: queries.FILE_CONTENT_QUERY, schema: fileContentResponseSchema },
-    { name: 'CODEOWNERS_QUERY', query: queries.CODEOWNERS_QUERY, schema: codeownersResponseSchema },
     { name: 'blobSizesQuery', query: queries.blobSizesQuery(ALIASES), schema: blobAliasesResponseSchema },
     { name: 'blobBinaryQuery', query: queries.blobBinaryQuery(ALIASES), schema: blobAliasesResponseSchema },
-    { name: 'orgTeamsQuery', query: queries.orgTeamsQuery(ALIASES), schema: orgTeamsResponseSchema(ALIASES) },
-    { name: 'MARK_FILE_VIEWED_MUTATION', query: queries.MARK_FILE_VIEWED_MUTATION, schema: viewedMutationSchema },
-    { name: 'UNMARK_FILE_VIEWED_MUTATION', query: queries.UNMARK_FILE_VIEWED_MUTATION, schema: viewedMutationSchema },
-    { name: 'RESOLVE_THREAD_MUTATION', query: queries.RESOLVE_THREAD_MUTATION, schema: resolveThreadMutationSchema },
-    {
-        name: 'UNRESOLVE_THREAD_MUTATION',
-        query: queries.UNRESOLVE_THREAD_MUTATION,
-        schema: unresolveThreadMutationSchema,
-    },
-    { name: 'CREATE_REVIEW_MUTATION', query: queries.CREATE_REVIEW_MUTATION, schema: reviewMutationSchema },
-    { name: 'VERDICT_REVIEW_MUTATION', query: queries.VERDICT_REVIEW_MUTATION, schema: verdictMutationSchema },
-    { name: 'SUBMIT_REVIEW_MUTATION', query: queries.SUBMIT_REVIEW_MUTATION, schema: submitReviewMutationSchema },
-    {
-        name: 'ADD_REVIEW_THREAD_MUTATION',
-        query: queries.ADD_REVIEW_THREAD_MUTATION,
-        schema: addReviewThreadMutationSchema,
-    },
-    {
-        name: 'ADD_REVIEW_THREAD_REPLY_MUTATION',
-        query: queries.ADD_REVIEW_THREAD_REPLY_MUTATION,
-        schema: addReviewThreadReplyMutationSchema,
-    },
-    {
-        name: 'UPDATE_REVIEW_BODY_MUTATION',
-        query: queries.UPDATE_REVIEW_BODY_MUTATION,
-        schema: updateReviewBodyMutationSchema,
-    },
-    {
-        name: 'UPDATE_REVIEW_COMMENT_MUTATION',
-        query: queries.UPDATE_REVIEW_COMMENT_MUTATION,
-        schema: commentMutationSchema,
-    },
-    {
-        name: 'DELETE_REVIEW_COMMENT_MUTATION',
-        query: queries.DELETE_REVIEW_COMMENT_MUTATION,
-        schema: commentMutationSchema,
-    },
-    {
-        name: 'UPDATE_ISSUE_COMMENT_MUTATION',
-        query: queries.UPDATE_ISSUE_COMMENT_MUTATION,
-        schema: commentMutationSchema,
-    },
-    {
-        name: 'DELETE_ISSUE_COMMENT_MUTATION',
-        query: queries.DELETE_ISSUE_COMMENT_MUTATION,
-        schema: commentMutationSchema,
-    },
 ];
 
 /** Тексты всех операций адаптера: константы плюс то, что собирают функции. */
@@ -107,7 +38,6 @@ function allQueries(): { name: string; query: string }[] {
         ...built,
         { name: 'blobSizesQuery', query: queries.blobSizesQuery(ALIASES) },
         { name: 'blobBinaryQuery', query: queries.blobBinaryQuery(ALIASES) },
-        { name: 'orgTeamsQuery', query: queries.orgTeamsQuery(ALIASES) },
     ];
 }
 
@@ -156,7 +86,7 @@ describe('тексты операций GitHub', () => {
         expect(mutations.filter((entry) => entry.query.includes('rateLimit')).map((entry) => entry.name)).toEqual([]);
         expect(reads.filter((entry) => !entry.query.includes('rateLimit')).map((entry) => entry.name)).toEqual([]);
         expect(texts).toHaveLength(mutations.length + reads.length);
-        expect(mutations.length).toBeGreaterThan(10);
+        expect(mutations).toEqual([]);
         expect(reads.length).toBeGreaterThan(5);
     });
 
@@ -176,21 +106,5 @@ describe('тексты операций GitHub', () => {
     it('все операции адаптера сверены со схемами', () => {
         const covered = new Set(OPERATIONS.map((entry) => entry.name));
         expect(allQueries().filter((entry) => !covered.has(entry.name)).map((entry) => entry.name)).toEqual([]);
-    });
-
-    it('мок отвечает на мутацию с `rateLimit` отказом живого GitHub', async () => {
-        const response = await makeMockGithubFetch()('https://api.github.test/graphql', {
-            method: 'POST',
-            body: JSON.stringify({
-                query: `mutation SherpaProbe($pullRequestId: ID!, $path: String!) {
-    rateLimit { cost remaining resetAt }
-    markFileAsViewed(input: { pullRequestId: $pullRequestId, path: $path }) { clientMutationId }
-}`,
-                variables: { pullRequestId: 'PR_1', path: 'src/service.ts' },
-            }),
-        });
-
-        const envelope = (await response.json()) as { errors?: { message: string }[] };
-        expect(envelope.errors?.[0]?.message).toBe(RATE_LIMIT_ON_MUTATION);
     });
 });

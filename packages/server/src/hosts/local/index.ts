@@ -1,4 +1,4 @@
-import { localIterationsDirOf, localReviewPathFor } from '../../paths.js';
+import { localIterationsDirOf } from '../../paths.js';
 
 import { arcVcs } from './arc-vcs.js';
 import { gitVcs } from './git-vcs.js';
@@ -6,7 +6,6 @@ import { fileIterationsStore } from './iterations-store.js';
 import { LocalHost } from './local-host.js';
 import type { LocalHostState } from './state.js';
 import { readLocalHostState, writeLocalHostState } from './state.js';
-import { fileThreadsStore } from './threads-store.js';
 import type { LocalVcs, LocalVcsKind } from './vcs.js';
 import { commandRunnerIn } from './vcs.js';
 
@@ -27,7 +26,6 @@ export interface LocalHostSetup {
     /** Ветка из `--branch`: на ней CLI построил ключ; null — ветку зафиксирует первый снимок. */
     readonly branch: string | null;
     /** Поручение на исход ревью из `--verdicts`; как и база, учитывается только вместе с `--repo`. */
-    readonly verdicts: string | null;
 }
 
 /**
@@ -60,14 +58,9 @@ export function makeLocalHost(setup: LocalHostSetup): LocalHost | null {
         projectDir: state.repo,
         base: state.base,
         branch: state.branch,
-        verdicts: state.verdicts,
-        threads: fileThreadsStore(localReviewPathFor(setup.sherpaDir, setup.prKey)),
         iterations: fileIterationsStore(localIterationsDirOf(setup.sherpaDir, setup.prKey)),
         onBranchResolved: (branch) => {
             persist({ branch });
-        },
-        onVerdictsChanged: (verdicts) => {
-            persist({ verdicts });
         },
     });
 }
@@ -92,6 +85,6 @@ function resolveState(setup: LocalHostSetup, stored: LocalHostState | null): Loc
         branch: setup.branch ?? (stored?.repo === setup.repo ? stored.branch : null),
         base: setup.base,
         // Поручение называет каждый `up --local`: без флага режим снимается, побеждает последний вызов.
-        verdicts: setup.verdicts,
+        verdicts: null,
     };
 }

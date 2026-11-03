@@ -349,4 +349,3 @@ describe('отказы arc', () => {
         expect(error.message).toContain('arc mount --list --json');
     });
 });
-
