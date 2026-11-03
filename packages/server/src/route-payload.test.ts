@@ -315,9 +315,9 @@ describe('запись payload на диск', () => {
         expect(pr?.startsWith(sharedDir)).toBe(true);
         expect(path.basename(pr ?? '')).toBe('target.json');
         expect(fs.readFileSync(guide ?? '', 'utf8')).toContain('PR');
-        const target = JSON.parse(fs.readFileSync(pr ?? '', 'utf8')) as { files: { path: string; savedPatch: string }[]; optionalFullDiff: string };
+        const target = JSON.parse(fs.readFileSync(pr ?? '', 'utf8')) as { files: { path: string; savedPatch: string; savedPatchBytes: number }[]; optionalFullDiff: string };
         expect(target.files.map((file) => file.path)).toEqual(context().diff.files.map((file) => file.path));
-        for (const file of target.files) expect(fs.existsSync(file.savedPatch)).toBe(true);
+        for (const file of target.files) expect(fs.statSync(file.savedPatch).size).toBe(file.savedPatchBytes);
         expect(fs.readFileSync(target.optionalFullDiff, 'utf8')).toContain('## Changed files (21, complete list)');
         expect(input.instructions).toContain('draw its affected architecture');
         expect(input.instructions).toContain(META.url);

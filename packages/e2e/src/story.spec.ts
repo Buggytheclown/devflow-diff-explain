@@ -39,7 +39,8 @@ test('рассказ → явный вопрос → ответ; старое р
     const jumpStart = Math.max(codeReference.start, codeReference.end - 2);
     const address = `#code?path=${encodeURIComponent(codeReference.path)}&side=${codeReference.side}&start=${String(jumpStart)}&end=${String(codeReference.end)}`;
     const invalid = await server.worker.complete(question.taskId ?? 0, 'См. [источник](#code?path=missing.ts&side=new&start=1&end=1).');
-    expect(invalid.stdout).toContain('rejected');
+    expect(invalid.code).not.toBe(0);
+    expect(invalid.stderr).toContain('Source unavailable');
     const completed = await server.worker.complete(question.taskId ?? 0, `Так уведомление не отправится при откате записи. См. [нужные строки](${address}).`);
     expect(completed.stdout).not.toContain('rejected');
     await expect(page.locator('.chat-message--agent')).toContainText('не отправится');

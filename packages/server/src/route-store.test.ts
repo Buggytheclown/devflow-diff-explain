@@ -9,6 +9,8 @@ import type { AcceptedSkeletonInput } from './route-store.js';
 import { RouteStore } from './route-store.js';
 import type { AcceptedSkeleton } from './route/index.js';
 import { makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
+import { architectureStoryFixture } from '@sherpa/fixtures';
+import { validateArchitectureOverview } from './architecture-story.js';
 
 /**
  * История снапшотов маршрута: `route_snapshots` копит все генерации, `route_state`
@@ -251,6 +253,17 @@ describe('хранилище маршрута: история снапшотов
         const reopened = new RouteStore({ db: open() });
         expect(reopened.currentGenerationCap()).toEqual(cap);
         expect(reopened.generationCap('нет такого')).toBeNull();
+    });
+
+    it('у v6 урезание необязательного общего файла не означает потерю отдельных патчей', () => {
+        const fixture = architectureStoryFixture();
+        const checked = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
+        if (!checked.ok) throw new Error(checked.errors.join('\n'));
+        const store = new RouteStore({ db: open() });
+        store.acceptSkeleton({ ...accepted('native', null, fixture.diff.diffId), skeleton: checked.value, diff: fixture.diff, presentation: 'story' });
+        store.setGenerationCap('native', { filesCovered: 0, filesTotal: fixture.diff.files.length, machineFiles: 0, truncated: true });
+        expect(store.currentGenerationCap()).toBeNull();
+        expect(new RouteStore({ db: open() }).currentGenerationCap()).toBeNull();
     });
 
     it('язык генерации живёт в meta и переживает переоткрытие БД', () => {

@@ -63,11 +63,14 @@ export class SavedSources {
         const patch = savedPatchIndex(diff);
         if (markdown) {
             let prepared = result;
-            const links = [...result.matchAll(/#source\?[^\s)]+/g)].map((match) => match[0]);
+            const links = [...result.matchAll(/#(?:source|code)\?[^\s)]+/g)].map((match) => match[0]);
             for (const link of new Set(links)) {
                 const location = parseCodeLink(link.replace('#source?', '#code?'));
                 if (location === null) continue;
-                const saved = await this.capture(diff, location);
+                const file = patch.file(location.path, location.side, true);
+                if (link.startsWith('#code?') && patch.range(file, location) !== null) continue;
+                const saved = await this.capture(diff, location.side === 'old' && file?.oldPath != null
+                    ? { ...location, path: file.oldPath } : location);
                 prepared = prepared.split(link).join(`#source?id=${saved.id}`);
             }
             return prepared;

@@ -108,15 +108,6 @@ export class RoutePayloadWriter {
     }
 
     /**
-     * Кап генерации по диффу и бюджету — та же чистая функция, что печатает контекст скелета.
-     * Приёмка скелета считает его заново: контекст постановки процесс мог не пережить, а от
-     * снапшота к строке в шапке маршрута кап обязан доехать и после рестарта.
-     */
-    generationCap(context: RoutePayloadContext): UiGenerationCap {
-        return prDiffPayload(context, this.budgetBytes).cap;
-    }
-
-    /**
      * Задача `route.section`: заполнение одного или нескольких стопов плана. Целевые номера едут
      * в тексте задачи — отдельного поля у `taskSchema` нет, батчирование остаётся ручкой сервера.
      * «Прочее» секций не имеет: его синтезировал скелет, содержимое считает UI.
@@ -234,13 +225,16 @@ export class RoutePayloadWriter {
 export function materializeReviewTarget(shared: SharedPayloadStore, context: RoutePayloadContext, budgetBytes = CONTEXT_BUDGET_BYTES): { file: string; target: string; cap: UiGenerationCap } {
         const built = prDiffPayload(context, budgetBytes);
         shared.prDiff(diffKeyOf(context.diff), built.content);
-        const index = context.diff.files.map((entry, i) => ({ path: entry.path, file: shared.savedPatch(diffKeyOf(context.diff), i, patchBlock(entry, i, false)) }));
+        const index = context.diff.files.map((entry, i) => {
+            const content = patchBlock(entry, i, false);
+            return { path: entry.path, file: shared.savedPatch(diffKeyOf(context.diff), i, content), bytes: Buffer.byteLength(content) };
+        });
         const savedPatchIndex = shared.savedPatchIndex(diffKeyOf(context.diff), JSON.stringify({ diffId: context.diff.diffId, headCommit: context.diff.headCommit, files: index }));
         const file = shared.prDiff(diffKeyOf(context.diff), built.content);
         const target = shared.target(diffKeyOf(context.diff), JSON.stringify({ pr: context.meta?.url ?? null, title: context.meta?.title ?? null,
             diffId: context.diff.diffId, baseCommit: context.diff.baseCommit, headCommit: context.diff.headCommit,
             files: context.diff.files.map((entry, i) => ({ path: entry.path, change: entry.changeType, oldPath: entry.oldPath,
-                binary: entry.binary, additions: entry.additions, deletions: entry.deletions, savedPatch: index[i]?.file })),
+                binary: entry.binary, additions: entry.additions, deletions: entry.deletions, savedPatch: index[i]?.file, savedPatchBytes: index[i]?.bytes })),
             savedPatchIndex, optionalFullDiff: file }));
         return { file, target, cap: built.cap };
 }

@@ -506,8 +506,9 @@ export class RouteStore {
             .run(generationCapKey(snapshotId), JSON.stringify(cap));
     }
 
-    /** Кап текущего снапшота; null — снапшота нет или его генерация была до появления метрики. */
+    /** Прежняя метрика урезания; у v6 все отдельные патчи доступны независимо от общего файла. */
     currentGenerationCap(): UiGenerationCap | null {
+        if (this.state.snapshot?.storyContractVersion === 6) return null;
         const snapshotId = this.state.snapshot?.snapshotId;
         return snapshotId === undefined ? null : this.generationCap(snapshotId);
     }

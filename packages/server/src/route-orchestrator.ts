@@ -389,8 +389,6 @@ export class RouteOrchestrator {
                     snapshotId,
                     previousSnapshotId: previous?.snapshotId ?? null,
                 });
-                // Кап генерации привязан к снапшоту, а не к задаче: id снапшота есть только здесь.
-                this.store.setGenerationCap(snapshotId, this.payload.generationCap({ diff, meta: this.meta }));
                 this.reconcile();
             },
         };

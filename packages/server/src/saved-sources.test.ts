@@ -42,6 +42,14 @@ it('чат получает сохранённую ссылку, а не выд�
     expect(prepared).toMatch(/#source\?id=[a-f0-9]{64}/);
     await expect(source.prepare(diff, '[bad](#source?path=outside.ts&side=new&start=10&end=11)', true)).rejects.toThrow('Source unavailable');
 });
+
+it('обычная ссылка чата вне ханка автоматически сохраняет источник на закреплённой версии', async () => {
+    const { source, diff } = setup();
+    const prepared = await source.prepare(diff, '[caller](#code?path=outside%2Fcaller.ts&side=new&start=2&end=2)', true);
+    expect(prepared).toMatch(/#source\?id=[a-f0-9]{64}/);
+    expect(withSavedSources(source, () => chatCodeLinkErrors(prepared, diff, null))).toEqual([]);
+    await expect(source.prepare(diff, '[bad](#code?path=outside.ts&side=new&start=10&end=11)', true)).rejects.toThrow('Source unavailable');
+});
 it('не подтверждает отсутствующую сторону удалённого файла', async () => {
     const { source, diff, read } = setup();
     const file = diff.files[0]; if (file === undefined) throw new Error('No file');
