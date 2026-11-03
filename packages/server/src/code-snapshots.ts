@@ -64,10 +64,10 @@ export class CodeSnapshots {
     }
 
     sourceArtifact(diffId: string, revision: string, sourcePath: string): { hash: string; kind: string; origin?: CodeSnapshotInput['sources'][number]['origin'] } | null {
-        const snapshot = this.forDiff(diffId);
-        if (snapshot === null) return null;
-        const row = this.db.prepare('SELECT hash, kind, origin FROM code_sources WHERE snapshot_id = ? AND revision = ? AND path = ?')
-            .get(snapshot.id, revision, sourcePath) as SqlRow | undefined;
+        const row = this.db.prepare(`SELECT sources.hash, sources.kind, sources.origin FROM code_sources AS sources
+            JOIN code_snapshots AS snapshots ON snapshots.id = sources.snapshot_id
+            WHERE snapshots.project = ? AND snapshots.diff_id = ? AND sources.revision = ? AND sources.path = ?`)
+            .get(this.project, diffId, revision, sourcePath) as SqlRow | undefined;
         return row === undefined ? null : { hash: String(row.hash), kind: String(row.kind), ...(row.origin == null ? {} : { origin: JSON.parse(String(row.origin)) as CodeSnapshotInput['sources'][number]['origin'] }) };
     }
 

@@ -308,7 +308,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         routes.push(
             { method: 'GET', path: ARTIFACT_ENDPOINTS.source, stream: (ctx) => {
                 const source = savedSources.get(ctx.url.searchParams.get('id') ?? '');
-                const artifact = source === null ? null : snapshots.sourceArtifact(source.diffId, source.revision, source.path);
+                const artifact = source?.fullFile !== true ? null : snapshots.sourceArtifact(source.diffId, source.revision, source.path);
                 const bytes = artifact === null ? null : snapshots.bytes(artifact.hash);
                 ctx.res.writeHead(bytes === null ? 404 : 200, { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff' });
                 ctx.res.end(bytes ?? 'Full source was not imported.');

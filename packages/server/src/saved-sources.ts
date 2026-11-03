@@ -26,7 +26,13 @@ export class SavedSources {
         let data: unknown; try { data = JSON.parse(String(row.data)); } catch { return null; }
         const parsed = savedSourceSchema.safeParse(data);
         if (!parsed.success || digest(parsed.data.text) !== parsed.data.hash) return null;
-        return parsed.data;
+        const source = parsed.data;
+        if (this.snapshots === undefined || source.fullFile === true) return source;
+        const artifact = this.snapshots.sourceArtifact(source.diffId, source.revision, source.path);
+        if (artifact == null || artifact.kind === 'binary') return source;
+        const full = this.snapshots.source(source.diffId, source.revision, source.path);
+        if (full?.split('\n').slice(source.start - 1, source.end).join('\n') !== source.text) return source;
+        return { ...source, fullFile: true, ...(artifact.origin === undefined ? {} : { origin: artifact.origin }) };
     }
     async file(diff: PrDiff, file: FileDiff): Promise<FileContent | null> {
         if (this.snapshots?.forDiff(diff.diffId) != null) return this.snapshots.file(diff, file.fileId);
