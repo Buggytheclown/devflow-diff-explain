@@ -127,6 +127,17 @@ describe('CLI против сервера', () => {
         return file;
     }
 
+    it('схема снимка требует только исходные поля, а не механические значения по умолчанию', async () => {
+        const result = await sherpa('snapshot', 'schema');
+        expect(result.code).toBe(0);
+        const schema = JSON.parse(result.stdout) as { required: string[]; properties: { files: { items: { required: string[] } } } };
+        expect(schema.required).toEqual(['format', 'project', 'diffId', 'baseCommit', 'headCommit', 'capturedAt', 'files']);
+        expect(schema.properties.files.items.required).toEqual(['path', 'changeType', 'before', 'after']);
+        const sources = await sherpa('sources', 'schema');
+        expect(sources.code).toBe(0);
+        expect((JSON.parse(sources.stdout) as { required: string[] }).required).toEqual(['format', 'project', 'codeSnapshotId', 'sources']);
+    });
+
     it('up находит живой сервер, не открывает новую вкладку и печатает ссылку с инструкцией', async () => {
         const running = await start();
         const opened: string[] = [];

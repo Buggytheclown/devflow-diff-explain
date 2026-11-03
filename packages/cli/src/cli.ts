@@ -62,7 +62,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
         const command = parseArgs(argv);
         switch (command.kind) {
             case 'artifact-schema':
-                io.out(JSON.stringify(z.toJSONSchema(command.sources ? sourcesInputSchema : codeSnapshotInputSchema), null, 2));
+                io.out(JSON.stringify(z.toJSONSchema(command.sources ? sourcesInputSchema : codeSnapshotInputSchema, { io: 'input' }), null, 2));
                 return 0;
             case 'artifact-import': {
                 const data = command.sources ? sourcesInputSchema.parse(JSON.parse(await fs.readFile(command.file, 'utf8')) as unknown) : codeSnapshotInputSchema.parse(JSON.parse(await fs.readFile(command.file, 'utf8')) as unknown);
