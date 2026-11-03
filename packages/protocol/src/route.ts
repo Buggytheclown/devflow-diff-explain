@@ -142,7 +142,7 @@ export const routeStopSchema = z.object({
     id: z.string().min(1),
     /** Позиция в плане, с 1. Порядок массива `stops` — триаж (по убыванию важности). */
     planIndex: z.number().int().positive(),
-    tier: routeTierSchema,
+    tier: routeTierSchema.optional(),
     title: z.string().min(1).max(300),
     status: routeStopStatusSchema,
 /**
@@ -152,22 +152,22 @@ export const routeStopSchema = z.object({
      */
     paragraph: z.string().nullable(),
     /** Связка-переход к следующему стопу; отдельная от абзаца, может отсутствовать и у готового стопа. */
-    bridge: z.string().nullable(),
-    anchors: z.array(routeAnchorSchema),
+    bridge: z.string().nullable().optional(),
+    anchors: z.array(routeAnchorSchema).optional(),
     storyEvidence: storyEvidenceBlockSchema.optional(),
     guidedFiles: z.array(guidedFileSchema).optional(),
     example: readableExampleSchema.nullable().optional(),
     relatedFiles: z.array(z.object({ fileId: hostIdSchema, path: relativeCodePathSchema })).optional(),
     nodeIds: z.array(z.string().min(1)).optional(),
-    tests: z.array(routeTestClaimSchema),
+    tests: z.array(routeTestClaimSchema).optional(),
     /** Сколько утверждений дайджеста отбросил валидатор («2 claims dropped — no matching test»). */
-    droppedClaims: z.number().int().min(0),
+    droppedClaims: z.number().int().min(0).optional(),
     /** Ревьюер-читаемые пометки валидатора на языке снапшота: «диапазон уехал в стоп 02» и т. п. */
     validationNotes: z.array(z.string()),
     /** Провенанс секции, если отличается от снапшота (агент сменился по ходу генерации, `docs/spec.md`). */
     provenance: routeProvenanceSchema.nullable(),
     /** null — стоп не затронут пушем или снапшот первый (сравнивать не с чем). */
-    change: routeStopChangeSchema.nullable(),
+    change: routeStopChangeSchema.nullable().optional(),
 });
 export type RouteStop = z.infer<typeof routeStopSchema>;
 
@@ -199,6 +199,7 @@ export type RouteCarried = z.infer<typeof routeCarriedSchema>;
  * каждую (пере)генерацию; сервер хранит все, текущий — один.
  */
 const routeSnapshotBase = z.object({
+    codeSnapshotId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     presentation: z.enum(['legacy', 'story']).optional(),
     storyContractVersion: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]).optional(),
     summaryEvidence: storyEvidenceBlockSchema.optional(),
@@ -213,7 +214,7 @@ const routeSnapshotBase = z.object({
     /** От какого снапшота перенесён прогресс и относительно какого посчитаны `stops[].change`; null — первый. */
     previousSnapshotId: z.string().nullable(),
     /** Итог переноса прогресса; null — переносить было не от чего. */
-    carried: routeCarriedSchema.nullable(),
+    carried: routeCarriedSchema.nullable().optional(),
     /**
      * Summary PR словарём описания остановки (профиль `stop`, без бюджета длины). Приезжает целиком
      * со скелетом: токен-стриминга в петле нет (`docs/protocol.md §6`).
@@ -432,11 +433,11 @@ export const architectureOverviewResultSchema = z.object({
         id: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/).optional(),
         title: z.string().trim().min(1).max(160), paragraph: z.string().trim().min(1), evidence: rawStoryEvidenceBlockSchema,
         nodeIds: z.array(z.string().min(1)).max(120), files: z.array(relativeCodePathSchema).min(1),
-        relatedFiles: z.array(relativeCodePathSchema).max(100),
+        relatedFiles: z.array(relativeCodePathSchema).max(100).default([]),
     }).strict()).min(1).max(100),
 }).strict();
 /** Агент сдаёт файлы по путям; приложение распределяет их по принятым блокам. */
-const explainedFileResultSchema = z.object({
+export const explainedFileResultSchema = z.object({
     path: relativeCodePathSchema, explanation: z.string().trim().min(1),
     example: rawReadableExampleSchema.nullable().optional(), annotations: z.array(guidedAnnotationSchema).optional(),
 }).strict();
@@ -472,6 +473,11 @@ export const allFilesWorkerResultSchema = z.object({
     })).optional(),
 }).strict().refine((value) => (value.files?.length ?? 0) > 0 || value.overview !== undefined || value.update !== undefined,
     'Return files or an overview update.');
+/** Envelope проверяется целиком; содержимое каждого файла — отдельно для частичной приёмки. */
+export const checkpointEnvelopeSchema = z.object({ ...allFilesWorkerResultSchema.shape, files: z.array(z.unknown()).optional() }).strict()
+    .refine((value) => (value.files?.length ?? 0) > 0 || value.overview !== undefined || value.update !== undefined, 'Return files or an overview update.')
+    .refine((value) => value.overview === undefined || value.update === undefined, 'Use overview or update in one checkpoint.');
+export const explainedFileWorkerResultSchema = allFilesWorkerResultSchema.shape.files.unwrap().element;
 export type StorySectionResult = z.infer<typeof storySectionResultSchema>;
 
 /** Точный текст для контекста вопроса; одинаковое представление на сервере и в UI. */

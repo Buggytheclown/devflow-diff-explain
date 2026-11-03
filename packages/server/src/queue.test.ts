@@ -252,7 +252,7 @@ describe('очередь с арендой', () => {
     });
 
     describe('сдача результата', () => {
-        it('результат принимается, повторный complete — noop', () => {
+        it('результат принимается, повторный complete возвращает квитанцию', () => {
             const task = enqueue();
             takeNext('w-1');
 
@@ -263,7 +263,7 @@ describe('очередь с арендой', () => {
             expect(queue.getTask(task.id)).toMatchObject({ status: 'done', result: 'готово', workerId: null });
 
             const repeated = queue.complete('w-1', task.id, 'готово');
-            expect(repeated.kind).toBe('noop');
+            expect(repeated.kind).toBe('accepted');
             expect(queue.fail('w-1', task.id, 'передумал').kind).toBe('noop');
         });
 

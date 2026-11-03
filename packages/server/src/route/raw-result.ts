@@ -58,7 +58,10 @@ export function parseResult<T>(rawText: string, schema: z.ZodType<T>, label: str
 
 /** Ошибки схемы в том же формате, что и семантические: `путь: что не так`. */
 function schemaErrors(error: z.ZodError, label: string): string[] {
-    return error.issues.map((issue) => `${label}${formatPath(issue.path)}: ${issue.message}`);
+    const describe = (issues: readonly z.core.$ZodIssue[]): string[] => issues.flatMap((issue) => issue.code === 'invalid_union'
+        ? issue.errors.flatMap(describe)
+        : [`${label}${formatPath(issue.path)}: ${issue.message}`]);
+    return [...new Set(describe(error.issues))];
 }
 
 function formatPath(path: readonly PropertyKey[]): string {

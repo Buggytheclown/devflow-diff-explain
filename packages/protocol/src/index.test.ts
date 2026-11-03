@@ -441,10 +441,10 @@ describe('чат и заметки', () => {
 });
 
 describe('итерации и снапшоты в UI-контракте', () => {
-    it('выбор диффа: без параметров, по итерации или срезом; половина среза и смесь отбиваются', () => {
+    it('выбор импортированного диффа: активный или по diffId; вычисляемый срез недоступен', () => {
         expect(uiReviewDiffRequestSchema.safeParse({}).success).toBe(true);
         expect(uiReviewDiffRequestSchema.safeParse({ diffId: 'iter-2' }).success).toBe(true);
-        expect(uiReviewDiffRequestSchema.safeParse({ base: 'iter-1', head: 'iter-2' }).success).toBe(true);
+        expect(uiReviewDiffRequestSchema.safeParse({ base: 'iter-1', head: 'iter-2' }).success).toBe(false);
         expect(uiReviewDiffRequestSchema.safeParse({ base: 'iter-1' }).success).toBe(false);
         expect(uiReviewDiffRequestSchema.safeParse({ diffId: 'iter-2', base: 'iter-1', head: 'iter-2' }).success).toBe(
             false,
@@ -503,8 +503,7 @@ describe('локаль, онбординг, обновление', () => {
             theme: 'auto',
             arcanum: false,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
+            generationLocale: 'auto',
         });
         expect(uiSettingsSchema.safeParse({ locale: 'de' }).success).toBe(false);
         // Старый файл настроек с явной темой читается как есть, размер текста в нём отсутствует.
@@ -514,12 +513,12 @@ describe('локаль, онбординг, обновление', () => {
         expect(uiSettingsPatchSchema.parse({ theme: 'light' })).toEqual({ theme: 'light' });
         expect(uiSettingsPatchSchema.parse({ textSize: 'l' })).toEqual({ textSize: 'l' });
         expect(uiSettingsPatchSchema.safeParse({ textSize: 'm', theme: 'auto' }).success).toBe(true);
-        expect(uiSettingsSchema.safeParse({ onboarding: { completedAt: null, step: -1 } }).success).toBe(false);
-        expect(uiSettingsSchema.safeParse({ updates: { dismissedVersion: 'latest' } }).success).toBe(false);
+        expect(uiSettingsSchema.parse({ onboarding: { step: -1 } })).not.toHaveProperty('onboarding');
+        expect(uiSettingsSchema.parse({ updates: { dismissedVersion: 'latest' } })).not.toHaveProperty('updates');
 
         // Патч одного поля не подставляет дефолты остальных — иначе «не трогай» стало бы «сбрось».
         expect(uiSettingsPatchSchema.parse({ locale: 'en' })).toEqual({ locale: 'en' });
-        expect(uiSettingsPatchSchema.safeParse({ onboarding: { step: 3 } }).success).toBe(false);
+        expect(uiSettingsPatchSchema.parse({ generationLocale: 'en' })).toEqual({ generationLocale: 'en' });
     });
 
     it('провенанс: locale необязателен на входе (старые снапшоты) и null на выходе', () => {
@@ -592,8 +591,7 @@ describe('JSON-схемы', () => {
             'workerNextResponse',
             'taskCompleteRequest',
             'serverManifest',
-            'routeSkeletonResult',
-            'routeSectionResult',
+            'allFilesResult',
             'routeSnapshot',
         ]) {
             const schema = schemas[name] as Record<string, unknown> | undefined;

@@ -1,19 +1,16 @@
 import type {
-    AgentNote,
     ChatAnchor,
     ChatExplanation,
     ChatExchange,
     ChatExchangeStatus,
-    HostId,
     Locale,
     UiChatResponse,
 } from '@sherpa/protocol';
-import { agentNoteSchema, chatExplanationSchema, chatAnchorSchema, chatExchangeSchema, uiChatResponseSchema } from '@sherpa/protocol';
+import { chatExplanationSchema, chatAnchorSchema, chatExchangeSchema, uiChatResponseSchema } from '@sherpa/protocol';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
-import { transaction } from './db.js';
-import type { IterationMap } from './iterations/index.js';
-import { LEGACY_DIFF_ID } from './iterations/index.js';
+import { afterDatabaseCommit, transaction } from './db.js';
+import { LEGACY_DIFF_ID } from './legacy-identity.js';
 import type { TransactionalEnqueue } from './queue.js';
 
 /** Слушатель изменений чата; его забирает SSE-канал UI (`UI_CHAT_EVENT`). */
@@ -21,7 +18,6 @@ export type ChatListener = (revision: number) => void;
 
 export interface ChatStoreOptions {
     readonly db: SherpaDatabase;
-    readonly createNotes?: boolean;
     readonly now?: () => Date;
 }
 
@@ -40,26 +36,6 @@ interface ExchangeRow extends SqlRow {
     locale: string | null;
     created_at: string;
     updated_at: string;
-}
-
-interface NoteRow extends SqlRow {
-    id: number;
-    exchange_id: number;
-    /** Текущее место заметки: после пуша переезжает на активную итерацию. */
-    anchor: string;
-    text: string;
-    /** Коммит текущего якоря; у исходного места свой — `origin_commit`. */
-    commit_hash: string | null;
-    lost_anchor: number;
-    origin_anchor: string | null;
-    origin_commit: string | null;
-    created_at: string;
-}
-
-/** Итог переноса якорей одной пары итераций. */
-export interface NoteMigration {
-    readonly moved: number;
-    readonly lost: number;
 }
 
 /** Обмен вместе с серверными полями, которых нет в контракте (`taskId` уже несёт сам обмен). */
@@ -89,23 +65,13 @@ export class ChatStore {
         headCommit: string | null,
         enqueue: () => TransactionalEnqueue,
     ) => { exchange: ChatExchange; enqueued: TransactionalEnqueue } | null;
-    private readonly createNotes: boolean;
     private readonly txComplete: (taskId: number, answer: string) => boolean;
-    private readonly txAdoptLegacy: (activeDiffId: HostId) => number;
-    private readonly txMigrateNotes: (
-        fromDiffId: HostId,
-        toDiffId: HostId,
-        map: IterationMap,
-        fileIdOf: (path: string) => string | null,
-        toHeadCommit: string | null,
-    ) => NoteMigration;
 
     private revisionValue = 0;
     private closed = false;
 
     constructor(options: ChatStoreOptions) {
         this.db = options.db;
-        this.createNotes = options.createNotes ?? true;
         this.now = options.now ?? ((): Date => new Date());
         this.txAsk = transaction(this.db, (question, anchor, headCommit, locale, enqueue, explanation) =>
             this.askInTransaction(question, anchor, headCommit, locale, enqueue, explanation),
@@ -114,17 +80,7 @@ export class ChatStore {
             this.retryInTransaction(exchangeId, headCommit, enqueue),
         );
         this.txComplete = transaction(this.db, (taskId, answer) => this.completeInTransaction(taskId, answer));
-        this.txAdoptLegacy = transaction(this.db, (activeDiffId: HostId) => this.adoptLegacyInTransaction(activeDiffId));
-        this.txMigrateNotes = transaction(
-            this.db,
-            (
-                fromDiffId: HostId,
-                toDiffId: HostId,
-                map: IterationMap,
-                fileIdOf: (path: string) => string | null,
-                toHeadCommit: string | null,
-            ) => this.migrateNotesInTransaction(fromDiffId, toDiffId, map, fileIdOf, toHeadCommit),
-        );
+
     }
 
     get revision(): number {
@@ -133,8 +89,7 @@ export class ChatStore {
 
     read(): UiChatResponse {
         const exchanges = this.exchangeRows().map((row) => toStoredExchange(row).exchange);
-        const notes = this.noteRows().map(toNote);
-        return uiChatResponseSchema.parse({ exchanges, notes, chatRevision: this.revisionValue });
+        return uiChatResponseSchema.parse({ exchanges, notes: [], chatRevision: this.revisionValue });
     }
 
     exchange(exchangeId: number): StoredChatExchange | null {
@@ -247,57 +202,6 @@ export class ChatStore {
         }
     }
 
-    /**
-     * Якоря заметок старого формата итерацию не называют (`LEGACY_DIFF_ID`): сервер считает их сделанными в
-     * активной. Строки не двигаются — меняется только `diffId`, у текущего якоря и у исходного.
-     * Идемпотентно: после усыновления таких заметок больше нет.
-     */
-    adoptLegacyAnchors(activeDiffId: HostId): number {
-        const adopted = this.txAdoptLegacy(activeDiffId);
-        if (adopted > 0) {
-            this.bump();
-        }
-        return adopted;
-    }
-
-/**
-     * Перенос якорей заметок с итерации `fromDiffId` на `toDiffId` по карте строк
-     * (docs/spec.md).
-     * Диапазон, которого пуш не касался, переезжает целиком; всё остальное — файл ушёл, строки
-     * переписаны, диапазон разъехался или файла нет в новом диффе — теряет якорь: `anchor` и его
-     * коммит остаются последними удачными, заметка уходит из кода и живёт в чате с пометкой.
-     *
-     * `origin` не трогается никогда. Идемпотентно по построению: перенесённая заметка стоит уже
-     * на `toDiffId`, а потерявшая якорь не мигрирует больше никогда.
-     */
-    migrateNotes(
-        fromDiffId: HostId,
-        toDiffId: HostId,
-        map: IterationMap,
-        /** Путь → id файла в новом диффе; null — файла там нет. */
-        fileIdOf: (path: string) => string | null,
-        /** Ревьюируемый коммит новой итерации: он же коммит перенесённого якоря. */
-        toHeadCommit: string | null,
-    ): NoteMigration {
-        if (fromDiffId === toDiffId) {
-            return { moved: 0, lost: 0 };
-        }
-        const result = this.txMigrateNotes(fromDiffId, toDiffId, map, fileIdOf, toHeadCommit);
-        if (result.moved + result.lost > 0) {
-            this.bump();
-        }
-        return result;
-    }
-
-    deleteNote(noteId: number): boolean {
-        const info = this.db.prepare('DELETE FROM agent_notes WHERE id = ?').run(noteId);
-        if (info.changes === 0) {
-            return false;
-        }
-        this.bump();
-        return true;
-    }
-
     subscribe(listener: ChatListener): () => void {
         if (this.closed) {
             return () => undefined;
@@ -382,73 +286,7 @@ export class ChatStore {
                  error = NULL, updated_at = ? WHERE id = ?`,
             )
             .run(answer, now, row.id);
-        if (this.createNotes && row.anchor !== null) {
-            const anchor = JSON.stringify(parseAnchor(row.anchor));
-            this.db
-                .prepare(
-                    `INSERT INTO agent_notes (
-                        exchange_id, anchor, text, commit_hash, lost_anchor, origin_anchor, origin_commit, created_at
-                     ) VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
-                )
-                .run(row.id, anchor, answer, row.head_commit, anchor, row.head_commit, now);
-        }
         return true;
-    }
-
-    private adoptLegacyInTransaction(activeDiffId: HostId): number {
-        let adopted = 0;
-        for (const row of this.noteRows()) {
-            const anchor = parseAnchor(row.anchor);
-            const origin = row.origin_anchor === null ? anchor : parseAnchor(row.origin_anchor);
-            if (anchor.diffId !== LEGACY_DIFF_ID && origin.diffId !== LEGACY_DIFF_ID) {
-                continue;
-            }
-            this.db
-                .prepare('UPDATE agent_notes SET anchor = ?, origin_anchor = ? WHERE id = ?')
-                .run(
-                    JSON.stringify(withDiffId(anchor, activeDiffId)),
-                    JSON.stringify(withDiffId(origin, activeDiffId)),
-                    row.id,
-                );
-            adopted += 1;
-        }
-        return adopted;
-    }
-
-    private migrateNotesInTransaction(
-        fromDiffId: HostId,
-        toDiffId: HostId,
-        map: IterationMap,
-        fileIdOf: (path: string) => string | null,
-        toHeadCommit: string | null,
-    ): NoteMigration {
-        let moved = 0;
-        let lost = 0;
-        for (const row of this.noteRows()) {
-            if (row.lost_anchor !== 0) {
-                continue;
-            }
-            const anchor = parseAnchor(row.anchor);
-            if (anchor.diffId !== fromDiffId) {
-                continue;
-            }
-
-            const carried = carryAnchor(anchor, toDiffId, map, fileIdOf);
-            if (carried === null) {
-                this.db.prepare('UPDATE agent_notes SET lost_anchor = 1 WHERE id = ?').run(row.id);
-                lost += 1;
-                continue;
-            }
-            this.db
-                .prepare('UPDATE agent_notes SET anchor = ?, commit_hash = ? WHERE id = ?')
-                .run(JSON.stringify(carried), toHeadCommit, row.id);
-            moved += 1;
-        }
-        return { moved, lost };
-    }
-
-    private noteRows(): NoteRow[] {
-        return this.db.prepare('SELECT * FROM agent_notes ORDER BY id').all() as NoteRow[];
     }
 
     private exchangeRows(): ExchangeRow[] {
@@ -471,12 +309,10 @@ export class ChatStore {
     }
 
     private bump(): void {
-        this.revisionValue += 1;
-        if (!this.closed) {
-            for (const listener of [...this.listeners]) {
-                listener(this.revisionValue);
-            }
-        }
+        afterDatabaseCommit(this.db, () => {
+            this.revisionValue += 1;
+            if (!this.closed) for (const listener of this.listeners) afterDatabaseCommit(this.db, () => { listener(this.revisionValue); });
+        });
     }
 
     private nowIso(): string {
@@ -500,52 +336,6 @@ function toStoredExchange(row: ExchangeRow): StoredChatExchange {
         updatedAt: row.updated_at,
     });
     return { exchange, headCommit: row.head_commit };
-}
-
-function toNote(row: NoteRow): AgentNote {
-    const anchor = parseAnchor(row.anchor);
-    return agentNoteSchema.parse({
-        id: row.id,
-        exchangeId: row.exchange_id,
-        anchor,
-        text: row.text,
-        lostAnchor: row.lost_anchor !== 0,
-        // Заметка, записанная до миграции 014, стоит там же, где её закрепили.
-        origin: {
-            commit: row.origin_commit ?? row.commit_hash,
-            anchor: row.origin_anchor === null ? anchor : parseAnchor(row.origin_anchor),
-        },
-        createdAt: row.created_at,
-    });
-}
-
-function withDiffId(anchor: ChatAnchor, diffId: HostId): ChatAnchor {
-    return anchor.diffId === diffId ? anchor : { ...anchor, diffId };
-}
-
-/**
- * Якорь в координатах новой итерации; null — переносить некуда. Условия потери: файл из PR ушёл,
- * пуш задел хоть одну строку диапазона, диапазон разъехался на несколько кусков (переносить его
- * в один якорь нечестно) или пути нет в патче новой итерации.
- */
-function carryAnchor(
-    anchor: ChatAnchor,
-    toDiffId: HostId,
-    map: IterationMap,
-    fileIdOf: (path: string) => string | null,
-): ChatAnchor | null {
-    if (map.fileStatus(anchor.path) === 'removed') {
-        return null;
-    }
-    const mapped = map.mapRange(anchor.path, anchor.side, { start: anchor.start, end: anchor.end });
-    const target = mapped.carried[0];
-    if (mapped.touched.length > 0 || mapped.carried.length !== 1 || target === undefined) {
-        return null;
-    }
-    const fileId = fileIdOf(anchor.path);
-    return fileId === null
-        ? null
-        : { ...anchor, diffId: toDiffId, fileId, start: target.start, end: target.end };
 }
 
 function parseAnchor(raw: string): ChatAnchor {

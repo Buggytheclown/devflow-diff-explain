@@ -313,7 +313,7 @@ describe('запись payload на диск', () => {
         const [guide, pr] = input.contextFiles;
         expect(guide).toMatch(/shared[/\\]guides[/\\]skeleton-guide-[0-9a-f]{8}\.md$/);
         expect(pr?.startsWith(sharedDir)).toBe(true);
-        expect(path.basename(pr ?? '')).toBe('target.json');
+        expect(path.basename(pr ?? '')).toMatch(/^target-[a-f0-9]{8}\.json$/);
         expect(fs.readFileSync(guide ?? '', 'utf8')).toContain('PR');
         const target = JSON.parse(fs.readFileSync(pr ?? '', 'utf8')) as { files: { path: string; savedPatch: string; savedPatchBytes: number }[]; optionalFullDiff: string };
         expect(target.files.map((file) => file.path)).toEqual(context().diff.files.map((file) => file.path));
@@ -363,7 +363,7 @@ describe('запись payload на диск', () => {
         expect(first.contextFiles[1]).toBe(skeleton.contextFiles[1]);
         expect(second.contextFiles[1]).toBe(skeleton.contextFiles[1]);
         expect(first.contextFiles[0]).toBe(second.contextFiles[0]);
-        expect(fs.readdirSync(path.dirname(skeleton.contextFiles[1] ?? ''))).toEqual(['patches', 'pr-diff.md', 'saved-patch-index.json', 'target.json']);
+        expect(fs.readdirSync(path.dirname(skeleton.contextFiles[1] ?? ''))).toEqual(['patches', 'pr-diff.md', 'saved-patch-index.json', expect.stringMatching(/^target-[a-f0-9]{8}\.json$/)]);
     });
 
     it('контекст на диске урезан по бюджету билдера', () => {

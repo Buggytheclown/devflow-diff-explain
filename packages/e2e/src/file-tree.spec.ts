@@ -1,5 +1,6 @@
 import { architectureStoryFixture } from '@sherpa/fixtures';
-import { openBlocks, test, expect } from './sherpa-fixture.js';
+import { uiReviewDiffResponseSchema } from '@sherpa/protocol';
+import { openBlocks, test, expect, sherpaAuth } from './sherpa-fixture.js';
 
 test('заголовки блоков и настоящее дерево: порядок, строки, пояснения и шапки диффа', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium');
@@ -7,6 +8,10 @@ test('заголовки блоков и настоящее дерево: пор
     await page.goto(server.url); await server.worker.register('codex', 'ru');
     const outline = await server.worker.next(); await server.worker.complete(outline.taskId ?? 0, JSON.stringify(fixture.outline));
     await openBlocks(page);
+    const response = await page.request.get(new URL('/api/ui/review/diff', server.url).href, { headers: sherpaAuth(server) });
+    expect(response.status()).toBe(200);
+    const imported = uiReviewDiffResponseSchema.parse(await response.json()).diff;
+    expect(imported.files.map((file) => file.path)).toEqual(fixture.diff.files.map((file) => file.path));
     const nav = page.locator('.story-nav');
     const firstLink = nav.getByRole('button', { name: fixture.first.path, exact: true });
     await expect(firstLink.locator('.story-tree-explanations')).toBeEmpty();
@@ -20,7 +25,7 @@ test('заголовки блоков и настоящее дерево: пор
         const group = nav.locator('.story-nav-block').nth(index);
         expect(await group.locator('.story-nav-file').evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label')))).toEqual((block.guidedFiles ?? []).map((file) => file.path));
         for (const file of block.guidedFiles ?? []) {
-            const actual = fixture.diff.files.find((entry) => entry.fileId === file.fileId);
+            const actual = imported.files.find((entry) => entry.fileId === file.fileId);
             if (actual === undefined) throw new Error('Missing file');
             const row = group.getByRole('button', { name: file.path, exact: true });
             await expect(row).toHaveAttribute('type', 'button');
@@ -38,7 +43,7 @@ test('заголовки блоков и настоящее дерево: пор
     await expect(card.locator('header .story-file-status')).toBeVisible();
     await expect(card.locator('.diff-hunk-header').first()).toHaveText(/^@@ -\d+,\d+ \+\d+,\d+ @@$/);
     await expect(card.locator('.diff-row--add,.diff-row--del')).toHaveCount(fixture.first.additions + fixture.first.deletions);
-    const added = fixture.diff.files.find((file) => file.changeType === 'add' && file.patch?.includes('@@'));
+    const added = imported.files.find((file) => file.changeType === 'add' && file.patch?.includes('@@'));
     if (added === undefined) throw new Error('Missing added file');
     await nav.getByRole('button', { name: added.path, exact: true }).click();
     const addedCard = page.locator(`[data-reading-file="${added.fileId}"]`);

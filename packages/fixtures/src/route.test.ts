@@ -100,7 +100,7 @@ function stopById(snapshot: RouteSnapshot, id: string): RouteStop {
 function coverageByTier(snapshot: RouteSnapshot, files: Map<string, ChangedFile>) {
     const owner = new Map<string, RouteTier>();
     for (const stop of snapshot.stops) {
-        for (const anchor of stop.anchors) {
+        for (const anchor of stop.anchors ?? []) {
             const file = files.get(anchor.path);
             expect(file, `якорь стопа ${stop.id} ведёт в файл вне диффа: ${anchor.path}`).toBeDefined();
             expect(anchor.fileId).toBe(file?.fileId);
@@ -114,7 +114,7 @@ function coverageByTier(snapshot: RouteSnapshot, files: Map<string, ChangedFile>
                 ).toBe(true);
                 const key = `${anchor.path}:${anchor.side}:${String(line)}`;
                 if (!owner.has(key)) {
-                    owner.set(key, stop.tier);
+                    owner.set(key, stop.tier ?? 'medium');
                 }
             }
         }
@@ -213,7 +213,7 @@ describe('маршрут фикстуры medium', () => {
     });
 
     it('свёрнутые якоря стоят на машинных строках лок-файла', () => {
-        const collapsed = snapshot.stops.flatMap((stop) => stop.anchors.filter((anchor) => anchor.collapsed));
+        const collapsed = snapshot.stops.flatMap((stop) => (stop.anchors ?? []).filter((anchor) => anchor.collapsed));
         expect(collapsed.length).toBeGreaterThanOrEqual(1);
         expect(collapsed.length).toBeLessThanOrEqual(2);
         for (const anchor of collapsed) {
@@ -223,14 +223,14 @@ describe('маршрут фикстуры medium', () => {
 
     it('дайджест — 12 утверждений с якорями в тест-файлы диффа', () => {
         const digest = stopById(snapshot, 's04');
-        expect(digest.tests.length).toBe(12);
+        expect((digest.tests ?? []).length).toBe(12);
         expect(digest.droppedClaims).toBe(2);
         // Пометка валидатора называет файл, из-за которого утверждения отброшены.
         expect(digest.validationNotes.join(' ')).toContain('services/orders/src/domain/__tests__/factories.ts');
-        expect(digest.tests.filter((claim) => claim.kind === 'weakened').length).toBeGreaterThanOrEqual(1);
-        expect(digest.tests.filter((claim) => claim.kind === 'uncovered').length).toBeGreaterThanOrEqual(1);
+        expect((digest.tests ?? []).filter((claim) => claim.kind === 'weakened').length).toBeGreaterThanOrEqual(1);
+        expect((digest.tests ?? []).filter((claim) => claim.kind === 'uncovered').length).toBeGreaterThanOrEqual(1);
 
-        for (const claim of digest.tests) {
+        for (const claim of digest.tests ?? []) {
             if (claim.anchor === null) {
                 // Якорь отсутствует только у `uncovered`: тестового якоря у такого утверждения нет.
                 expect(claim.kind).toBe('uncovered');
@@ -356,7 +356,7 @@ describe('сырые выводы модели', () => {
                         `${anchor.path}:${anchor.side}:${String(anchor.start)}-${String(anchor.end)}:${String(anchor.collapsed ?? false)}`,
                 ),
             ).toEqual(
-                stop?.anchors.map(
+                stop?.anchors?.map(
                     (anchor) =>
                         `${anchor.path}:${anchor.side}:${String(anchor.start)}-${String(anchor.end)}:${String(anchor.collapsed)}`,
                 ),
@@ -368,14 +368,14 @@ describe('сырые выводы модели', () => {
 
             // Дайджест: модель отдаёт всё, снапшот несёт принятое, разница — ровно `droppedClaims`.
             const rawTests = rawStop?.tests ?? [];
-            expect(rawTests.length).toBe((stop?.tests.length ?? 0) + (stop?.droppedClaims ?? 0));
+            expect(rawTests.length).toBe((stop?.tests?.length ?? 0) + (stop?.droppedClaims ?? 0));
             const accepted = rawTests.filter((claim) => claim.testPath === undefined || paths.has(claim.testPath));
             expect(
                 accepted.map(
                     (claim) => `${claim.kind}|${claim.text}|${claim.testPath ?? ''}:${String(claim.testLine ?? 0)}`,
                 ),
             ).toEqual(
-                stop?.tests.map(
+                stop?.tests?.map(
                     (claim) =>
                         `${claim.kind}|${claim.text}|${claim.anchor?.path ?? ''}:${String(claim.anchor?.line ?? 0)}`,
                 ),
@@ -440,7 +440,7 @@ describe('маршрут второго захода', () => {
         expect(changed.map((stop) => stop.change?.kind)).toEqual(['changed', 'changed', 'new']);
         // Перенос прогресса и число нетронутых стопов обязаны сходиться: считаем по стопам
         // с якорями — «Прочее» перенос накрыть не может и в знаменателе не стоит.
-        const anchored = snapshot.stops.filter((stop) => stop.anchors.length > 0);
+        const anchored = snapshot.stops.filter((stop) => (stop.anchors ?? []).length > 0);
         expect(anchored.length).toBe(snapshot.carried?.total);
         expect(anchored.length - changed.length).toBe(snapshot.carried?.kept);
         for (const stop of changed) {
@@ -459,7 +459,7 @@ describe('маршрут второго захода', () => {
 
     it('якоря резолвятся против второй итерации и стоят только на изменённых строках', () => {
         for (const stop of snapshot.stops) {
-            for (const anchor of stop.anchors) {
+            for (const anchor of stop.anchors ?? []) {
                 const file = files.get(anchor.path);
                 expect(file, `якорь стопа ${stop.id} ведёт в файл вне второй итерации: ${anchor.path}`).toBeDefined();
                 expect(anchor.fileId).toBe(file?.fileId);
@@ -481,7 +481,7 @@ describe('маршрут второго захода', () => {
         expect(snapshot.summary).toContain('rejection-status.ts');
         expect(routeFixtures('medium')?.rawResultsV2?.skeleton.summary).toBe(snapshot.summary);
 
-        const claims = snapshot.stops.flatMap((stop) => stop.tests.map((claim) => claim.text));
+        const claims = snapshot.stops.flatMap((stop) => (stop.tests ?? []).map((claim) => claim.text));
         expect(claims.some((text) => text.includes('recordedAt'))).toBe(true);
         expect(claims.some((text) => text.includes('Маскирование PAN'))).toBe(false);
     });

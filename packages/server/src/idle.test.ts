@@ -7,7 +7,7 @@ import { DEFAULT_IDLE_SECONDS, formatIdlePeriod, IdleWatch, readIdleSeconds } fr
 import { readManifest } from './manifest.js';
 import { manifestPathFor } from './paths.js';
 import type { SherpaServer } from './server.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { makeTempSherpaDir, postJson, removeTempSherpaDir } from './test-support.js';
 
 const PR_KEY = 'arcanum-24680';

@@ -1,14 +1,13 @@
 import { validateArchitectureOverview } from './architecture-story.js';
 import { randomUUID } from 'node:crypto';
-import { FlowCoordinator } from './flow-coordinator.js';
 
 import type {
     HostId,
     Iteration,
     Locale,
     PrDiff,
-    PrMeta,
-    ReviewSource,
+    CapturedPr,
+    CodeReader,
     RouteProvenance,
     RouteSnapshot,
     UiRouteFillStopResponse,
@@ -18,8 +17,7 @@ import type {
     TaskCompleteResponse,
 } from '@sherpa/protocol';
 
-import { checkIndividualFiles, partitionCheckpoint, validateArchitectureCheckpoint } from './architecture-checkpoint.js';
-import { allFilesResultSchema } from '@sherpa/protocol';
+import { checkIndividualFiles, readCheckpoint, internalEvidence, validateArchitectureCheckpoint } from './architecture-checkpoint.js';
 import { RpcFailure } from './errors.js';
 import { resolveGenerationLocale } from './generation-locale.js';
 import type { IterationStore } from './iteration-store.js';
@@ -58,7 +56,7 @@ export interface RouteOrchestratorOptions {
     readonly queue: TaskQueue;
     readonly registry: WorkerRegistry;
     /** Ревью-хост PR; `null` — маршрут этому серверу негде взять. */
-    readonly host: ReviewSource | null;
+    readonly host: CodeReader | null;
     /** Каталог, которым единолично владеет `RoutePayloadWriter` (`routePayloadDirOf`). */
     readonly payloadDir: string;
     /** Общий контекст PR: методичка и дифф едут по стабильному пути, а не копией на задачу. */
@@ -75,11 +73,10 @@ export interface RouteOrchestratorOptions {
 }
 
 export class RouteOrchestrator {
-    private readonly flow: FlowCoordinator;
     private readonly store: RouteStore;
     private readonly queue: TaskQueue;
     private readonly registry: WorkerRegistry;
-    private readonly host: ReviewSource | null;
+    private readonly host: CodeReader | null;
     private readonly payload: RoutePayloadWriter;
     private readonly iterations: IterationStore | null;
     private readonly settings: Pick<SettingsStore, 'read'> | null;
@@ -98,7 +95,7 @@ export class RouteOrchestrator {
     /** Идущая загрузка активного диффа: параллельные вызовы делят один запрос к хосту. */
     private diffLoad: Promise<PrDiff> | null = null;
     /** Шапка PR для payload; `null` — хост её не отдал, маршрут строится по одному диффу. */
-    private meta: PrMeta | null = null;
+    private meta: CapturedPr | null = null;
 
     private unsubscribeQueue: (() => void) | null = null;
     private unsubscribeWorker: (() => void) | null = null;
@@ -110,7 +107,6 @@ export class RouteOrchestrator {
     private reconcileAgain = false;
 
     constructor(options: RouteOrchestratorOptions) {
-        this.flow = new FlowCoordinator({ store: options.store, queue: options.queue, dir: `${options.payloadDir}-flow`, shared: options.shared, loadDiff: (id) => this.ensureDiff(id) });
         this.store = options.store;
         this.queue = options.queue;
         this.registry = options.registry;
@@ -123,9 +119,9 @@ export class RouteOrchestrator {
 
     /** Подписки автомата и разовый прогрев. Зовётся один раз при сборке сервера. */
     start(): void {
-        this.flow.start();
+        for (const task of this.queue.listTasks()) if (task.type === 'route.diagram' && (task.status === 'queued' || task.status === 'leased')) this.queue.cancel(task.id);
         const state = this.store.read();
-        if (this.store.generationTaskEpoch() !== 7 && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
+        if (this.store.generationTaskEpoch() !== 8 && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
             const binding = [...this.store.bindings().values()].find((entry) => entry.diffId !== null);
             const pinned = state.phase === 'filling' ? state.snapshot?.diffId : binding?.diffId ?? this.store.generationDiffId();
             this.upgradingDiff = pinned ?? null;
@@ -154,7 +150,6 @@ export class RouteOrchestrator {
     }
 
     close(): void {
-        this.flow.close();
         this.closed = true;
         this.unsubscribeQueue?.();
         this.unsubscribeWorker?.();
@@ -236,7 +231,7 @@ export class RouteOrchestrator {
         if (this.host === null) {
             throw new RpcFailure(
                 'no_review_host',
-                'У этого PR нет хост-адаптера: маршрут строить не по чему.',
+                'Импортируйте снимок кода перед подготовкой разбора.',
             );
         }
 
@@ -258,7 +253,7 @@ export class RouteOrchestrator {
      */
     async fillStop(snapshotId: string, planIndex: number): Promise<UiRouteFillStopResponse['outcome']> {
         if (this.host === null) {
-            throw new RpcFailure('no_review_host', 'У этого PR нет хост-адаптера: маршрут строить не по чему.');
+            throw new RpcFailure('no_review_host', 'Импортируйте снимок кода перед подготовкой разбора.');
         }
 
         const state = this.store.read();
@@ -335,7 +330,7 @@ export class RouteOrchestrator {
     }
 
     diffIdForTask(taskId: number): string | null {
-        return this.store.bindings().get(taskId)?.diffId ?? this.flow.diffIdForTask(taskId);
+        return this.store.bindings().get(taskId)?.diffId ?? null;
     }
 
     /**
@@ -343,7 +338,7 @@ export class RouteOrchestrator {
      * `complete`). Чужие типы задач возвращают `null` — приёмка `echo` не меняется.
      */
     acceptResult(task: TaskRecord, result: string): TaskResultAcceptance | null {
-        if (task.type === 'route.diagram') return this.flow.acceptResult(task, result);
+        if (task.type === 'route.diagram') return { kind: 'rejected', errors: ['Legacy diagram task stopped. Use worker next for the current preparation.'] };
         if (task.type === 'route.skeleton' || (task.type === 'route.prepare' && this.store.bindings().get(task.id)?.kind === 'skeleton')) {
             return this.acceptSkeleton(task, result);
         }
@@ -367,21 +362,14 @@ export class RouteOrchestrator {
         }
 
         const locale = this.skeletonLocale();
-        let initial: { overview?: unknown; files?: unknown };
-        try { initial = JSON.parse(result) as typeof initial; } catch { initial = {}; }
-        const split = partitionCheckpoint(result);
-        const validation = validateArchitectureOverview(initial.overview === undefined ? result : JSON.stringify(initial.overview), diff);
-        if (!validation.ok) {
-            return { kind: 'rejected', errors: validation.errors };
-        }
-
-        if (initial.overview !== undefined) {
-            const envelope = allFilesResultSchema.safeParse(JSON.parse(split?.structure ?? result));
-            if (!envelope.success) return { kind: 'rejected', errors: [envelope.error.message] };
-        }
+        const parsed = readCheckpoint(result);
+        if (!parsed.ok) return { kind: 'rejected', errors: parsed.errors };
+        const overview = parsed.value.body.overview;
+        if (overview === undefined) return { kind: 'rejected', errors: ['The first checkpoint needs overview with architecture, blocks and every changed file assigned.'] };
+        const validation = validateArchitectureOverview(JSON.stringify(internalEvidence(overview)), diff);
+        if (!validation.ok) return { kind: 'rejected', errors: validation.errors };
         const skeleton = validation.value;
-        if (initial.files !== undefined && split === null) return { kind: 'rejected', errors: ['Return unique file paths and a valid files array.'] };
-        const part = checkIndividualFiles(split?.files ?? [], diff, skeleton.stops);
+        const part = checkIndividualFiles(parsed.value.files, diff, skeleton.stops);
         for (const filling of part.files) {
             const block = skeleton.stops.find((entry) => entry.planIndex === filling.planIndex);
             if (block !== undefined) block.guidedFiles = block.guidedFiles?.map((file) => filling.guidedFiles?.find((ready) => ready.fileId === file.fileId) ?? file);
@@ -424,20 +412,18 @@ export class RouteOrchestrator {
         }
 
         const locale = snapshotLocale(snapshot);
-        const split = partitionCheckpoint(result);
-        let structural = split?.structure ?? result;
-        if (split !== null) {
-            const envelope = JSON.parse(structural) as { overview?: unknown; update?: unknown };
-            if (envelope.overview === undefined && envelope.update === undefined) structural = JSON.stringify({ ...envelope, update: { summary: snapshot.summary } });
-        }
-        const checked = validateArchitectureCheckpoint(structural, snapshot, diff, binding.assignment, this.store.flowBeforeRetry(snapshot.snapshotId));
+        const parsed = readCheckpoint(result);
+        if (!parsed.ok) return { kind: 'rejected', errors: parsed.errors };
+        const split = parsed.value;
+        const requireFlow = snapshot.flow?.status === 'pending' && snapshot.flow.taskId === task.id;
+        const checked = validateArchitectureCheckpoint(split.structure, snapshot, diff, binding.assignment, this.store.flowBeforeRetry(snapshot.snapshotId), requireFlow, true);
         if (!checked.ok) return { kind: 'rejected', errors: checked.errors };
         const provenance = provenanceOf(this.registry.status(), locale);
-        const part = split === null ? null : checkIndividualFiles(split.files, diff, checked.value.overview?.stops ?? snapshot.stops, binding.assignment);
-        if (part !== null && part.accepted.length === 0 && part.errors.length > 0 && split !== null && !(JSON.parse(split.structure) as { overview?: unknown }).overview && !(JSON.parse(split.structure) as { update?: unknown }).update) return { kind: 'rejected', errors: part.errors.flatMap((entry) => entry.errors) };
-        return { kind: 'accepted', ...(part === null ? {} : { receipt: partialReceipt(part) }), persist: () => {
-            if (part !== null) this.store.recordFileOutcome(task.id, part);
-            this.store.applyCheckpoint(checked.value.overview, part?.files ?? checked.value.files, provenance);
+        const part = checkIndividualFiles(split.files, diff, checked.value.overview?.stops ?? snapshot.stops, binding.assignment);
+        if (part.accepted.length === 0 && part.errors.length > 0 && split.body.overview === undefined && split.body.update === undefined) return { kind: 'rejected', errors: part.errors.flatMap((entry) => entry.errors) };
+        return { kind: 'accepted', receipt: partialReceipt(part), persist: () => {
+            this.store.recordFileOutcome(task.id, part);
+            this.store.applyCheckpoint(checked.value.overview, part.files, provenance);
         }, onCommitted: () => { this.reconcile(); } };
     }
 
@@ -494,6 +480,7 @@ export class RouteOrchestrator {
         this.cancelOrphanRouteTasks();
 
         const state = this.store.read();
+        if (state.snapshot !== null && state.phase !== 'reading') this.reconcileDiagram(state.snapshot);
         if (state.phase === 'reading') {
             this.reconcileSkeleton();
             return;
@@ -551,6 +538,29 @@ export class RouteOrchestrator {
         const current = this.store.current();
         if (current?.stops.every((block) => block.status === 'ready')) this.store.markReady();
         else if (!current?.stops.flatMap((block) => block.guidedFiles ?? []).some((file) => file.status === 'queued' || file.status === 'filling')) this.store.fail('Часть пояснений не готова. Повторите незавершённый блок.', null);
+    }
+
+    /** Повтор схемы — обычная подготовка с требованием вернуть архитектуру. */
+    private reconcileDiagram(snapshot: RouteSnapshot): void {
+        const flow = snapshot.flow;
+        if (flow?.status !== 'pending') return;
+        const unavailable = () => { this.store.setFlow(snapshot.snapshotId, { status: 'unavailable', reason: snapshotLocale(snapshot) === 'ru'
+            ? 'Схема недоступна. Описание и файлы сохранены; повторите построение.'
+            : 'Architecture unavailable. The explanation and files are saved; retry preparation.' }); };
+        if (snapshot.storyContractVersion !== 6) { unavailable(); return; }
+        if (flow.taskId !== null) {
+            const task = this.queue.getTask(flow.taskId);
+            if (task === null || task.status === 'failed' || task.status === 'cancelled' || task.status === 'done') unavailable();
+            return;
+        }
+        const diff = this.diffOf(snapshot.diffId);
+        if (diff === null) { unavailable(); return; }
+        const input = this.payload.sectionTask({ diff, meta: this.meta, locale: snapshotLocale(snapshot), version: 6,
+            introduction: snapshot.summary, introductionEvidence: snapshot.summaryEvidence,
+            flow: this.store.flowBeforeRetry(snapshot.snapshotId) ?? undefined }, [], snapshot.stops, this.store.stopIntents());
+        this.store.enqueueTask(this.queue, { ...input, instructions: `Help repair or refine the PR architecture. Choose your research using ordinary PR/code tools. Return update.flow and any block changes needed to preserve architecture-block-file links. You may correct files in the same checkpoint.\n${input.instructions}` },
+            { kind: 'section', diffId: snapshot.diffId, planIndexes: [] },
+            (id) => { this.store.setFlow(snapshot.snapshotId, { ...flow, taskId: id }); });
     }
 
     /** Фаза `reading`: живём ровно до судьбы задачи скелета. */
@@ -648,8 +658,7 @@ export class RouteOrchestrator {
         const outer = this.reconciling;
         this.reconciling = true;
         try {
-            const record = this.queue.enqueue(input);
-            this.store.bindTask(record.id, kind, diffId, planIndexes, assignment);
+            this.store.enqueueTask(this.queue, input, { kind, diffId, planIndexes: [...planIndexes], ...(assignment === undefined ? {} : { assignment }) });
         } finally {
             this.reconciling = outer;
         }
@@ -718,7 +727,7 @@ export class RouteOrchestrator {
         const status = this.registry.status();
         return resolveGenerationLocale({
             requested,
-            setting: this.settings?.read().locale,
+            setting: this.settings?.read().generationLocale,
             agentLang: status.kind === 'never' ? undefined : status.lang,
         });
     }
@@ -785,7 +794,7 @@ export class RouteOrchestrator {
     private async loadDiff(): Promise<PrDiff> {
         const host = this.host;
         if (host === null) {
-            throw new RpcFailure('no_review_host', 'У этого PR нет хост-адаптера: маршрут строить не по чему.');
+            throw new RpcFailure('no_review_host', 'Импортируйте снимок кода перед подготовкой разбора.');
         }
 
         // Промис держим локально: `finally` внутри обнуляет поле, и читать его после было бы поздно.

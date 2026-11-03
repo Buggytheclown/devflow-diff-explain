@@ -1,5 +1,4 @@
 import type {
-    LocalVcsKind,
     RpcError,
     RpcErrorCode,
     Task,
@@ -48,39 +47,10 @@ export function formatUiUrl(port: number, token: string, host = '127.0.0.1'): st
     return `http://${authority}:${String(port)}/#t=${token}`;
 }
 
-/** Что именно ревьюируется локально — строкой вывода `up`. */
-export interface LocalReviewSummary {
-    readonly vcs: LocalVcsKind;
-    readonly repo: string;
-    readonly branch: string;
-    /** Явная база; undefined — её считает сервер. */
-    readonly base: string | undefined;
-}
-
-/**
- * Итог `devflow-diff-explain up`: ссылка для ревьюера и следующий шаг сессии.
- * Сервер и регистрация из вывода не видны — модели про них знать нечего.
- */
-export function formatUpReady(uiUrl: string, prKey: string, local: LocalReviewSummary | null = null): string {
-    const lines = [uiUrl, ''];
-    if (local !== null) {
-        lines.push(
-            `Reviewing the working tree of ${local.repo} on branch ${local.branch}, ` +
-                `base ${local.base ?? defaultBaseWording(local.vcs)}.`,
-        );
-
-    }
-
-    lines.push(
-        'Show this link to the user in full — it opens the review in their browser.',
-        `Then run \`devflow-diff-explain worker next --pr ${prKey}\` and follow the instructions in its output.`,
-    );
-    return lines.join('\n');
-}
-
-/** Чем сервер считает базу, когда её не назвали: у arc это trunk, у git — ветка по умолчанию. */
-function defaultBaseWording(vcs: LocalVcsKind): string {
-    return vcs === 'arc' ? 'merge-base with trunk' : 'merge-base with the default branch';
+/** Ссылка для пользователя и следующий шаг сессии. */
+export function formatUpReady(uiUrl: string, prKey: string): string {
+    return [uiUrl, '', 'Show this link to the user in full — it opens the explanation in their browser.',
+        `Then run \`devflow-diff-explain worker next --pr ${prKey}\` and follow the instructions in its output.`].join('\n');
 }
 
 /** Работа воркера окончена: слово DONE — сигнал сессии завершаться (`docs/protocol.md §3`). */
@@ -166,7 +136,7 @@ export function formatOversizedResult(taskId: number, file: string, bytes: numbe
 export function helpText(): string {
     const commands: readonly (readonly [string, string])[] = [
         [
-            'devflow-diff-explain up [--local <path>] [--harness <name>] [--model <name>] ' +
+            'devflow-diff-explain up [--snapshot <manifest.json> | --pr <saved key>] [--harness <name>] [--model <name>] ' +
                 '[--lang <ru|en>] [--no-open]',
             'start the explanation server and become its worker',
         ],
@@ -174,6 +144,8 @@ export function helpText(): string {
             'devflow-diff-explain worker register [--harness <name>] [--model <name>] [--lang <ru|en>]',
             'register this session as the PR worker',
         ],
+        ['devflow-diff-explain snapshot|sources schema', 'print the import manifest schema'],
+        ['devflow-diff-explain snapshot|sources import --file <manifest.json> [--pr <key>]', 'import artifacts into a running application'],
         ['devflow-diff-explain worker next', 'take the next task; waits for one as long as it takes'],
         ['devflow-diff-explain task complete <id> --file <path> [--next]', 'submit; --next waits for the next task'],
         ['devflow-diff-explain task progress <id> --text "<text>"', 'interim status for the reviewer'],
@@ -181,16 +153,12 @@ export function helpText(): string {
     ];
     const flags: readonly (readonly [string, string])[] = [
         ['--pr <key>', 'the saved target to connect to; defaults to SHERPA_PR'],
-        [
-            '--local <path>',
-            'review the working tree of this project directory instead of a PR; only for `up`',
-        ],
-        ['--base <ref>', 'what the working tree is compared with; only with `--local`'],
+        ['--snapshot <manifest.json>', 'import complete pinned bytes and inventory before preparing a new project'],
         ['--harness <name>', 'harness label in the worker status; for `up` and `worker register`'],
         ['--model <name>', 'model name in the worker status; for `up` and `worker register`'],
         [
             '--lang <ru|en>',
-            'the language you speak with the reviewer in; hints the UI language, omit if unsure',
+            'the language you speak with the reviewer in; hints the answer language, omit if unsure',
         ],
         ['--no-open', 'do not open the browser after `up` starts a new server'],
         ['--version', 'CLI version'],

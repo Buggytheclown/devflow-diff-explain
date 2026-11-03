@@ -3,7 +3,7 @@ import { UI_ENDPOINTS, rpcErrorSchema, uiSettingsResponseSchema } from '@sherpa/
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { SherpaServer } from './server.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { get, makeTempSherpaDir, patchJson, removeTempSherpaDir } from './test-support.js';
 
 const PR_KEY = 'arcanum-4242';
@@ -48,36 +48,30 @@ describe('ручка глобальных настроек UI', () => {
 
         expect(await readSettings(server)).toEqual({
             diffMode: 'unified',
-            shipMode: 'ship',
-            composerLayout: 'visual',
-            locale: 'auto',
-            theme: 'auto',
-            arcanum: false,
+            generationLocale: 'auto',
+            locale: 'ru',
+            theme: 'dark',
+            arcanum: true,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
         });
     });
 
     it('патч одного поля возвращает полный набор и не трогает соседние', async () => {
         const server = await start();
-        await patchJson(server.port, UI_ENDPOINTS.settings, { shipMode: 'sticky_ship' }, server.token);
+        await patchJson(server.port, UI_ENDPOINTS.settings, { generationLocale: 'en' }, server.token);
 
         const response = await patchJson(server.port, UI_ENDPOINTS.settings, { diffMode: 'split' }, server.token);
 
         expect(response.status).toBe(200);
         expect(uiSettingsResponseSchema.parse(await response.json()).settings).toEqual({
             diffMode: 'split',
-            shipMode: 'sticky_ship',
-            composerLayout: 'visual',
-            locale: 'auto',
-            theme: 'auto',
-            arcanum: false,
+            generationLocale: 'en',
+            locale: 'ru',
+            theme: 'dark',
+            arcanum: true,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
         });
-        expect(await readSettings(server)).toMatchObject({ diffMode: 'split', shipMode: 'sticky_ship' });
+        expect(await readSettings(server)).toMatchObject({ diffMode: 'split', generationLocale: 'en' });
     });
 
     it.each([
@@ -89,24 +83,17 @@ describe('ручка глобальных настроек UI', () => {
         const response = await patchJson(first.port, UI_ENDPOINTS.settings, { theme, arcanum }, first.token);
 
         expect(response.status).toBe(200);
-        expect(uiSettingsResponseSchema.parse(await response.json()).settings).toMatchObject({ theme, arcanum });
-        expect(await readSettings(first)).toMatchObject({ theme, arcanum });
+        expect(uiSettingsResponseSchema.parse(await response.json()).settings).toMatchObject({ theme: 'dark', arcanum: true });
+        expect(await readSettings(first)).toMatchObject({ theme: 'dark', arcanum: true });
 
         const second = await start(OTHER_PR_KEY);
-        expect(await readSettings(second)).toMatchObject({ theme, arcanum });
+        expect(await readSettings(second)).toMatchObject({ theme: 'dark', arcanum: true });
     });
 
-    it('патчи темы и Arcanum не сбрасывают друг друга', async () => {
+    it('старые настройки оформления не меняют фиксированный интерфейс', async () => {
         const server = await start();
-        await patchJson(server.port, UI_ENDPOINTS.settings, { theme: 'light' }, server.token);
-        await patchJson(server.port, UI_ENDPOINTS.settings, { arcanum: true }, server.token);
-        expect(await readSettings(server)).toMatchObject({ theme: 'light', arcanum: true });
-
-        await patchJson(server.port, UI_ENDPOINTS.settings, { theme: 'auto' }, server.token);
-        expect(await readSettings(server)).toMatchObject({ theme: 'auto', arcanum: true });
-
-        await patchJson(server.port, UI_ENDPOINTS.settings, { arcanum: false }, server.token);
-        expect(await readSettings(server)).toMatchObject({ theme: 'auto', arcanum: false });
+        await patchJson(server.port, UI_ENDPOINTS.settings, { theme: 'light', arcanum: true, locale: 'en' }, server.token);
+        expect(await readSettings(server)).toMatchObject({ theme: 'dark', arcanum: true, locale: 'ru' });
     });
 
     it.each([{ arcanum: 'true' }, { theme: 'arcanum-dark' }])('невалидный новый выбор отклоняется: %j', async (patch) => {
@@ -114,36 +101,13 @@ describe('ручка глобальных настроек UI', () => {
         const response = await patchJson(server.port, UI_ENDPOINTS.settings, patch, server.token);
 
         expect(response.status).toBe(400);
-        expect(await readSettings(server)).toMatchObject({ theme: 'auto', arcanum: false });
+        expect(await readSettings(server)).toMatchObject({ theme: 'dark', arcanum: true });
     });
 
-    it('вложенный объект патча заменяется целиком и не задевает язык', async () => {
+    it('язык генерации не меняет русский UI', async () => {
         const server = await start();
-
-        const response = await patchJson(
-            server.port,
-            UI_ENDPOINTS.settings,
-            { onboarding: { completedAt: null, step: 3 } },
-            server.token,
-        );
-
-        expect(response.status).toBe(200);
-        expect(uiSettingsResponseSchema.parse(await response.json()).settings).toMatchObject({
-            onboarding: { completedAt: null, step: 3 },
-            locale: 'auto',
-            theme: 'auto',
-            arcanum: false,
-            textSize: 'm',
-        });
-    });
-
-    it('патч языка не сбрасывает онбординг', async () => {
-        const server = await start();
-        await patchJson(server.port, UI_ENDPOINTS.settings, { onboarding: { completedAt: null, step: 3 } }, server.token);
-
-        await patchJson(server.port, UI_ENDPOINTS.settings, { locale: 'en' }, server.token);
-
-        expect(await readSettings(server)).toMatchObject({ locale: 'en', onboarding: { completedAt: null, step: 3 } });
+        await patchJson(server.port, UI_ENDPOINTS.settings, { generationLocale: 'en', textSize: 'l' }, server.token);
+        expect(await readSettings(server)).toMatchObject({ generationLocale: 'en', locale: 'ru', textSize: 'l' });
     });
 
     it('сервер другого PR видит те же настройки', async () => {
@@ -151,9 +115,9 @@ describe('ручка глобальных настроек UI', () => {
         const second = await start(OTHER_PR_KEY);
 
         await patchJson(first.port, UI_ENDPOINTS.settings, { diffMode: 'split' }, first.token);
-        await patchJson(second.port, UI_ENDPOINTS.settings, { shipMode: 'sticky_ship' }, second.token);
+        await patchJson(second.port, UI_ENDPOINTS.settings, { generationLocale: 'en' }, second.token);
 
-        expect(await readSettings(first)).toMatchObject({ diffMode: 'split', shipMode: 'sticky_ship' });
+        expect(await readSettings(first)).toMatchObject({ diffMode: 'split', generationLocale: 'en' });
     });
 
     it('невалидное значение — bad_request', async () => {

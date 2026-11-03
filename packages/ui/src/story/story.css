@@ -283,3 +283,6 @@ body:has(.story-app) { min-width: 0; }
 
 /* Окружение не означает доказанное отсутствие изменений. */
 .architecture-node--context { --architecture-node-dash: 3 5; }
+
+.story-saved-source-header { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.story-saved-source-header code { overflow-wrap: anywhere; }

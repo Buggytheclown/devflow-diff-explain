@@ -25,41 +25,9 @@ describe('ссылка UI', () => {
     });
 });
 
-describe('итог up на локальном ревью', () => {
-    const uiUrl = 'http://127.0.0.1:4317/#t=token';
-
-    it('база по умолчанию называется словами своей VCS', () => {
-        const arc = formatUpReady(uiUrl, 'local-arc-app-0badc0de', {
-            vcs: 'arc',
-            repo: '/repo/app',
-            branch: 'feature',
-            base: undefined,
-
-        });
-        const git = formatUpReady(uiUrl, 'local-git-app-0badc0de', {
-            vcs: 'git',
-            repo: '/repo/app',
-            branch: 'feature',
-            base: undefined,
-
-        });
-
-        expect(arc).toContain('on branch feature, base merge-base with trunk.');
-        expect(git).toContain('on branch feature, base merge-base with the default branch.');
-    });
-
-    it('явная база печатается как есть', () => {
-        const ready = formatUpReady(uiUrl, 'local-git-app-0badc0de', {
-            vcs: 'git',
-            repo: '/repo/app',
-            branch: 'feature',
-            base: 'origin/main~2',
-
-        });
-
-        expect(ready).toContain('base origin/main~2.');
-        expect(ready).not.toContain('Ship');
-    });
+it('up показывает ссылку и продолжение сохранённого проекта', () => {
+    const text = formatUpReady('http://127.0.0.1:4317/#t=token', 'arcanum-1');
+    expect(text).toContain('#t=token'); expect(text).toContain('worker next --pr arcanum-1');
 });
 
 describe('промпт-формат задачи', () => {

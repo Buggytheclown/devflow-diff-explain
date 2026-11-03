@@ -4,10 +4,50 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import type { AgentNote } from '@sherpa/protocol';
+import type { AgentNote, RouteSnapshot } from '@sherpa/protocol';
+import { explanationSnapshotSchema } from '@sherpa/protocol';
+import type { AcceptedExplanation } from './story.js';
 
 import type { SherpaDatabase } from './db.js';
 import { isProcessAlive } from './manifest.js';
+import { startServer as startProductionServer } from './server.js';
+import type { StartServerOptions, SherpaServer } from './server.js';
+import { selectCodeReader } from './test-fixture-reader.js';
+import type { CodeReaderFactory } from './test-fixture-reader.js';
+import { databasePathFor, prStateDirOf } from './paths.js';
+import { openDatabase } from './db.js';
+import { IterationStore } from './iteration-store.js';
+
+/** Старые unit fixtures изолированы от production bootstrap. */
+export async function startServer(options: StartServerOptions & { reviewSourceFactory?: CodeReaderFactory }): Promise<SherpaServer> {
+    const selected = (options.reviewSourceFactory ?? selectCodeReader)(options.prKey, {});
+    if (selected !== null && options.sherpaDir !== undefined) {
+        // Старые unit mocks дают данные непосредственно; имитируем обязательный локальный инвентарь.
+        await fs.mkdir(prStateDirOf(options.sherpaDir, options.prKey), { recursive: true });
+        const db = openDatabase(databasePathFor(options.sherpaDir, options.prKey));
+        try {
+            const diff = await selected.host.getDiff();
+            const listed = await selected.host.listIterations();
+            const iteration = listed.find((item) => item.diffId === diff.diffId);
+            const store = new IterationStore({ db });
+            if (iteration !== undefined && store.get(diff.diffId) === null) store.upsert(diff, iteration);
+        } catch { /* Негативные fixtures проверяют отказ читателя. */ }
+        finally { db.close(); }
+    }
+    return startProductionServer({ ...options, reader: selected?.host ?? null, development: options.development ?? selected?.name === 'fixture',
+        ...(selected?.advanceIteration === undefined ? {} : { developmentAction: selected.advanceIteration }) });
+}
+
+/** Приёмка истории проверяет сохранённый документ, старый генератор не запускается. */
+export function acceptedFixture(snapshot: RouteSnapshot): { ok: true; value: AcceptedExplanation } {
+    const saved = explanationSnapshotSchema.parse({ ...snapshot, format: 'explanation/1' });
+    if (saved.summaryEvidence === undefined) throw new Error('Fixture has no saved evidence.');
+    return { ok: true, value: { summary: saved.summary, summaryEvidence: saved.summaryEvidence,
+        storyContractVersion: saved.storyContractVersion, ...(saved.flow === undefined ? {} : { flow: saved.flow }),
+        stops: saved.stops.map((block) => ({ ...block, paragraph: null, status: 'queued',
+            guidedFiles: block.guidedFiles?.map((file) => ({ ...file, explanation: null, annotations: [], status: 'queued' })) })),
+        tourOrder: saved.tourOrder, intents: new Map(saved.stops.map((block) => [block.planIndex, block.paragraph ?? ''])) } };
+}
 
 /** Временный корень стейта на один тест. */
 export async function makeTempSherpaDir(): Promise<string> {

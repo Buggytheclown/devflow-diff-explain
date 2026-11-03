@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { REQUEST_BODY_MAX_BYTES } from './http.js';
 import { workerIdPathFor } from './paths.js';
 import type { SherpaServer } from './server.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { makeTempSherpaDir, postJson, postRaw, removeTempSherpaDir } from './test-support.js';
 
 const PR_KEY = 'arcanum-777';
@@ -716,7 +716,7 @@ describe('воркерские ручки', () => {
                 { ...BASE, taskId, result: 'эхо' },
                 server.token,
             );
-            expect(taskCompleteResponseSchema.parse(await repeated.json()).kind).toBe('noop');
+            expect(taskCompleteResponseSchema.parse(await repeated.json()).kind).toBe('accepted');
         });
 
         it('явный отказ закрывает задачу ошибкой', async () => {

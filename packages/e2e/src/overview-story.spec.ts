@@ -25,7 +25,7 @@ test('обзор первым → непрерывный дифф → локал
     });
     await expect(page.locator('.story-preparation')).toContainText('Разбор подготовлен частично');
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();
-    const retry = await server.worker.next(); expect(retry.type).toBe('route.diagram');
+    const retry = await server.worker.next(); expect(retry.type).toBe('route.prepare');
     await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ contractVersion: 6, update: { flow: fixture.outline.flow } }));
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
     await page.screenshot({ path: test.info().outputPath('overview-ready.png'), fullPage: true });

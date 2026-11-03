@@ -7,7 +7,6 @@ import { githubPrKey, parseGithubPrUrl, serverManifestSchema } from '@sherpa/pro
 
 import { CliError } from './errors.js';
 import { assertValidPrKey, manifestPathFor, sherpaDirFrom, workerIdPathFor } from './paths.js';
-import type { CommandRunner } from './command-runner.js';
 
 /** Всё, что нужно знать CLI, чтобы обратиться к серверу PR. */
 export interface ServerConnection {
@@ -25,7 +24,6 @@ const STATE_DIR_MODE = 0o700;
 export async function connect(
     prKeyArg: string | undefined,
     env: Readonly<Record<string, string | undefined>>,
-    _run?: CommandRunner,
 ): Promise<ServerConnection> {
     const prKey = await resolvePrKey(prKeyArg, env);
     const sherpaDir = sherpaDirFrom(env);
@@ -42,7 +40,6 @@ export async function connectAs(
     prKeyArg: string | undefined,
     env: Readonly<Record<string, string | undefined>>,
     workerId: string,
-    _run?: CommandRunner,
 ): Promise<ServerConnection> {
     const prKey = await resolvePrKey(prKeyArg, env);
     return openConnection(sherpaDirFrom(env), prKey, workerId);
@@ -61,7 +58,6 @@ async function openConnection(sherpaDir: string, prKey: string, workerId: string
 export function resolvePrKey(
     prKeyArg: string | undefined,
     env: Readonly<Record<string, string | undefined>>,
-    _run?: CommandRunner,
 ): Promise<string> {
     const explicit = (prKeyArg ?? env.SHERPA_PR ?? '').trim();
     if (explicit !== '') {

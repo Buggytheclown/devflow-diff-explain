@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
+import { z } from 'zod';
 
 import type { WorkerNextResponse, WorkerRegisterResponse } from '@sherpa/protocol';
-import { RESULT_MAX_BYTES } from '@sherpa/protocol';
+import { RESULT_MAX_BYTES, ARTIFACT_ENDPOINTS, codeSnapshotInputSchema, sourcesInputSchema, codeSnapshotReceiptSchema } from '@sherpa/protocol';
 
 import type { Command } from './args.js';
 import { parseArgs } from './args.js';
@@ -11,7 +13,7 @@ import { openBrowser } from './browser.js';
 import type { WorkerLabels } from './client.js';
 import { requestComplete, requestFail, requestNext, requestProgress, requestRegister } from './client.js';
 import type { ServerConnection } from './discovery.js';
-import { connect, connectAs, freshWorkerId, resolvePrKey } from './discovery.js';
+import { connect, connectAs, freshWorkerId, resolvePrKey, readServerManifest } from './discovery.js';
 import { CliError, userMessage } from './errors.js';
 import {
     formatCompleteResponse,
@@ -23,7 +25,6 @@ import {
     formatUpReady,
     helpText,
 } from './format.js';
-import { resolveLocalTarget } from './local.js';
 import {
     serverBinOverrideFrom,
     sherpaDirFrom,
@@ -31,7 +32,6 @@ import {
     taskResultFileFor,
     taskResultRootFor,
 } from './paths.js';
-import type { CommandRunner } from './command-runner.js';
 import type { EnsureServerOptions, EnsureServerResult } from './up.js';
 import { ensureServer, loadServerModule, resolveServerBin } from './up.js';
 import { CLI_VERSION } from './version.js';
@@ -45,8 +45,6 @@ export interface CliIo {
     readonly entry?: string;
     /** Флаги Node для демона сервера, который поднимает `up`; по умолчанию — никаких. */
     readonly daemonNodeFlags?: readonly string[];
-    /** Исполнитель внешних команд для discovery PR из cwd; по умолчанию — настоящий `arc`. */
-    readonly runCommand?: CommandRunner;
     /** Тестовая подмена discovery/старта сервера. */
     readonly ensureServer?: (options: EnsureServerOptions) => Promise<EnsureServerResult>;
     /** Тестовая подмена системного opener: реальный браузер тесты не запускают. */
@@ -63,6 +61,15 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     try {
         const command = parseArgs(argv);
         switch (command.kind) {
+            case 'artifact-schema':
+                io.out(JSON.stringify(z.toJSONSchema(command.sources ? sourcesInputSchema : codeSnapshotInputSchema), null, 2));
+                return 0;
+            case 'artifact-import': {
+                const data = command.sources ? sourcesInputSchema.parse(JSON.parse(await fs.readFile(command.file, 'utf8')) as unknown) : codeSnapshotInputSchema.parse(JSON.parse(await fs.readFile(command.file, 'utf8')) as unknown);
+                const prKey = await resolvePrKey(command.prKey ?? data.project, io.env);
+                await importArtifacts(prKey, command.file, command.sources, io);
+                return 0;
+            }
             case 'version':
                 io.out(CLI_VERSION);
                 return 0;
@@ -96,14 +103,10 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
  * и следующий шаг петли.
  */
 async function up(command: Extract<Command, { kind: 'up' }>, io: CliIo): Promise<number> {
-    // Ключ PR резолвится до запуска сервера: кривой всё равно отобьёт и сервер, но позже и дороже,
-    // а discovery из cwd (`pr-discovery.ts`) должно случиться ровно один раз за команду.
-    // `--local` называет каталог, а не PR: ключ выводится из каталога и ветки, не из хоста.
-    const local =
-        command.local === undefined
-            ? null
-            : await resolveLocalTarget(command.local, command.base, io.runCommand);
-    const prKey = local?.prKey ?? (await resolvePrKey(command.prKey, io.env, io.runCommand));
+    // Явный manifest или сохранённый ключ; cwd не меняет цель.
+    const snapshot = command.snapshot === undefined ? null : codeSnapshotInputSchema.parse(JSON.parse(await fs.readFile(command.snapshot, 'utf8')) as unknown);
+    if (command.local !== undefined || command.base !== undefined) throw new CliError('Export the local changes with your native tools, then use `up --snapshot <manifest.json>`.');
+    const prKey = await resolvePrKey(command.prKey ?? snapshot?.project, io.env);
 
     const server = await (io.ensureServer ?? ensureServer)({
         prKey,
@@ -111,10 +114,9 @@ async function up(command: Extract<Command, { kind: 'up' }>, io: CliIo): Promise
         entry: io.entry ?? process.argv[1],
         serverBin: serverBinOverrideFrom(io.env),
         nodeFlags: io.daemonNodeFlags ?? [],
-        ...(local === null
-            ? {}
-            : { repo: local.repo, base: local.base, branch: local.branch }),
+
     });
+    if (command.snapshot !== undefined) await importArtifacts(prKey, command.snapshot, false, io);
     // Новый up передаёт слот воркера текущей сессии.
     await registerWorker(prKey, labelsOf(command), io);
 
@@ -122,7 +124,6 @@ async function up(command: Extract<Command, { kind: 'up' }>, io: CliIo): Promise
         formatUpReady(
             server.uiUrl,
             prKey,
-            local,
         ),
     );
     if (server.started && !command.noOpen) {
@@ -133,6 +134,17 @@ async function up(command: Extract<Command, { kind: 'up' }>, io: CliIo): Promise
         }
     }
     return 0;
+}
+
+async function importArtifacts(prKey: string, file: string, sources: boolean, io: CliIo): Promise<void> {
+    const manifest = await readServerManifest(sherpaDirFrom(io.env), prKey);
+    const response = await fetch(`http://127.0.0.1:${String(manifest.port)}${sources ? ARTIFACT_ENDPOINTS.sources : ARTIFACT_ENDPOINTS.snapshot}`, {
+        method: 'POST', headers: { authorization: `Bearer ${manifest.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ manifest: path.resolve(file) }),
+    });
+    const body: unknown = await response.json();
+    if (!response.ok) throw new CliError(`Artifact import failed: ${JSON.stringify(body)}`);
+    io.out(JSON.stringify(codeSnapshotReceiptSchema.parse(body)));
 }
 
 /** Процесс сервера PR, который демонизирует `up`. */
@@ -161,7 +173,7 @@ async function registerWorker(
     labels: WorkerLabels,
     io: CliIo,
 ): Promise<WorkerRegisterResponse> {
-    const connection = await connectAs(prKeyArg, io.env, freshWorkerId(io.env), io.runCommand);
+    const connection = await connectAs(prKeyArg, io.env, freshWorkerId(io.env));
     return requestRegister(connection, labels);
 }
 
@@ -171,7 +183,7 @@ function labelsOf(command: Extract<Command, { kind: 'up' | 'worker-register' }>)
 }
 
 async function workerNext(command: Extract<Command, { kind: 'worker-next' }>, io: CliIo): Promise<number> {
-    const connection = await connect(command.prKey, io.env, io.runCommand);
+    const connection = await connect(command.prKey, io.env);
     return nextForConnection(connection, io);
 }
 
@@ -251,10 +263,10 @@ async function awaitTask(connection: ServerConnection): Promise<Exclude<WorkerNe
 }
 
 async function taskComplete(command: Extract<Command, { kind: 'task-complete' }>, io: CliIo): Promise<number> {
-    const prKey = await resolvePrKey(command.prKey, io.env, io.runCommand);
+    const prKey = await resolvePrKey(command.prKey, io.env);
     const result = await readResultFile(command.file, command.taskId, prKey);
 
-    const connection = await connect(prKey, io.env, io.runCommand);
+    const connection = await connect(prKey, io.env);
     const response = await requestComplete(connection, command.taskId, result);
     if (command.next === true && response.kind !== 'rejected') {
         io.out(response.message);
@@ -265,14 +277,14 @@ async function taskComplete(command: Extract<Command, { kind: 'task-complete' }>
 }
 
 async function taskProgress(command: Extract<Command, { kind: 'task-progress' }>, io: CliIo): Promise<number> {
-    const connection = await connect(command.prKey, io.env, io.runCommand);
+    const connection = await connect(command.prKey, io.env);
     const response = await requestProgress(connection, command.taskId, command.text);
     io.out(formatProgressResponse(response, command.taskId, connection.prKey));
     return 0;
 }
 
 async function taskFail(command: Extract<Command, { kind: 'task-fail' }>, io: CliIo): Promise<number> {
-    const connection = await connect(command.prKey, io.env, io.runCommand);
+    const connection = await connect(command.prKey, io.env);
     const response = await requestFail(connection, command.taskId, command.reason);
     io.out(formatFailResponse(response, command.taskId, connection.prKey));
     return 0;

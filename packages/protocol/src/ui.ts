@@ -15,6 +15,7 @@ import {
     iterationSchema,
     lensSchema,
     prDiffSchema,
+    capturedPrSchema,
     prMetaSchema,
     publishResultSchema,
     threadSchema,
@@ -135,7 +136,7 @@ export const uiStateSchema = z.object({
      * null — хоста нет или мета ещё не загрузилась (сервер наполняет кеш вне сборки
      * снапшота и обновляет его после публикации вердикта — статус доедет по SSE).
      */
-    pr: prMetaSchema.nullable(),
+    pr: z.union([prMetaSchema, capturedPrSchema]).nullable(),
     /** Доступность канала фидбека: зависит только от токена Трекера в окружении. */
     feedback: uiFeedbackAvailabilitySchema,
     /**
@@ -189,20 +190,7 @@ export type UiCancelResponse = z.infer<typeof uiCancelResponseSchema>;
  * двумя итерациями («что нового» в читалке). Какую итерацию смотрит вкладка, знает
  * только UI (выбор в URL-фрагменте): сервер про «текущий вид» не спрашивают.
  */
-export const uiReviewDiffRequestSchema = z
-    .object({
-        diffId: hostIdSchema.optional(),
-        base: hostIdSchema.optional(),
-        head: hostIdSchema.optional(),
-    })
-    .refine(
-        (query) => (query.base === undefined) === (query.head === undefined),
-        'base и head задаются вместе',
-    )
-    .refine(
-        (query) => query.diffId === undefined || query.base === undefined,
-        'diffId и срез base/head взаимоисключающи',
-    );
+export const uiReviewDiffRequestSchema = z.object({ diffId: hostIdSchema.optional() }).strict();
 export type UiReviewDiffRequest = z.infer<typeof uiReviewDiffRequestSchema>;
 
 export const uiReviewDiffResponseSchema = z.object({ diff: prDiffSchema });
@@ -343,16 +331,14 @@ export type UiReviewSnapshotsResponse = z.infer<typeof uiReviewSnapshotsResponse
 /**
  * Запуск/перезапуск генерации маршрута (Retry из Generation failed, «regenerate»
  * из палитры; и перегенерация из `ready`, старый снапшот при этом
- * живёт до приёмки нового скелета). Ставит `route.skeleton` даже без живого
+ * живёт до приёмки нового обзора). Ставит `route.prepare` даже без живого
  * воркера — задача ждёт в очереди, деградацию показывает индикатор агента.
  * `already_running` — только про `reading`/`filling` (генерация уже идёт).
- * `small_pr` — отказ: порог ручкой не обходится (`docs/architecture.md`).
  */
 export const uiRouteGenerateRequestSchema = z.object({
     /**
-     * Язык генерации — эффективная локаль UI по лестнице «настройка → `--lang` агента → браузер»
-     * Без него (старый клиент, автозапуск сервером) сервер разрешает
-     * сам: `settings.locale` ≠ `auto` → `worker.lang` → `ru`.
+     * Явный язык ответа. Без него: generationLocale → worker.lang → ru.
+     * Фиксированный язык интерфейса не задаёт язык ответа.
      */
     locale: localeSchema.optional(),
 });
@@ -503,9 +489,6 @@ export type UiDevUpdateAvailableRequest = z.infer<typeof uiDevUpdateAvailableReq
  */
 const uiSettingsFields = {
     diffMode: z.enum(['unified', 'split']),
-    /** Режим сплит-кнопки Ship, выбранный в её меню; `comment` — публикация без вердикта. */
-    shipMode: z.enum(['ship', 'sticky_ship', 'comment']),
-    composerLayout: z.enum(['visual', 'markdown']),
     /** Язык UI. */
     locale: localeSettingSchema,
     /** Тема UI; выбор общий для всех PR. `auto` следует за темой системы, явный выбор — нет. */
@@ -514,31 +497,17 @@ const uiSettingsFields = {
     arcanum: z.boolean(),
     /** Размер текста интерфейса: `l` — та же шкала крупнее (`docs/design/theme.md`). */
     textSize: z.enum(['m', 'l']),
-    /**
-     * Тур первого захода: `completedAt` — пройден или пропущен
-     * (пропуск = навсегда); `step` — где остановился незавершённый тур, продолжается с него
-     * на любом PR и после перезапуска сервера. Replay из палитры сбрасывает оба.
-     */
-    onboarding: z.object({
-        completedAt: z.iso.datetime().nullable(),
-        step: z.number().int().min(0),
-    }),
-    /** «Не напоминать про X» тоста обновления: отклонена ровно эта версия, следующая покажется. */
-    updates: z.object({
-        dismissedVersion: semverSchema.nullable(),
-    }),
+    /** Предпочтение языка ответа независимо от русского интерфейса. */
+    generationLocale: localeSettingSchema,
 };
 
 export const uiSettingsSchema = z.object({
     diffMode: uiSettingsFields.diffMode.default('unified'),
-    shipMode: uiSettingsFields.shipMode.default('ship'),
-    composerLayout: uiSettingsFields.composerLayout.default('visual'),
     locale: uiSettingsFields.locale.default('auto'),
     theme: uiSettingsFields.theme.default('auto'),
     arcanum: uiSettingsFields.arcanum.default(false),
     textSize: uiSettingsFields.textSize.default('m'),
-    onboarding: uiSettingsFields.onboarding.default({ completedAt: null, step: 0 }),
-    updates: uiSettingsFields.updates.default({ dismissedVersion: null }),
+    generationLocale: uiSettingsFields.generationLocale.default('auto'),
 });
 export type UiSettings = z.infer<typeof uiSettingsSchema>;
 
@@ -887,7 +856,7 @@ export const UI_ENDPOINTS = {
     cancel: '/api/ui/tasks/cancel',
     /** GET, SSE: события `state` (`uiStateSchema`), `review`, `progress`, `route`, `chat` (ревизии). */
     events: '/api/ui/events',
-    /** GET `?diffId=` | `?base=&head=` (`uiReviewDiffRequestSchema`) → `uiReviewDiffResponseSchema`; без параметров — активная итерация. */
+    /** GET `?diffId=` (`uiReviewDiffRequestSchema`) → `uiReviewDiffResponseSchema`; без параметров — активная итерация. */
     reviewDiff: '/api/ui/review/diff',
     /** GET → `uiReviewThreadsResponseSchema`. */
     reviewThreads: '/api/ui/review/threads',

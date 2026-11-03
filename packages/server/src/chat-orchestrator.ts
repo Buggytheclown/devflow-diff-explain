@@ -7,10 +7,11 @@ import type {
     ChatExplanation,
     ChatExchange,
     FileContent,
+    FileDiff,
     Locale,
     PrDiff,
-    PrMeta,
-    ReviewSource,
+    CapturedPr,
+    CodeReader,
     UiChatAskAnchor,
     UiChatCancelResponse,
     UiChatRetryResponse,
@@ -22,10 +23,8 @@ import type { ChatStore, StoredChatExchange } from './chat-store.js';
 import { explanationText } from '@sherpa/protocol';
 import { RpcFailure } from './errors.js';
 import { resolveGenerationLocale } from './generation-locale.js';
-import type { IterationFeed } from './iteration-feed.js';
 import type { IterationStore } from './iteration-store.js';
-import { rememberIterationDiff } from './iteration-store.js';
-import { LEGACY_DIFF_ID } from './iterations/index.js';
+import { LEGACY_DIFF_ID } from './legacy-identity.js';
 import type { EnqueueInput, TaskQueue, TaskRecord, TaskResultAcceptance } from './queue.js';
 import type { RouteStore } from './route-store.js';
 import type { SettingsStore } from './settings-store.js';
@@ -37,12 +36,12 @@ export interface ChatOrchestratorOptions {
     readonly store: ChatStore;
     readonly route: RouteStore;
     readonly queue: TaskQueue;
-    readonly host: ReviewSource | null;
+    readonly host: CodeReader | null;
     readonly payloadDir: string;
+    readonly pinnedContent?: (diff: PrDiff, file: FileDiff) => Promise<FileContent | null>;
     /** Локальное хранилище патчей итераций; `null` — сохранять дифф некуда (тесты без БД). */
     readonly iterations?: IterationStore | null;
     /** Итерации PR: по ним видно, спрашивают про активную итерацию или про прошлую. */
-    readonly iterationFeed?: IterationFeed | null;
     /** Общий контекст вопросов: методичка, дифф PR и тексты файлов по стабильным путям. */
     readonly shared: SharedPayloadStore;
     /** Настройки UI: из них берётся язык ответа, когда его не назвал запрос. */
@@ -59,10 +58,10 @@ export class ChatOrchestrator {
     private readonly store: ChatStore;
     private readonly route: RouteStore;
     private readonly queue: TaskQueue;
-    private readonly host: ReviewSource | null;
+    private readonly host: CodeReader | null;
+    private readonly pinnedContent: ChatOrchestratorOptions['pinnedContent'];
     private readonly payloadDir: string;
     private readonly iterations: IterationStore | null;
-    private readonly iterationFeed: IterationFeed | null;
     private readonly shared: SharedPayloadStore;
     private readonly settings: Pick<SettingsStore, 'read'> | null;
     private readonly registry: Pick<WorkerRegistry, 'status'> | null;
@@ -82,9 +81,9 @@ export class ChatOrchestrator {
         this.route = options.route;
         this.queue = options.queue;
         this.host = options.host;
+        this.pinnedContent = options.pinnedContent;
         this.payloadDir = options.payloadDir;
         this.iterations = options.iterations ?? null;
-        this.iterationFeed = options.iterationFeed ?? null;
         this.shared = options.shared;
         this.settings = options.settings ?? null;
         this.registry = options.registry ?? null;
@@ -124,7 +123,7 @@ export class ChatOrchestrator {
             explanation = { ...pinned, ...(evidence === undefined ? {} : { evidence }) };
         }
         const context = await this.loadPrContext(requested, explanation?.diffId);
-        if (explanation !== undefined && (context.diff?.diffId !== explanation.diffId || context.headCommit !== explanation.commit)) {
+        if (explanation !== undefined && (context.diff?.diffId !== explanation.diffId || context.headCommit !== explanation.commit || (explanation.codeSnapshotId !== undefined && explanation.codeSnapshotId !== context.diff.codeSnapshotId))) {
             throw new RpcFailure('bad_request', 'Не удалось получить код показанной версии ПР.');
         }
         if (explanation === undefined && context.diff !== null) explanation = { snapshotId: null, diffId: context.diff.diffId, commit: context.diff.headCommit, text: '' };
@@ -218,7 +217,7 @@ export class ChatOrchestrator {
         const status = this.registry?.status();
         return resolveGenerationLocale({
             requested,
-            setting: this.settings?.read().locale,
+            setting: this.settings?.read().generationLocale,
             agentLang: status === undefined || status.kind === 'never' ? undefined : status.lang,
         });
     }
@@ -246,7 +245,7 @@ export class ChatOrchestrator {
         }
         return {
             kind: 'accepted',
-            onCommitted: () => {
+            persist: () => {
                 this.store.completeTask(task.id, result);
             },
         };
@@ -393,77 +392,26 @@ export class ChatOrchestrator {
      * Отказ любой части не отменяет вопрос, а сужает контекст.
      */
     private async loadPrContext(anchor: { fileId: string; diffId?: string | undefined } | null, pinnedDiffId?: string): Promise<PrContext> {
-        const host = this.host;
-        if (host === null) {
-            return { pr: null, diff: null, fileContent: null, headCommit: null };
-        }
-
-        // Якорь обмена старого формата итерации не называет (`LEGACY_DIFF_ID`) — такой вопрос про активную.
-        const pinned =
-            pinnedDiffId ?? (anchor?.diffId === undefined || anchor.diffId === LEGACY_DIFF_ID ? null : anchor.diffId);
-        const active = this.iterationFeed?.active() ?? null;
-        if (pinned !== null && active !== null && active.diffId !== pinned) {
-            return this.loadPinnedContext(host, pinned);
-        }
-
-        const getFileContent = host.getFileContent?.bind(host);
-        const [pr, diff, fileContent] = await Promise.all([
-            host.getPr().then(
-                (value) => value,
-                () => null,
-            ),
-            host.getDiff().then(
-                (value) => value,
-                () => null,
-            ),
-            anchor === null || getFileContent === undefined
-                ? Promise.resolve(null)
-                : getFileContent(anchor.fileId).then(
-                      (value) => value,
-                      () => null,
-                  ),
-        ]);
-        if (this.iterations !== null && diff !== null) {
-            // Дифф активной итерации, по которому собран контекст вопроса, оседает в хранилище.
-            void rememberIterationDiff(this.iterations, host, diff);
-        }
-        // Активная итерация могла уехать вперёд, пока грузился дифф (или фид ещё не стартовал):
-        // вопрос по прошлой итерации обязан строиться из её патча, а не из свежего. Текст файла
-        // из ответа при этом отбрасывается — `getFileContent` знает только активную итерацию.
-        if (pinned !== null && diff?.diffId !== pinned) {
-            return this.loadPinnedContext(host, pinned, pr);
-        }
+        const pinned = pinnedDiffId ?? (anchor?.diffId === undefined || anchor.diffId === LEGACY_DIFF_ID ? null : anchor.diffId);
+        const diff = pinned === null
+            ? await this.host?.getDiff().catch(() => null) ?? null
+            : this.iterations?.get(pinned)?.diff ?? null;
+        if (pinned !== null && diff === null && this.host !== null) throw new RpcFailure('bad_request', `Дифф версии ${pinned} не импортирован.`);
+        const pr = diff?.metadata === undefined ? await this.host?.getPr().catch(() => null) ?? null : diff.metadata;
+        const file = anchor === null ? undefined : diff?.files.find((entry) => entry.fileId === anchor.fileId);
+        const fileContent = file === undefined || diff === null ? null : this.pinnedContent === undefined
+            ? await this.host?.getFileContent?.(file.fileId).catch(() => null) ?? null
+            : await this.pinnedContent(diff, file).catch(() => null);
         return { pr, diff, fileContent, headCommit: diff?.headCommit ?? null };
     }
 
-/**
-     * Контекст вопроса по прошлой итерации: её патч лежит локально (docs/spec.md), а содержимого
-     * файлов у хоста для неё нет — `getFileContent` знает только активную итерацию.
-     */
     private resultErrors(result: string, exchange: ChatExchange): string[] {
         const diffId = exchange.explanation?.diffId ?? exchange.anchor?.diffId;
         const diff = diffId === undefined ? null : this.iterations?.get(diffId)?.diff ?? null;
         return [...chatResultErrors(result), ...chatCodeLinkErrors(result, diff, exchange.anchor)];
     }
 
-    private async loadPinnedContext(host: ReviewSource, diffId: string, meta?: PrMeta | null): Promise<PrContext> {
-        const stored = this.iterations?.get(diffId) ?? null;
-        if (stored === null) {
-            throw new RpcFailure(
-                'bad_request',
-                `Дифф итерации ${diffId} не сохранён — вопрос по ней задать не из чего.`,
-            );
-        }
 
-        const pr =
-            meta !== undefined
-                ? meta
-                : await host.getPr().then(
-                      (value) => value,
-                      () => null,
-                  );
-        return { pr, diff: stored.diff, fileContent: null, headCommit: stored.diff.headCommit };
-    }
 }
 
 /** Якорь из UI без `diffId` относится к активной итерации — её id берётся из загруженного диффа. */
@@ -482,7 +430,7 @@ function resolveAskAnchor(anchor: UiChatAskAnchor | null, diff: PrDiff | null): 
 
 /** Что хост дал под этот вопрос; отказ любой части не отменяет вопрос, а сужает контекст. */
 interface PrContext {
-    readonly pr: PrMeta | null;
+    readonly pr: CapturedPr | null;
     readonly diff: PrDiff | null;
     readonly fileContent: FileContent | null;
     readonly headCommit: string | null;

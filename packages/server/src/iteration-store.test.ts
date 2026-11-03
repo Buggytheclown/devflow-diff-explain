@@ -1,11 +1,11 @@
 import path from 'node:path';
 
-import type { Iteration, PrDiff, ReviewSource } from '@sherpa/protocol';
+import type { Iteration, PrDiff } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SherpaDatabase } from './db.js';
 import { openDatabase } from './db.js';
-import { IterationStore, rememberIterationDiff } from './iteration-store.js';
+import { IterationStore } from './iteration-store.js';
 import { makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
 /**
@@ -134,22 +134,6 @@ describe('хранилище итераций', () => {
         expect(store.list()).toEqual([]);
     });
 
-    it('getInterdiff считает срез один раз и дальше отдаёт из кэша', async () => {
-        const store = new IterationStore({ db: open() });
-        const slice = diffOf('iter-2', ['src/changed.ts']);
-        const load = vi.fn(() => Promise.resolve(slice));
-
-        const first = await store.getInterdiff('iter-1', 'iter-2', load);
-        const second = await store.getInterdiff('iter-1', 'iter-2', load);
-
-        expect(first).toEqual(slice);
-        expect(second).toEqual(slice);
-        expect(load).toHaveBeenCalledTimes(1);
-        // Ключ кэша — пара: другая пара считается заново.
-        await store.getInterdiff('iter-2', 'iter-3', () => Promise.resolve(diffOf('iter-3')));
-        expect(load).toHaveBeenCalledTimes(1);
-    });
-
     it('повреждённая строка не роняет чтение: предупреждение и пропуск', () => {
         const db = open();
         const store = new IterationStore({ db });
@@ -166,35 +150,4 @@ describe('хранилище итераций', () => {
         }
     });
 
-    it('rememberIterationDiff кладёт активную итерацию и молчит на чужом диффе', async () => {
-        const store = new IterationStore({ db: open() });
-        const active = iterationOf('iter-1', '2026-09-01T10:00:00.000Z', 'active');
-        const host = { listIterations: () => Promise.resolve([active]) } as unknown as ReviewSource;
-
-        await rememberIterationDiff(store, host, diffOf('iter-1', ['src/index.ts']));
-        expect(store.get('iter-1')?.iteration).toEqual(active);
-
-        const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-        try {
-            // Пока грузился дифф, автор запушил: хост эту итерацию уже не называет.
-            await rememberIterationDiff(store, host, diffOf('iter-9'));
-            expect(store.get('iter-9')).toBeNull();
-            expect(stderr.mock.calls.some((call) => String(call[0]).includes('iter-9'))).toBe(true);
-        } finally {
-            stderr.mockRestore();
-        }
-    });
-
-    it('падение хоста запись не роняет — ошибка уходит в stderr', async () => {
-        const store = new IterationStore({ db: open() });
-        const host = { listIterations: () => Promise.reject(new Error('хост прилёг')) } as unknown as ReviewSource;
-
-        const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-        try {
-            await expect(rememberIterationDiff(store, host, diffOf('iter-1'))).resolves.toBeUndefined();
-            expect(stderr.mock.calls.some((call) => String(call[0]).includes('хост прилёг'))).toBe(true);
-        } finally {
-            stderr.mockRestore();
-        }
-    });
 });

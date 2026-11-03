@@ -19,16 +19,13 @@ export const DEFAULT_UI_SETTINGS: UiSettings = uiSettingsSchema.parse({});
  */
 const SETTINGS_FIELDS = [
     'diffMode',
-    'shipMode',
-    'composerLayout',
     'locale',
     'theme',
     'arcanum',
     'textSize',
+    'generationLocale',
     // Вложенные объекты: сравнение «то же значение» тут по ссылке, и патч уезжает всегда.
     // Пишет каждый из них одно место — тур первого захода и «не напоминать про эту версию».
-    'onboarding',
-    'updates',
 ] as const satisfies readonly (keyof UiSettings)[];
 
 export interface UiSettingsStore {

@@ -1,4 +1,4 @@
-import type { ReviewSource } from '@sherpa/protocol';
+import type { CodeReader } from '@sherpa/protocol';
 import type {
     FileContent,
     HostId,
@@ -15,7 +15,7 @@ import { fixtureBlob } from './patch.js';
 
 
 
-export class FixtureHost implements ReviewSource {
+export class FixtureHost implements CodeReader {
 
     private readonly data: FixtureData;
     private readonly iterationWatchers = new Set<(iterations: Iteration[]) => void>();
@@ -95,7 +95,7 @@ export class FixtureHost implements ReviewSource {
     }
 
     /** Подписка на итерации: снапшот сразу и после каждого `advanceIteration`. */
-    watchIterations(onChange: (iterations: Iteration[]) => void): () => void {
+    subscribeVersions(onChange: (iterations: Iteration[]) => void): () => void {
         this.iterationWatchers.add(onChange);
         onChange(this.iterationsSnapshot());
         return () => {

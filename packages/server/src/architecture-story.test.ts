@@ -1,8 +1,9 @@
+import { checkpointJson } from '@sherpa/fixtures';
 import { afterEach, expect, it, vi } from 'vitest';
 import { architectureStoryFixture } from '@sherpa/fixtures';
 import { architectureOverviewResultSchema, preparationProgress, routeSnapshotSchema, UI_ENDPOINTS, uiReviewRouteResponseSchema } from '@sherpa/protocol';
 import { architectureGuide, validateArchitectureOverview, validateAllFiles } from './architecture-story.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import type { SherpaServer } from './server.js';
 import { get, makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
@@ -23,8 +24,8 @@ async function next(server: SherpaServer) {
 }
 async function complete(server: SherpaServer, result: unknown, type: string) {
     const task = await next(server); expect(task.type).toBe(type);
-    const accepted = server.queue.complete('worker', task.id, JSON.stringify(result));
-    expect(accepted, JSON.stringify(accepted)).toMatchObject({ kind: 'accepted' });
+    const accepted = server.queue.complete('worker', task.id, checkpointJson(result));
+    expect(accepted, checkpointJson(accepted)).toMatchObject({ kind: 'accepted' });
     return task;
 }
 
@@ -80,7 +81,7 @@ it('ошибка отрисовки отражается в прогрессе, 
     server.route.reportDiagramFailure(saved.snapshotId);
     expect(preparationProgress((await read(server))).status).toBe('partial');
     await server.route.retryDiagram(saved.snapshotId); await server.route.retryDiagram(saved.snapshotId);
-    await complete(server, { flow: fixture.outline.flow }, 'route.diagram');
+    await complete(server, { flow: fixture.outline.flow }, 'route.prepare');
     expect((await read(server)).snapshot?.stops).toEqual(saved.stops);
     expect(preparationProgress((await read(server))).percent).toBe(100);
     expect(architectureGuide('overview', 'ru')).not.toContain('3–6');
@@ -160,7 +161,10 @@ it('окружение не требует пустых оговорок, а з�
     block.evidence = { claims: [{ sources: [{ kind: 'lines', path: fixture.anchor.path, side: fixture.anchor.side, start: fixture.anchor.start, end: fixture.anchor.start }], limitation: null }] };
     outline.flow.diagram.mermaid += '\n ambient["External system"]';
     outline.flow.diagram.nodes.push({ id: 'ambient', label: 'External system', change: 'existing', sources: [], limitation: null });
-    const checked = validateArchitectureOverview(JSON.stringify(outline), fixture.diff);
+    const compact = { ...outline, flow: { ...outline.flow, diagram: { ...outline.flow.diagram,
+        nodes: outline.flow.diagram.nodes.map((entry) => entry.id !== node.id && entry.id !== 'ambient' ? entry : { id: entry.id, label: entry.label, change: entry.change }),
+    } } };
+    const checked = validateArchitectureOverview(JSON.stringify(compact), fixture.diff);
     if (!checked.ok) throw new Error(checked.errors.join('\n'));
     if (checked.value.flow?.status !== 'ready') throw new Error('No diagram');
     expect(checked.value.flow.diagram.nodes.find((entry) => entry.id === node.id)?.sources.length).toBeGreaterThan(0);
@@ -216,9 +220,9 @@ it('незамкнутое обновление графа/владельцев 
     const task = await next(server);
     const before = (await read(server)).snapshot;
     const broken = { contractVersion: 6, update: { stops: fixture.outline.stops.slice(1) } };
-    expect(server.queue.complete('worker', task.id, JSON.stringify(broken)).kind).toBe('rejected');
+    expect(server.queue.complete('worker', task.id, checkpointJson(broken)).kind).toBe('rejected');
     expect((await read(server)).snapshot).toEqual(before);
-    expect(server.queue.complete('worker', task.id, JSON.stringify({ contractVersion: 6, update: { summary: 'Корректный checkpoint.' } })).kind).toBe('accepted');
+    expect(server.queue.complete('worker', task.id, checkpointJson({ contractVersion: 6, update: { summary: 'Корректный checkpoint.' } })).kind).toBe('accepted');
 });
 
 it('при перестановке блоков без явных ID приложение узнаёт их по файлам', () => {
@@ -235,14 +239,13 @@ it('обновление задания отзывает старую аренд
     const { databasePathFor } = await import('./paths.js');
     const { RouteStore } = await import('./route-store.js');
     const { TaskQueue } = await import('./queue.js');
-    const { validateStorySkeleton } = await import('./story.js');
+    const { acceptedFixture } = await import('./test-support.js');
     const { overviewStoryFixture, makeFixtureHost } = await import('@sherpa/fixtures');
     const legacy = overviewStoryFixture();
     const db = openDatabase(databasePathFor(dir, 'fixture-medium'));
     const store = new RouteStore({ db }); const queue = new TaskQueue({ db });
     for (const task of queue.listTasks()) queue.cancel(task.id); store.clearBindings();
-    const parsed = validateStorySkeleton(JSON.stringify(legacy.outline), legacy.diff, 'ru');
-    if (!parsed.ok) throw new Error(parsed.errors.join('\n'));
+    const parsed = acceptedFixture(legacy.snapshot);
     const first = parsed.value.stops[0]?.guidedFiles?.[0]; if (first === undefined) throw new Error('Missing file');
     first.explanation = 'Уже принятое пояснение этого снимка.';
     store.beginSkeleton({ locale: 'ru', presentation: 'story', version: 5, diffId: legacy.diff.diffId });
@@ -257,10 +260,10 @@ it('обновление задания отзывает старую аренд
     expect(restarted.queue.getTask(old.id)?.status).toBe('cancelled');
     expect(restarted.queue.complete('old-worker', old.id, 'Late result').kind).toBe('noop');
     const task = await next(restarted);
-    const context = task.contextFiles.find((file) => file.endsWith('target.json'));
+    const context = task.contextFiles.find((file) => /target-[a-f0-9]+\.json$/.test(file));
     const fs = await import('node:fs');
     expect(fs.readFileSync(context ?? '', 'utf8')).toContain(legacy.diff.headCommit);
-    expect(restarted.queue.complete('worker', task.id, JSON.stringify(fixture.outline)).kind).toBe('accepted');
+    expect(restarted.queue.complete('worker', task.id, checkpointJson(fixture.outline)).kind).toBe('accepted');
     const saved = (await read(restarted)).snapshot;
     expect(saved?.diffId).toBe(legacy.diff.diffId);
     expect(saved?.stops.flatMap((block) => block.guidedFiles ?? []).find((file) => file.fileId === first.fileId)?.explanation).toBe(first.explanation);
@@ -272,7 +275,7 @@ it('обновление задания отзывает старую аренд
 it('новая схема для модели содержит прямые источники и не предлагает legacy-формат files', async () => {
     const { generateJsonSchemas } = await import('@sherpa/protocol');
     const schemas = generateJsonSchemas();
-    const overview = JSON.stringify(schemas.architectureOverviewResult);
+    const overview = checkpointJson(schemas.allFilesResult);
     expect(overview).toContain('"sources"'); expect(overview).not.toContain('"claims"'); expect(overview).not.toContain('"quote"');
     const files = schemas.allFilesResult as { properties: Record<string, unknown> };
     expect(files.properties.files).toBeDefined(); expect(files.properties.stops).toBeUndefined();
@@ -285,12 +288,12 @@ it('повтор старого готового рассказа строит v
     const { server, dir } = await start(); await server.close();
     const { openDatabase } = await import('./db.js'); const { databasePathFor } = await import('./paths.js');
     const { RouteStore } = await import('./route-store.js'); const { TaskQueue } = await import('./queue.js');
-    const { validateStorySkeleton } = await import('./story.js'); const { overviewStoryFixture } = await import('@sherpa/fixtures');
+    const { acceptedFixture } = await import('./test-support.js'); const { overviewStoryFixture } = await import('@sherpa/fixtures');
     const legacy = overviewStoryFixture(); const db = openDatabase(databasePathFor(dir, 'fixture-medium'));
     const store = new RouteStore({ db }); const queue = new TaskQueue({ db });
     for (const task of queue.listTasks()) queue.cancel(task.id); store.clearBindings();
     db.prepare("DELETE FROM meta WHERE key IN ('generation_presentation','generation_story_contract_version','preparation_generation')").run();
-    const parsed = validateStorySkeleton(JSON.stringify(legacy.outline), legacy.diff, 'ru'); if (!parsed.ok) throw new Error(parsed.errors.join('\n'));
+    const parsed = acceptedFixture(legacy.snapshot);
     store.acceptSkeleton({ skeleton: { ...parsed.value, stops: legacy.snapshot.stops, flow: { status: 'unavailable' as const, reason: 'Старая схема.' } },
         diff: legacy.diff, snapshotId: 'legacy-ready', previousSnapshotId: null, presentation: 'story', provenance: { harness: 'test', model: 'old', locale: 'ru' } });
     store.markReady(); store.close(); db.close();
@@ -321,7 +324,7 @@ it('принимает соседние файлы, хранит квитанц�
     const files = fixture.body.stops.flatMap((block) => block.files);
     const broken = { ...files[0], annotations: [{ side: 'new', start: 999999, end: 999999, text: 'Bad range' }] };
     const task = await next(server);
-    const result = JSON.stringify({ contractVersion: 6, overview: fixture.outline, files: [broken, ...files.slice(1)] });
+    const result = checkpointJson({ contractVersion: 6, overview: fixture.outline, files: [broken, ...files.slice(1)] });
     const receipt = server.queue.complete('worker', task.id, result);
     expect(receipt.kind).toBe('partial');
     expect(server.queue.complete('worker', task.id, result)).toEqual(receipt);
@@ -339,7 +342,7 @@ it('невалидная структура не публикует даже к�
     const overview = structuredClone(fixture.outline);
     const first = overview.stops[0]; if (first === undefined) throw new Error('Missing block');
     first.files = [];
-    const receipt = server.queue.complete('worker', task.id, JSON.stringify({ contractVersion: 6, overview, files: fixture.body.stops.flatMap((block) => block.files) }));
+    const receipt = server.queue.complete('worker', task.id, checkpointJson({ contractVersion: 6, overview, files: fixture.body.stops.flatMap((block) => block.files) }));
     expect(receipt.kind).toBe('rejected');
     expect((await read(server)).snapshot).toBeNull();
 });
@@ -351,7 +354,7 @@ it('ошибка исправления готового файла остаёт
     await complete(server, { contractVersion: 6, overview: fixture.outline, files: files.slice(1) }, 'route.prepare');
     const task = await next(server);
     const bad = { ...second, explanation: 'New correction', annotations: [{ side: 'new', start: 999999, end: 999999, text: 'Bad range' }] };
-    expect(server.queue.complete('worker', task.id, JSON.stringify({ contractVersion: 6, files: [first, bad] })).kind).toBe('partial');
+    expect(server.queue.complete('worker', task.id, checkpointJson({ contractVersion: 6, files: [first, bad] })).kind).toBe('partial');
     const partial = await read(server);
     expect(partial.phase).toBe('filling');
     const saved = partial.snapshot?.stops.flatMap((block) => block.guidedFiles ?? []).find((file) => file.path === second.path);

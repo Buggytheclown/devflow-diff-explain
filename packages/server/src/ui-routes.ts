@@ -1,7 +1,7 @@
 import type { ServerResponse } from 'node:http';
 
 import type {
-    PrMeta,
+    CapturedPr,
     UiCancelResponse,
     UiChatEvent,
     UiEnqueueResponse,
@@ -37,7 +37,7 @@ import type { WorkerRegistry } from './worker-registry.js';
  */
 export interface PrMetaSource {
     /** null — хоста нет или мета ещё не загрузилась. */
-    get: () => PrMeta | null;
+    get: () => CapturedPr | null;
     subscribe: (listener: () => void) => () => void;
 }
 
@@ -45,7 +45,7 @@ export interface UiRoutesOptions {
     readonly prKey: string;
     readonly queue: TaskQueue;
     readonly registry: WorkerRegistry;
-    /** Имя хост-адаптера этого PR; null — хоста нет, ревью-ручки закрыты. */
+    /** Метка локального читателя; null — снимок кода ещё недоступен. */
     readonly reviewHost: string | null;
     /** Мета PR для снапшота: её обновление тоже будит SSE-клиентов. */
     readonly prMeta: PrMetaSource;

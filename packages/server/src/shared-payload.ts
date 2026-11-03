@@ -33,6 +33,7 @@ export type FileSide = 'old' | 'new';
 
 /** Ключ общего диффа: пара коммитов PR. Новый пуш — новый ключ и новый каталог. */
 export function diffKeyOf(diff: PrDiff): string {
+    if (diff.codeSnapshotId !== undefined) return diff.codeSnapshotId;
     return `${safeSegment(diff.baseCommit)}-${safeSegment(diff.headCommit)}`;
 }
 
@@ -54,7 +55,7 @@ export class SharedPayloadStore {
      */
     private readonly liveKeys = new Set<string>();
 
-    constructor(sharedDir: string, openContextFiles: () => Iterable<string>) {
+    constructor(sharedDir: string, openContextFiles: () => Iterable<string>, private readonly artifacts?: (diff: PrDiff) => { revision: string; path: string; hash: string; kind: string; read: () => Uint8Array | null }[]) {
         this.sharedDir = sharedDir;
         this.openContextFiles = openContextFiles;
     }
@@ -86,7 +87,7 @@ export class SharedPayloadStore {
     }
 
     target(key: string, content: string): string {
-        const file = path.join(this.joinBuildDir(key), 'target.json');
+        const file = path.join(this.joinBuildDir(key), `target-${hashOf(content)}.json`);
         this.write(file, content); return file;
     }
 
@@ -99,6 +100,25 @@ export class SharedPayloadStore {
         const file = path.join(this.joinBuildDir(key), 'interdiff.md');
         this.write(file, content);
         return file;
+    }
+
+    codeIndex(diff: PrDiff): string | undefined {
+        const entries = this.artifacts?.(diff);
+        if (entries === undefined || entries.length === 0) return undefined;
+        const dir = this.joinBuildDir(diffKeyOf(diff));
+        const sources = entries.map(({ read, ...entry }) => {
+            const file = path.join(dir, 'originals', entry.hash);
+            if (!fs.existsSync(file)) {
+                const bytes = read(); if (bytes === null) throw new Error('Imported source bytes are missing.');
+                fs.mkdirSync(path.dirname(file), { recursive: true, mode: DIR_MODE });
+                const temporary = `${file}.${randomBytes(6).toString('hex')}.tmp`;
+                fs.writeFileSync(temporary, bytes, { mode: FILE_MODE }); fs.renameSync(temporary, file);
+            }
+            return { ...entry, file, bytes: fs.statSync(file).size };
+        });
+        const content = JSON.stringify({ codeSnapshotId: diff.codeSnapshotId, diffId: diff.diffId, sources });
+        const file = path.join(dir, `sources-${hashOf(content)}.json`);
+        this.write(file, content); return file;
     }
 
     /** Полный текст стороны файла: два якорных вопроса к одному файлу делят один путь. */

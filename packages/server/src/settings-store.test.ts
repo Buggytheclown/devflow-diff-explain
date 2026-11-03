@@ -20,32 +20,21 @@ describe('глобальные настройки UI', () => {
     it('без файла отдаёт дефолты', () => {
         expect(new SettingsStore(sherpaDir).read()).toEqual({
             diffMode: 'unified',
-            shipMode: 'ship',
-            composerLayout: 'visual',
-            locale: 'auto',
-            theme: 'auto',
-            arcanum: false,
+            generationLocale: 'auto',
+            locale: 'ru',
+            theme: 'dark',
+            arcanum: true,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
         });
     });
 
-    it.each(['dark', 'light', 'auto'] as const)('тема %s переживает повторное открытие старого файла', async (theme) => {
-        await fs.writeFile(settingsPathFor(sherpaDir), JSON.stringify({ diffMode: 'split', locale: 'en' }));
+    it('мигрирует старый язык ответа и сохраняет размер, оформление фиксировано', async () => {
+        await fs.writeFile(settingsPathFor(sherpaDir), JSON.stringify({ locale: 'en', theme: 'light', arcanum: false, textSize: 'l', shipMode: 'ship' }));
         const store = new SettingsStore(sherpaDir);
-        expect(store.read()).toMatchObject({ theme: 'auto', textSize: 'm', diffMode: 'split', locale: 'en' });
-        store.patch({ theme });
-        expect(new SettingsStore(sherpaDir).read()).toMatchObject({ theme, arcanum: false, diffMode: 'split', locale: 'en' });
-    });
-
-    it('выбор темы и оформление Arcanum сохраняются независимо', () => {
-        const store = new SettingsStore(sherpaDir);
-        store.patch({ theme: 'light' });
-        expect(store.patch({ arcanum: true })).toMatchObject({ theme: 'light', arcanum: true });
-        expect(store.patch({ theme: 'auto' })).toMatchObject({ theme: 'auto', arcanum: true });
-        expect(store.patch({ arcanum: false })).toMatchObject({ theme: 'auto', arcanum: false });
-        expect(new SettingsStore(sherpaDir).read()).toMatchObject({ theme: 'auto', arcanum: false });
+        expect(store.read()).toMatchObject({ generationLocale: 'en', locale: 'ru', theme: 'dark', arcanum: true, textSize: 'l' });
+        const saved = store.patch({ diffMode: 'split' });
+        expect(saved).not.toHaveProperty('shipMode');
+        expect(new SettingsStore(sherpaDir).read()).toEqual(saved);
     });
 
     it('битый JSON деградирует в дефолты, а не в ошибку', async () => {
@@ -57,45 +46,29 @@ describe('глобальные настройки UI', () => {
     it.each([{ diffMode: 'three-way' }, { theme: 'arcanum-dark' }])('значение вне схемы деградирует в дефолты: %j', async (settings) => {
         await fs.writeFile(settingsPathFor(sherpaDir), JSON.stringify(settings));
 
-        expect(new SettingsStore(sherpaDir).read()).toMatchObject({ diffMode: 'unified', theme: 'auto', arcanum: false });
+        expect(new SettingsStore(sherpaDir).read()).toMatchObject({ diffMode: 'unified', theme: 'dark', arcanum: true });
     });
 
     it('патч одного поля не трогает остальные', () => {
         const store = new SettingsStore(sherpaDir);
-        store.patch({ shipMode: 'sticky_ship' });
+        store.patch({ generationLocale: 'en' });
 
         const settings = store.patch({ diffMode: 'split' });
 
         expect(settings).toEqual({
             diffMode: 'split',
-            shipMode: 'sticky_ship',
-            composerLayout: 'visual',
-            locale: 'auto',
-            theme: 'auto',
-            arcanum: false,
+            generationLocale: 'en',
+            locale: 'ru',
+            theme: 'dark',
+            arcanum: true,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
         });
         expect(new SettingsStore(sherpaDir).read()).toEqual(settings);
     });
 
-    it('вложенный объект патча заменяется целиком и не задевает соседние поля', () => {
-        const store = new SettingsStore(sherpaDir);
-
-        const settings = store.patch({ onboarding: { completedAt: null, step: 3 } });
-
-        expect(settings.onboarding).toEqual({ completedAt: null, step: 3 });
-        expect(settings.locale).toBe('auto');
-    });
-
-    it('патч языка не сбрасывает онбординг', () => {
-        const store = new SettingsStore(sherpaDir);
-        store.patch({ onboarding: { completedAt: null, step: 3 } });
-
-        const settings = store.patch({ locale: 'en' });
-
-        expect(settings).toMatchObject({ locale: 'en', onboarding: { completedAt: null, step: 3 } });
+    it('язык генерации меняется независимо от интерфейса и размера текста', () => {
+        const store = new SettingsStore(sherpaDir); store.patch({ textSize: 'l' });
+        expect(store.patch({ generationLocale: 'en' })).toMatchObject({ locale: 'ru', generationLocale: 'en', textSize: 'l' });
     });
 
     it('пустой патч ничего не меняет', () => {
@@ -110,34 +83,31 @@ describe('глобальные настройки UI', () => {
         const second = new SettingsStore(sherpaDir);
 
         first.patch({ diffMode: 'split' });
-        const merged = second.patch({ shipMode: 'sticky_ship' });
+        const merged = second.patch({ generationLocale: 'en' });
 
-        expect(merged).toMatchObject({ diffMode: 'split', shipMode: 'sticky_ship' });
+        expect(merged).toMatchObject({ diffMode: 'split', generationLocale: 'en' });
         expect(first.read()).toEqual(merged);
     });
 
     it('режим Comment сплит-кнопки сохраняется и читается заново', () => {
-        new SettingsStore(sherpaDir).patch({ shipMode: 'comment' });
+        new SettingsStore(sherpaDir).patch({ generationLocale: 'ru' });
 
-        expect(new SettingsStore(sherpaDir).read().shipMode).toBe('comment');
+        expect(new SettingsStore(sherpaDir).read().generationLocale).toBe('ru');
     });
 
     it('неизвестные поля файла не переживают запись', async () => {
         const file = settingsPathFor(sherpaDir);
         await fs.writeFile(file, JSON.stringify({ diffMode: 'split', pizza: 'ананасовая' }));
 
-        new SettingsStore(sherpaDir).patch({ shipMode: 'sticky_ship' });
+        new SettingsStore(sherpaDir).patch({ generationLocale: 'en' });
 
         expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({
             diffMode: 'split',
-            shipMode: 'sticky_ship',
-            composerLayout: 'visual',
-            locale: 'auto',
-            theme: 'auto',
-            arcanum: false,
+            generationLocale: 'en',
+            locale: 'ru',
+            theme: 'dark',
+            arcanum: true,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
         });
     });
 

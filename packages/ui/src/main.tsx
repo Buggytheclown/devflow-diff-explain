@@ -32,9 +32,8 @@ if (token === null) {
         if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
         if (event.key === 'Escape') session.setChatOpen(false);
     });
-    void Promise.race([loadUiSettings(settings, async () => ({ ...await fetchUiSettings(token), ...READER_APPEARANCE })), delay(1500)]).then(() => {
-        root.render(<StrictMode><IconSprite /><SettingsProvider store={settings}><DocumentSettingsSync /><LocaleProvider locale="ru"><App store={store} session={session} token={token} /></LocaleProvider></SettingsProvider></StrictMode>);
-    });
+    root.render(<StrictMode><IconSprite /><SettingsProvider store={settings}><DocumentSettingsSync /><LocaleProvider locale="ru"><App store={store} session={session} token={token} /></LocaleProvider></SettingsProvider></StrictMode>);
+    void loadUiSettings(settings, async () => ({ ...await fetchUiSettings(token), ...READER_APPEARANCE }));
 }
 
 /** Экран без токена: единственное место, где UI живёт вообще без серверного состояния. */
@@ -46,8 +45,4 @@ function NoTokenScreen() {
             <p className="message-screen__hint">{t('app.noToken.hint')}</p>
         </MessageScreen>
     );
-}
-
-function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
 }

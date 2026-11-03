@@ -16,7 +16,7 @@ import {
 } from './manifest.js';
 import { manifestPathFor, serversDirOf } from './paths.js';
 import type { SherpaServer } from './server.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { deadPid, makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 import { SERVER_VERSION } from './version.js';
 

@@ -1,4 +1,4 @@
-import type { HostId, Iteration, PrDiff, ReviewSource } from '@sherpa/protocol';
+import type { HostId, Iteration, PrDiff } from '@sherpa/protocol';
 import { iterationSchema, prDiffSchema } from '@sherpa/protocol';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
@@ -22,10 +22,6 @@ interface IterationRow extends SqlRow {
     head_commit: string;
     created_at: string;
     status: string;
-    diff_json: string;
-}
-
-interface InterdiffRow extends SqlRow {
     diff_json: string;
 }
 
@@ -140,53 +136,6 @@ export class IterationStore {
         return merged.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     }
 
-    /**
-     * Срез между итерациями из кэша, а на промахе — через `load` с записью. Считает срез
-     * вызывающая сторона (хост-адаптер), стор только помнит результат.
-     */
-    async getInterdiff(base: HostId, head: HostId, load: () => Promise<PrDiff>): Promise<PrDiff> {
-        const cached = this.readInterdiff(base, head);
-        if (cached !== null) {
-            return cached;
-        }
-
-        const diff = prDiffSchema.parse(await load());
-        this.db
-            .prepare(
-                `INSERT INTO interdiffs (base_id, head_id, diff_json, fetched_at) VALUES (?, ?, ?, ?)
-                 ON CONFLICT(base_id, head_id) DO UPDATE SET
-                    diff_json = excluded.diff_json, fetched_at = excluded.fetched_at`,
-            )
-            .run(base, head, JSON.stringify(diff), this.now().toISOString());
-        return diff;
-    }
-
-    /**
-     * Срез из кэша без похода в хост: приёмка результата генерации синхронна, а сеть в ней
-     * недопустима — не добыли заранее, значит переносить нечего.
-     */
-    peekInterdiff(base: HostId, head: HostId): PrDiff | null {
-        return this.readInterdiff(base, head);
-    }
-
-    private readInterdiff(base: HostId, head: HostId): PrDiff | null {
-        const row = this.db
-            .prepare('SELECT diff_json FROM interdiffs WHERE base_id = ? AND head_id = ?')
-            .get(base, head) as InterdiffRow | undefined;
-        if (row === undefined) {
-            return null;
-        }
-
-        try {
-            return prDiffSchema.parse(JSON.parse(row.diff_json) as unknown);
-        } catch (error) {
-            process.stderr.write(
-                `sherpa-server: кэш среза ${base}→${head} повреждён (${messageOf(error)}) — пересчитываем\n`,
-            );
-            return null;
-        }
-    }
-
     private rows(): StoredIteration[] {
         const rows = this.db
             .prepare('SELECT * FROM iterations ORDER BY created_at, rowid')
@@ -215,35 +164,6 @@ export class IterationStore {
             );
             return null;
         }
-    }
-}
-
-/**
- * Кладёт только что загруженный с хоста дифф в локальное хранилище патчей. Зовётся отовсюду,
- * где сервер берёт активный дифф (ручка читалки, генерация маршрута, чат): так хранилище
- * наполняется само, без отдельного обхода итераций.
- *
- * Ничего не бросает и никого не ждёт: ответ ручки не должен зависеть ни от списка итераций,
- * ни от записи в SQLite — не сложилось, значит в следующий раз.
- */
-export async function rememberIterationDiff(
-    store: IterationStore,
-    host: ReviewSource,
-    diff: PrDiff,
-): Promise<void> {
-    try {
-        const iterations = await host.listIterations();
-        const iteration = iterations.find((candidate) => candidate.diffId === diff.diffId);
-        if (iteration === undefined) {
-            // Пока грузился дифф, автор запушил новый: мету этой итерации хост уже не называет.
-            process.stderr.write(
-                `sherpa-server: итерации ${diff.diffId} нет в списке хоста — патч не сохранён\n`,
-            );
-            return;
-        }
-        store.upsert(diff, iteration);
-    } catch (error) {
-        process.stderr.write(`sherpa-server: патч итерации не сохранён: ${messageOf(error)}\n`);
     }
 }
 

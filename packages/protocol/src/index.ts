@@ -3,6 +3,7 @@
  * Канон — zod-схемы; типы выводятся из них, JSON-схемы генерятся из них же.
  */
 export * from './saved-source.js';
+export * from './code-snapshot.js';
 export * from './chat.js';
 export * from './code-link.js';
 export * from './constants.js';
@@ -14,7 +15,7 @@ export * from './manifest.js';
 export * from './messages.js';
 export * from './pr-key.js';
 export * from './review.js';
-export * from './review-host.js';
+export * from './code-reader.js';
 export * from './route.js';
 export * from './story-evidence.js';
 export * from './task.js';

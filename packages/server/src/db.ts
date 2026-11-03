@@ -50,24 +50,30 @@ export function openDatabase(file: string, migrations: readonly Migration[] = MI
  *
  * Вложенный вызов участвует в общей транзакции; исключение откатывает внешнюю операцию.
  */
-const activeTransactions = new WeakMap<SherpaDatabase, (() => void)[]>();
+const activeTransactions = new WeakMap<SherpaDatabase, { effects: (() => void)[]; failed: boolean }>();
 
 /** Публикация памяти и событий только после внешнего commit. */
 export function afterDatabaseCommit(db: SherpaDatabase, effect: () => void): void {
     const pending = activeTransactions.get(db);
-    if (pending === undefined) effect();
-    else pending.push(effect);
+    if (pending === undefined) runCommitEffect(effect);
+    else pending.effects.push(effect);
 }
 
 export function transaction<A extends unknown[], R>(db: SherpaDatabase, body: (...args: A) => R): (...args: A) => R {
     return (...args: A): R => {
-        if (activeTransactions.has(db)) return body(...args);
+        const active = activeTransactions.get(db);
+        if (active !== undefined) {
+            try { return body(...args); }
+            catch (error) { active.failed = true; throw error; }
+        }
         db.exec('BEGIN IMMEDIATE;');
         const effects: (() => void)[] = [];
-        activeTransactions.set(db, effects);
+        const context = { effects, failed: false };
+        activeTransactions.set(db, context);
         let result: R;
         try {
             result = body(...args);
+            if (context.failed) throw new Error('Transaction aborted by a nested failure.');
             db.exec('COMMIT;');
         } catch (error) {
             try { db.exec('ROLLBACK;'); } catch { /* SQLite мог откатить сам. */ }
@@ -75,9 +81,14 @@ export function transaction<A extends unknown[], R>(db: SherpaDatabase, body: (.
             throw error;
         }
         activeTransactions.delete(db);
-        for (const effect of effects) effect();
+        for (const effect of effects) runCommitEffect(effect);
         return result;
     };
+}
+
+function runCommitEffect(effect: () => void): void {
+    try { effect(); }
+    catch (error) { process.stderr.write(`sherpa-server: ошибка уведомления после commit: ${error instanceof Error ? error.message : String(error)}\n`); }
 }
 
 /** Последовательно применяет неприменённые миграции; каждая — в своей транзакции. */

@@ -1,3 +1,4 @@
+import { checkpointJson } from '@sherpa/fixtures';
 import fsSync from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -22,7 +23,7 @@ import { chatPayloadDirOf, databasePathFor, routePayloadDirOf, sharedPayloadDirO
 import { MAX_RESULT_REJECTIONS } from './queue.js';
 import { mediumDiff } from './route/fixture-support.js';
 import type { SherpaServer } from './server.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { get, makeTempSherpaDir, postJson, removeTempSherpaDir } from './test-support.js';
 
 const PR = 'fixture-medium';
@@ -249,12 +250,12 @@ describe('вопросы об объяснении и коде', () => {
             'question.md',
             'selection.patch.md',
             'file-context.md',
-            'route-context.md',
+            expect.stringMatching(/^chat-route-context\.md-[a-f0-9]{8}\.md$/),
             'history.md',
         ]);
         expect(task?.contextFiles[0]?.startsWith(sharedPayloadDirOf(sherpaDir, LOCAL_PR))).toBe(true);
         expect(
-            task?.contextFiles.slice(1).every((file) => file.startsWith(chatPayloadDirOf(sherpaDir, LOCAL_PR))),
+            task?.contextFiles.slice(1).filter((file) => !file.includes('chat-route-context')).every((file) => file.startsWith(chatPayloadDirOf(sherpaDir, LOCAL_PR))),
         ).toBe(true);
         expect(fsSync.readFileSync(task?.contextFiles[1] ?? '', 'utf8')).toContain('Объясни порядок записи');
         expect((await readChat(server)).exchanges).toEqual([exchange]);
@@ -318,7 +319,7 @@ describe('вопросы об объяснении и коде', () => {
         await server.route.warmup();
         const skeleton = server.queue.listTasks().find((task) => task.type === 'route.prepare');
         expect(server.queue.next(WORKER)?.task.id).toBe(skeleton?.id);
-        expect(complete(server, skeleton?.id ?? 0, JSON.stringify(architectureStoryFixture().outline)).kind).toBe('accepted');
+        expect(complete(server, skeleton?.id ?? 0, checkpointJson(architectureStoryFixture().outline)).kind).toBe('accepted');
         expect(server.queue.listTasks().some((task) => task.type === 'route.prepare' && task.status === 'queued')).toBe(
             true,
         );
@@ -594,7 +595,7 @@ describe('вопросы об объяснении и коде', () => {
         expect((await readChat(server)).notes).toEqual([]);
     });
 
-    it('сбой записи ответа откатывает обмен, после восстановления сверка применяет результат', async () => {
+    it('сбой записи ответа откатывает и обмен, и завершение задачи; повтор применяет ответ атомарно', async () => {
         const server = await start();
         await ask(server, 'Сохрани ответ атомарно', ANCHOR);
         const taskId = leaseChat(server);
@@ -608,7 +609,8 @@ describe('вопросы об объяснении и коде', () => {
             END;
         `);
         try {
-            expect(complete(server, taskId).kind).toBe('accepted');
+            expect(() => complete(server, taskId)).toThrow('test rollback');
+            expect(server.queue.getTask(taskId)?.status).toBe('leased');
             expect(await readChat(server)).toMatchObject({
                 exchanges: [expect.objectContaining({ status: 'running', answer: null })],
                 notes: [],
@@ -618,13 +620,7 @@ describe('вопросы об объяснении и коде', () => {
             db.close();
         }
 
-        const poke = server.queue.enqueue({
-            type: 'echo',
-            priority: 'interactive',
-            instructions: 'разбуди сверку',
-            contextFiles: [],
-        });
-        server.queue.cancel(poke.id);
+        expect(complete(server, taskId).kind).toBe('accepted');
         expect(await readChat(server)).toMatchObject({
             exchanges: [expect.objectContaining({ status: 'done', answer: ANSWER })],
             notes: [],

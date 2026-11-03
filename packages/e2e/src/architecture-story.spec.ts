@@ -100,7 +100,7 @@ test('ошибка Mermaid не даёт 100%; повтор схемы сохр�
     await expect(page.locator('.story-preparation')).toContainText('Разбор подготовлен частично');
     await expect(page.locator('[role=progressbar]')).not.toHaveAttribute('aria-valuenow', '100');
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();
-    const retry = await server.worker.next(); expect(retry.type).toBe('route.diagram');
+    const retry = await server.worker.next(); expect(retry.type).toBe('route.prepare');
     expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ flow: fixture.outline.flow }))).stdout).not.toContain('rejected');
     await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
@@ -161,6 +161,8 @@ test('обычная ссылка вне патча сохраняется на 
     await page.reload();
     await page.getByRole('link', { name: 'caller', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Сохранённый источник' })).toContainText('context/caller.ts');
+    await page.getByRole('button', { name: 'Весь исходник', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Сохранённый источник' })).toContainText('export function caller()');
 });
 
 test('checkpoint перегруппирует блоки, сохраняя готовый файл и место чтения', async ({ page, launchSherpa }) => {

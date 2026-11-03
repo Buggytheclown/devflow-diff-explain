@@ -11,7 +11,7 @@ import type {
 import { taskCompleteResponseSchema, LEASE_TTL_SECONDS, MAX_TASK_ATTEMPTS, RESULT_MAX_BYTES, taskSchema } from '@sherpa/protocol';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
-import { transaction } from './db.js';
+import { afterDatabaseCommit, transaction } from './db.js';
 import { RpcFailure } from './errors.js';
 
 const CLOSED_STATUSES: readonly TaskStatus[] = ['done', 'failed', 'cancelled'];
@@ -138,7 +138,6 @@ export class TaskQueue {
     private acceptor: TaskResultAcceptor | null = null;
 
     /** Что сделать с принятым результатом после коммита транзакции `complete`. */
-    private commitEffects: (() => void)[] = [];
 
     private readonly txEnqueue: (input: EnqueueInput) => TransactionalEnqueue;
     private readonly txNext: (workerId: string) => Outcome<LeasedTask | null>;
@@ -255,13 +254,7 @@ export class TaskQueue {
     }
 
     complete(workerId: string, taskId: TaskId, result: string): TaskCompleteResponse {
-        try {
-            return this.settle(this.txComplete(workerId, taskId, result));
-        } catch (error) {
-            // Транзакция откатилась целиком — применять принятое нечего.
-            this.commitEffects = [];
-            throw error;
-        }
+        return this.settle(this.txComplete(workerId, taskId, result));
     }
 
     fail(workerId: string, taskId: TaskId, reason: string): TaskAckResponse {
@@ -426,10 +419,10 @@ export class TaskQueue {
         acceptance?.persist?.();
         this.closeTask(taskId, 'done', { result });
         if (acceptance?.onCommitted !== undefined) {
-            this.commitEffects.push(acceptance.onCommitted);
+            afterDatabaseCommit(this.db, acceptance.onCommitted);
         }
         const receipt = acceptance?.receipt ?? { kind: 'accepted' as const, message: acceptedMessage(taskId) };
-        if (owned.value.type === 'route.prepare') this.db.prepare('INSERT OR REPLACE INTO meta(key,value) VALUES (?,?)').run(`task_receipt:${String(taskId)}`, JSON.stringify(receipt));
+        this.db.prepare('INSERT OR REPLACE INTO meta(key,value) VALUES (?,?)').run(`task_receipt:${String(taskId)}`, JSON.stringify(receipt));
         return ok(receipt);
     }
 
@@ -701,27 +694,8 @@ export class TaskQueue {
      * при `result_too_large`).
      */
     private settle<T>(outcome: Outcome<T>): T {
-        this.runCommitEffects();
         this.flushChanges();
         return unwrap(outcome);
-    }
-
-    /**
-     * Применение принятых результатов — вне транзакции очереди: приёмщик пишет в свои таблицы
-     * своими транзакциями, а вложенный `BEGIN` у `node:sqlite` невозможен. Упавшее применение
-     * не должно валить `complete`: результат уже принят и записан.
-     */
-    private runCommitEffects(): void {
-        const effects = this.commitEffects;
-        this.commitEffects = [];
-        for (const effect of effects) {
-            try {
-                effect();
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                process.stderr.write(`sherpa-server: принятый результат не применился: ${message}\n`);
-            }
-        }
     }
 
     /** Отметка записи в хранилище; вызывается изнутри транзакций, рассылку делает `flushChanges`. */
@@ -736,7 +710,7 @@ export class TaskQueue {
 
         this.announcedMutations = this.mutations;
         for (const listener of [...this.changeListeners]) {
-            listener();
+            afterDatabaseCommit(this.db, listener);
         }
     }
 

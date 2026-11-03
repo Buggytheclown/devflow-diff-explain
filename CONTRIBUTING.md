@@ -24,7 +24,7 @@ pnpm install:local
 ## Пакеты
 
 - `protocol` — схемы и межпроцессные контракты.
-- `server` — HTTP/SSE, SQLite, очередь, генерация объяснения, чат и адаптеры источников кода.
+- `server` — HTTP/SSE, SQLite, очередь, импорт снимков, генерация объяснения и чат.
 - `ui` — интерфейс объяснения для компьютера.
 - `cli` — standalone-команда `devflow-diff-explain` и работа воркера.
 - `skill` — инструкция агенту и сборка устанавливаемого дистрибутива.
@@ -38,7 +38,7 @@ pnpm --filter @sherpa/server dev --pr fixture-medium
 pnpm --filter @sherpa/ui dev
 ```
 
-Сервер печатает порт и ссылку с токеном. Vite проксирует `/api` на `SHERPA_SERVER` или сервер из манифеста в `~/.sherpa/servers`. Открывай `http://localhost:5173/#t=<token>`. Галерея без сервера: `http://localhost:5173/gallery.html`.
+Dev-запуск fixture-ключа экспортирует синтетические байты и использует обычный importer; в production-бандле фикстурного провайдера нет. Сервер печатает порт и ссылку с токеном. Vite проксирует `/api` на `SHERPA_SERVER` или сервер из манифеста в `~/.sherpa/servers`. Открывай `http://localhost:5173/#t=<token>`. Галерея без сервера: `http://localhost:5173/gallery.html`.
 
 Для браузерных тестов нужен Chromium Playwright. Можно указать установленный бинарник через `SHERPA_E2E_EXECUTABLE_PATH`. E2E самостоятельно собирают UI/CLI и поднимают серверы в временных каталогах.
 

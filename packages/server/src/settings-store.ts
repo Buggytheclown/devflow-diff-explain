@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 import type { UiSettings, UiSettingsPatch } from '@sherpa/protocol';
-import { uiSettingsSchema } from '@sherpa/protocol';
+import { READER_APPEARANCE, uiSettingsSchema } from '@sherpa/protocol';
 
 import { settingsPathFor } from './paths.js';
 
@@ -20,14 +20,14 @@ export class SettingsStore {
     }
 
     read(): UiSettings {
-        return parseSettings(this.readRaw());
+        return { ...parseSettings(this.readRaw()), ...READER_APPEARANCE };
     }
 
     /** Сливает переданные поля со свежим содержимым файла и пишет результат целиком. */
     patch(partial: UiSettingsPatch): UiSettings {
         // Ключ без значения — это «не трогай поле», а не «верни дефолт».
         const changes = Object.fromEntries(Object.entries(partial).filter(([, value]) => value !== undefined));
-        const next = uiSettingsSchema.parse({ ...this.read(), ...changes });
+        const next = uiSettingsSchema.parse({ ...this.read(), ...changes, ...READER_APPEARANCE });
         this.write(next);
         return next;
     }
@@ -77,7 +77,8 @@ function parseSettings(raw: string | null): UiSettings {
     }
 
     // Неизвестные поля zod отбрасывает сам: схема — истина, чужое в файле не переживает запись.
-    const result = uiSettingsSchema.safeParse(parsed);
+    const legacy = parsed !== null && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    const result = uiSettingsSchema.safeParse({ ...legacy, ...READER_APPEARANCE, generationLocale: legacy.generationLocale ?? legacy.locale });
     if (result.success) {
         return result.data;
     }

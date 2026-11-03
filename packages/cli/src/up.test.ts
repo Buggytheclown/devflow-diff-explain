@@ -194,7 +194,6 @@ describe('подъём сервера в `up`', () => {
 
     async function up(
         serverBin: string,
-        local?: { repo: string; base?: string; branch?: string },
         nodeFlags?: readonly string[],
     ) {
         return ensureServer({
@@ -204,9 +203,7 @@ describe('подъём сервера в `up`', () => {
             serverBin,
             startupTimeoutMs: STARTUP_TIMEOUT_MS,
             ...(nodeFlags === undefined ? {} : { nodeFlags }),
-            ...(local === undefined
-                ? {}
-                : { repo: local.repo, base: local.base, branch: local.branch }),
+
         });
     }
 
@@ -230,7 +227,7 @@ describe('подъём сервера в `up`', () => {
             ${WORKING_SERVER}
         `;
 
-        const result = await up(await fakeServer(guarded), undefined, ['--no-warnings', '--no-such-node-flag']);
+        const result = await up(await fakeServer(guarded), ['--no-warnings', '--no-such-node-flag']);
 
         expect(result.started).toBe(true);
     });
@@ -273,17 +270,6 @@ describe('подъём сервера в `up`', () => {
         await up(await fakeServer(WORKING_SERVER));
 
         expect((await readManifest(sherpaDir)).installDir).toBeUndefined();
-    });
-
-    // Каталог, базу и ветку знает только CLI — серверу они уезжают аргументами спавна.
-    // Ветка тут не роскошь: на ней построен ключ, а чекаут между `up` и первым снимком могут увести.
-    it('демон получает --repo, --base и --branch локального ревью', async () => {
-        await up(await fakeServer(WORKING_SERVER), { repo: '/repo/app', base: 'trunk~3', branch: 'feature' });
-
-        const manifest = await readManifest(sherpaDir);
-        expect(manifest.repo).toBe('/repo/app');
-        expect(manifest.base).toBe('trunk~3');
-        expect(manifest.branch).toBe('feature');
     });
 
     it('без локального ревью ни --repo, ни --base, ни --branch демону не передаются', async () => {

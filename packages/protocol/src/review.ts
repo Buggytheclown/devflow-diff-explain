@@ -126,6 +126,21 @@ export const prMetaSchema = z.object({
 });
 export type PrMeta = z.infer<typeof prMetaSchema>;
 
+/** Только известные сведения о зафиксированном PR; review-возможности не экспортируются. */
+export const capturedPrSchema = z.object({
+    id: z.string().min(1).optional(),
+    url: z.url({ protocol: /^https?$/ }).optional(),
+    title: z.string().optional(),
+    author: z.object({ login: z.string().min(1), displayName: z.string().nullable().optional() }).optional(),
+    fromBranch: z.string().optional(),
+    toBranch: z.string().optional(),
+    state: prStateSchema.optional(),
+    statusLabel: z.string().optional(),
+    updatedAt: z.iso.datetime().optional(),
+});
+export type CapturedPr = z.infer<typeof capturedPrSchema>;
+
+
 export const fileChangeTypeSchema = z.enum(['add', 'modify', 'delete', 'copy', 'move', 'conflict']);
 export type FileChangeType = z.infer<typeof fileChangeTypeSchema>;
 
@@ -240,6 +255,10 @@ export type FileContent = z.infer<typeof fileContentSchema>;
  * непрозрачны так же, как у итерации, и с `fileId` самих итераций не совпадают.
  */
 export const prDiffSchema = z.object({
+    /** Идентичность сохранённых байтов; отсутствует только у прежних локальных кэшей. */
+    codeSnapshotId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    capturedAt: z.iso.datetime().optional(),
+    metadata: capturedPrSchema.nullable().optional(),
     /** Непрозрачный id итерации — провенанс снапшотов и якорь новых комментариев. */
     diffId: hostIdSchema,
     baseCommit: z.string().min(1),

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { mediumDiff } from './route/fixture-support.js';
 import { savedPatchIndex } from './saved-patch.js';
 import { storyEvidenceResolver } from './story-evidence.js';
-import { diagramSourceErrors } from './flow-coordinator.js';
+import { diagramSourceErrors } from './diagram-sources.js';
 import { chatCodeLinkErrors } from './chat-code-links.js';
 import { codeLink } from '@sherpa/protocol';
 

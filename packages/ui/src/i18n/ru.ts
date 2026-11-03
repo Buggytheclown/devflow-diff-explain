@@ -168,6 +168,7 @@ export const ru = {
     ) =>
         `размеры различаются: ${num(beforeWidth)} × ${num(beforeHeight)} → ${num(afterWidth)} × ${num(afterHeight)}`,
 
+    'error.originalNotImported': 'Оригинал этой версии файла не импортирован.',
     'error.serverDown': 'Сервер Шерпы не отвечает. Проверь, что он ещё запущен, и повтори.',
     'error.contract': 'Ответ сервера не прошёл проверку контракта — обнови Шерпу.',
     'error.unknown': 'Сервер вернул ошибку без понятного описания. Посмотри его вывод в терминале.',
@@ -188,7 +189,7 @@ export type Dictionary = {
 
 export type MessageKey = keyof typeof ru;
 
-export const storyRu = { attachFile: 'В чат',
+export const storyRu = { capturedSnapshot: 'Снимок', downloadOriginal: 'Скачать оригинал', attachFile: 'В чат',
         showChange: 'Показать изменение', hideChange: 'Скрыть изменение', fragments: 'Фрагменты кода', hideFragments: 'Скрыть фрагменты',
         before: 'До', after: 'После', retrySource: 'Повторить загрузку', loadingSource: 'Загружаю источник…', binary: 'Бинарный файл',
         returnTo: 'К рассказу', newDiff: 'Открыть новый дифф', legacy: 'Этот рассказ создан без связей тезисов с источниками. Можно обновить его вручную.',
@@ -209,4 +210,4 @@ export const storyRu = { attachFile: 'В чат',
 } as const;
 export const guidedRu = { expandAll: 'Развернуть всё', collapseAll: 'Свернуть всё', expandBlock: 'Развернуть блок', collapseBlock: 'Свернуть блок', attachFile: 'В чат', blocks: 'Разбор по блокам', arcanum: 'Стиль Arcanum', route: 'Маршрут по ПРу', readingOrder: 'Файлы в порядке чтения', openFile: 'Открыть полный дифф', nextStep: 'Следующий шаг', description: 'Описание ПРа', start: 'К первому блоку', next: 'Дальше', previous: 'Назад', file: 'Полный дифф файла', pending: 'Пояснение готовится. Полный дифф уже можно читать.', failed: 'Пояснение не готово. Полный дифф доступен.', related: 'Связанные файлы', ask: 'Вопрос об этом', block: 'К блоку', retry: 'Повторить пояснение', older: 'Прежний формат рассказа. Обновите, чтобы пройти по файлам.' };
 
-export const flowRu = { context: 'Окружение', savedSourceTitle: 'Сохранённый источник', savedSourceError: 'Не удалось загрузить сохранённый источник.', savedSourceLoading: 'Загрузка источника…', sourceBefore: 'до', sourceAfter: 'после', closeSource: 'Закрыть', orientation: 'Направление схемы', vertical: 'Вертикально', horizontal: 'Горизонтально', continued: 'Продолжение', title: 'Как проходит поток', pending: 'Готовлю схему потока… Рассказ уже можно читать.', sources: 'На чём основана схема', exampleSources: 'Основание примера', example: 'Например', illustrative: 'Иллюстрация, не результат запуска', data: 'данные', control: 'управление', existing: 'Без изменений', added: 'Добавлено', modified: 'Изменено', unknown: 'Не подтверждено', affected: 'Влияет на поведение', renderError: 'Не удалось отобразить архитектурную схему. Описание и дифф доступны. ', retry: 'Повторить схему' };
+export const flowRu = { fullSource: 'Весь исходник', originalDocument: 'Исходный документ', context: 'Окружение', savedSourceTitle: 'Сохранённый источник', savedSourceError: 'Не удалось загрузить сохранённый источник.', savedSourceLoading: 'Загрузка источника…', sourceBefore: 'до', sourceAfter: 'после', closeSource: 'Закрыть', orientation: 'Направление схемы', vertical: 'Вертикально', horizontal: 'Горизонтально', continued: 'Продолжение', title: 'Как проходит поток', pending: 'Готовлю схему потока… Рассказ уже можно читать.', sources: 'На чём основана схема', exampleSources: 'Основание примера', example: 'Например', illustrative: 'Иллюстрация, не результат запуска', data: 'данные', control: 'управление', existing: 'Без изменений', added: 'Добавлено', modified: 'Изменено', unknown: 'Не подтверждено', affected: 'Влияет на поведение', renderError: 'Не удалось отобразить архитектурную схему. Описание и дифф доступны. ', retry: 'Повторить схему' };

@@ -165,6 +165,7 @@ export const en: Dictionary = {
     ) =>
         `sizes differ: ${num(beforeWidth)} × ${num(beforeHeight)} → ${num(afterWidth)} × ${num(afterHeight)}`,
 
+    'error.originalNotImported': 'The original bytes of this file version were not imported.',
     'error.serverDown': 'The Devflow Diff Explain server is not responding. Check that it is still running and retry.',
     'error.contract': 'The server response failed contract validation — update Sherpa.',
     'error.unknown': 'The server returned an error with no readable description. Check its terminal output.',
@@ -174,7 +175,7 @@ export const en: Dictionary = {
     'time.justNow': 'just now',
 };
 
-export const storyEn = { attachFile: 'Attach to chat',
+export const storyEn = { capturedSnapshot: 'Snapshot', downloadOriginal: 'Download original', attachFile: 'Attach to chat',
         showChange: 'Show change', hideChange: 'Hide change', fragments: 'Code fragments', hideFragments: 'Hide fragments',
         before: 'Before', after: 'After', retrySource: 'Retry loading', loadingSource: 'Loading source…', binary: 'Binary file',
         returnTo: 'Back to explanation', newDiff: 'Open new diff', legacy: 'This explanation has no claim-to-source links. You can update it manually.',
@@ -195,4 +196,4 @@ export const storyEn = { attachFile: 'Attach to chat',
 } as const;
 export const guidedEn = { expandAll: 'Expand all', collapseAll: 'Collapse all', expandBlock: 'Expand block', collapseBlock: 'Collapse block', attachFile: 'Attach to chat', blocks: 'Walkthrough', arcanum: 'Arcanum style', route: 'Reading route', readingOrder: 'Files in reading order', openFile: 'Open full diff', nextStep: 'Next step', description: 'PR description', start: 'Start walkthrough', next: 'Next', previous: 'Previous', file: 'Complete file diff', pending: 'Explanation is being prepared. The complete diff is available.', failed: 'Explanation is unavailable. The complete diff is available.', related: 'Related files', ask: 'Ask about this', block: 'Back to block', retry: 'Retry explanation', older: 'Older explanation format. Refresh for a file walkthrough.' };
 
-export const flowEn = { context: 'Surroundings', savedSourceTitle: 'Saved source', savedSourceError: 'Could not load the saved source.', savedSourceLoading: 'Loading source…', sourceBefore: 'before', sourceAfter: 'after', closeSource: 'Close', orientation: 'Diagram direction', vertical: 'Vertical', horizontal: 'Horizontal', continued: 'Continued', title: 'How the flow works', pending: 'Preparing the flow diagram… The explanation is ready to read.', sources: 'Diagram sources', exampleSources: 'Example sources', example: 'For example', illustrative: 'Illustration, not an execution result', data: 'data', control: 'control', existing: 'Unchanged', added: 'Added', modified: 'Modified', unknown: 'Unconfirmed', affected: 'Behaviour affected', renderError: 'Could not display the architecture diagram. The description and diff remain available. ', retry: 'Retry diagram' };
+export const flowEn = { fullSource: 'Full source', originalDocument: 'Original document', context: 'Surroundings', savedSourceTitle: 'Saved source', savedSourceError: 'Could not load the saved source.', savedSourceLoading: 'Loading source…', sourceBefore: 'before', sourceAfter: 'after', closeSource: 'Close', orientation: 'Diagram direction', vertical: 'Vertical', horizontal: 'Horizontal', continued: 'Continued', title: 'How the flow works', pending: 'Preparing the flow diagram… The explanation is ready to read.', sources: 'Diagram sources', exampleSources: 'Example sources', example: 'For example', illustrative: 'Illustration, not an execution result', data: 'data', control: 'control', existing: 'Unchanged', added: 'Added', modified: 'Modified', unknown: 'Unconfirmed', affected: 'Behaviour affected', renderError: 'Could not display the architecture diagram. The description and diff remain available. ', retry: 'Retry diagram' };

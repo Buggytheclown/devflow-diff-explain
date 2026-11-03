@@ -20,9 +20,9 @@ export function storyEvidenceResolver(diff: PrDiff) {
                     return [{ ...source, fileId: saved.id }];
                 }
                 const file = index.file(source.path, source.kind === 'file' ? 'new' : source.side);
-                if (file === null) { errors.push(`Source file is missing or ambiguous: ${source.path}`); return []; }
+                if (file === null) { errors.push(`Source file is missing or ambiguous: ${source.path}. Import the pinned source before publishing this checkpoint.`); return []; }
                 if (source.kind === 'lines' && index.range(file, source) === null) {
-                    errors.push(`Source ${source.path}:${String(source.start)}-${String(source.end)} is not a complete ${source.side}-side range in the saved patch.`);
+                    errors.push(`Source ${source.path}:${String(source.start)}-${String(source.end)} is not a complete ${source.side}-side range in the saved patch. Import the full source at this pinned revision before publishing.`);
                     return [];
                 }
                 return [{ ...source, fileId: file.fileId }];

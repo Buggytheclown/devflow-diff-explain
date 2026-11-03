@@ -5,6 +5,8 @@ import { CliError } from './errors.js';
 
 /** Разобранный вызов CLI. Всё, что нужно команде, известно уже после разбора аргументов. */
 export type Command =
+    | { readonly kind: 'artifact-schema'; readonly sources: boolean }
+    | { readonly kind: 'artifact-import'; readonly sources: boolean; readonly prKey: string | undefined; readonly file: string }
     | { readonly kind: 'version' }
     | { readonly kind: 'help' }
     | {
@@ -27,6 +29,7 @@ export type Command =
           readonly lang: Locale | undefined;
           /** Не открывать браузер после холодного старта. */
           readonly noOpen: boolean;
+          readonly snapshot?: string;
       }
     | {
           readonly kind: 'worker-next';
@@ -72,6 +75,7 @@ const OPTIONS = [
     '--harness',
     '--model',
     '--lang',
+    '--snapshot',
 ] as const;
 const FLAGS = ['--no-open', '--next'] as const;
 type OptionName = (typeof OPTIONS)[number];
@@ -101,6 +105,13 @@ export function parseArgs(argv: readonly string[]): Command {
     const { options, flags, positionals } = splitArgs(argv);
     const prKey = options.get('--pr');
     const group = positionals[0];
+
+    if (group === 'snapshot' || group === 'sources') {
+        if (positionals[1] === 'schema' && positionals.length === 2) return { kind: 'artifact-schema', sources: group === 'sources' };
+        const file = options.get('--file');
+        if (positionals[1] !== 'import' || positionals.length !== 2 || file === undefined) throw new CliError('Use `snapshot|sources import --file <manifest.json> [--pr <project>]` or `snapshot|sources schema`.');
+        return { kind: 'artifact-import', sources: group === 'sources', prKey, file };
+    }
 
     if (group !== 'up' && flags.has('--no-open')) {
         throw new CliError('devflow-diff-explain: --no-open is only available for `devflow-diff-explain up`.');
@@ -155,9 +166,9 @@ function parseUpCommand(
     if (positionals.length > 1) {
         throw new CliError(
             `devflow-diff-explain: unexpected arguments after \`up\`: ${positionals.slice(1).join(' ')}.\n` +
-                'Expected `devflow-diff-explain up [--pr <pr key> | --local <path> [--base <ref>]] ' +
+                'Expected `devflow-diff-explain up [--pr <project> | --snapshot <manifest.json>] ' +
                 '[--harness <harness name>] [--model <model name>] [--lang <ru|en>] [--no-open]`; ' +
-                'without `--pr` and `--local`, review the current local directory.',
+                'export native changes first, then import the snapshot.',
         );
     }
 
@@ -172,9 +183,10 @@ function parseUpCommand(
     if (base !== undefined && local === undefined) {
         throw new CliError(
             'devflow-diff-explain: `--base` only makes sense with `--local`.\n' +
-                'Call `devflow-diff-explain up --local <path> --base <ref>`; for a PR the base comes from the host.',
+                'Call `devflow-diff-explain up --local <path> --base <ref>`; export the exact base and head in a snapshot manifest.',
         );
     }
+    const snapshot = options.get('--snapshot');
     return {
         kind: 'up',
         prKey,
@@ -184,6 +196,7 @@ function parseUpCommand(
         model: sanitizeLabel(options.get('--model')),
         lang: parseLang(options.get('--lang')),
         noOpen: flags.has('--no-open'),
+        ...(snapshot === undefined ? {} : { snapshot }),
     };
 }
 

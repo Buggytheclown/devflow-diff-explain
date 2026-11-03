@@ -27,16 +27,6 @@ export {
     rpcError,
     rpcFailureResponse,
 } from './http.js';
-export type { ArcanumHostOptions } from './hosts/arcanum/arcanum-host.js';
-export { ArcanumHost, makeArcanumHost } from './hosts/arcanum/arcanum-host.js';
-export type { ArcanumClientOptions, FetchLike } from './hosts/arcanum/client.js';
-export { ARCANUM_API_BASE, ArcanumClient } from './hosts/arcanum/client.js';
-export type { ArcTokenOptions, TokenSource } from './hosts/arcanum/token.js';
-export { arcTokenSource, resolveArcToken } from './hosts/arcanum/token.js';
-export type { ReviewSourceFactory, SelectedSource } from './hosts/select.js';
-export { selectReviewSource } from './hosts/select.js';
-export { affectedStops, buildIterationMap, classifyStop, identityMap } from './iterations/index.js';
-export type { FileStatus, IterationMap, IterationMapInput, MappedRange, StopChangeKind } from './iterations/index.js';
 export {
     claimManifest,
     cleanStaleManifests,
@@ -47,7 +37,7 @@ export {
     removeOwnManifest,
 } from './manifest.js';
 export type { IterationStoreOptions, StoredIteration } from './iteration-store.js';
-export { IterationStore, rememberIterationDiff } from './iteration-store.js';
+export { IterationStore } from './iteration-store.js';
 export type { Migration } from './migrations.js';
 export { MIGRATIONS, SCHEMA_VERSION_KEY } from './migrations.js';
 export {

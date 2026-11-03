@@ -10,7 +10,7 @@ import { MIGRATIONS } from './migrations.js';
 import { databasePathFor } from './paths.js';
 import { RouteStore } from './route-store.js';
 import type { SherpaServer } from './server.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
 describe('хранилище', () => {
@@ -330,10 +330,9 @@ describe('хранилище', () => {
         const after = openDatabase(file);
         try {
             const store = new ChatStore({ db: after });
-            const note = store.read().notes[0];
-            expect(note?.anchor).toEqual(anchor);
-            expect(note?.origin).toEqual({ commit: 'head-1', anchor });
-            expect(note?.lostAnchor).toBe(false);
+            const note = after.prepare('SELECT anchor, origin_anchor, origin_commit, lost_anchor FROM agent_notes').get();
+            expect(note).toMatchObject({ anchor: JSON.stringify(anchor), origin_anchor: JSON.stringify(anchor), origin_commit: 'head-1', lost_anchor: 0 });
+            expect(store.read().notes).toEqual([]);
             store.close();
         } finally {
             after.close();
@@ -487,13 +486,11 @@ describe('хранилище', () => {
             ).toEqual([{ diff_id: 'iter-legacy', start_line: 3, end_line: 7, carried_from: null }]);
             expect(after.prepare('SELECT COUNT(*) AS count FROM progress_carries').get()).toMatchObject({ count: 0 });
 
-            // Якорь без итерации читается как `LEGACY_DIFF_ID` — его усыновит фид, когда хост
-            // назовёт активную; исходное место заметки заполнено копией текущего.
+            // Сырые старые якоря и исходное место остаются без переписывания.
             const chat = new ChatStore({ db: after });
-            const note = chat.read().notes[0];
-            expect(note?.anchor).toEqual({ ...anchor, diffId: 'unknown' });
-            expect(note?.origin).toEqual({ commit: 'head-legacy', anchor: { ...anchor, diffId: 'unknown' } });
-            expect(note?.lostAnchor).toBe(false);
+            const note = after.prepare('SELECT anchor, origin_anchor, origin_commit, lost_anchor FROM agent_notes').get();
+            expect(note).toMatchObject({ anchor: JSON.stringify(anchor), origin_anchor: JSON.stringify(anchor), origin_commit: 'head-legacy', lost_anchor: 0 });
+            expect(chat.read().notes).toEqual([]);
             chat.close();
         } finally {
             after.close();

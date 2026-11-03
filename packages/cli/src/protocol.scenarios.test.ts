@@ -45,7 +45,7 @@ describe('сценарии сессии-воркера', () => {
             now: () => new Date(nowMs),
             // Живой Арканум в тестах запрещён, да и маршрутных задач сценариям не надо:
             // без хоста автопостановка не сработает и очередь остаётся такой, какой её ставит тест.
-            reviewSourceFactory: () => null,
+            reader: null,
         });
         worker = new FakeWorker({ bundlePath, sherpaDir, prKey: PR_KEY, workDir });
     });
@@ -140,7 +140,7 @@ describe('сценарии сессии-воркера', () => {
         const repeated = await worker.complete(taskId, 'Второй, случайный результат.');
 
         expect(repeated.code).toBe(0);
-        expect(repeated.stdout).toContain('is already finished');
+        expect(repeated.stdout).toContain('is accepted');
         expect(repeated.stdout).toContain('devflow-diff-explain worker next');
         expect(server.queue.getTask(taskId)).toMatchObject({ status: 'done', result: 'Первый результат.' });
     });

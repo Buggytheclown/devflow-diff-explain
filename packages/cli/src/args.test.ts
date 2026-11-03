@@ -49,7 +49,7 @@ describe('разбор аргументов', () => {
         });
         expect(parseArgs(['up', '--no-open'])).toMatchObject({ kind: 'up', noOpen: true });
         expect(() => parseArgs(['up', '--no-open=true'])).toThrow('does not take a value');
-        expect(() => parseArgs(['up', 'server'])).toThrow('devflow-diff-explain up [--pr <pr key> | --local <path>');
+        expect(() => parseArgs(['up', 'server'])).toThrow('devflow-diff-explain up [--pr <project> | --snapshot <manifest.json>]');
     });
 
     it('up --local: каталог проекта вместо PR, вместе с базой', () => {

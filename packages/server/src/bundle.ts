@@ -1,9 +1,7 @@
 import path from 'node:path';
 
-import { localVcsOfPrKey } from '@sherpa/protocol';
 
 import { ServerAlreadyRunningError } from './errors.js';
-import { readLocalHostState } from './hosts/local/index.js';
 import { formatIdlePeriod, readIdleSeconds } from './idle.js';
 import { readOption } from './launch.js';
 import { readListenHost } from './listen-host.js';
@@ -17,7 +15,6 @@ import { UI_ASSETS } from './ui-assets.js';
 // Вывод подкоманды CLI `sherpa` может прочитать модель — поэтому по-английски.
 const USAGE =
     'Usage: devflow-diff-explain server --pr <PR key> [--sherpa-dir <path>] ' +
-    '[--repo <project dir>] [--base <ref>] [--branch <branch>] ' +
     '(started by `devflow-diff-explain up`, not meant to be run by hand)';
 
 /**
@@ -45,18 +42,6 @@ export async function runServer(argv: readonly string[]): Promise<number> {
     // Процесс наследует cwd того, кто его запустил, — относительный путь стейта приводим к абсолютному.
     const sherpaDir = path.resolve(readOption(argv, '--sherpa-dir') ?? DEFAULT_SHERPA_DIR);
 
-    // Локальный дифф: каталог проекта, база сравнения и ветка ключа. Их
-    // называет `devflow-diff-explain up --local`, а перезапуск демона поднимается уже на сохранённом состоянии ключа.
-    const repo = readOption(argv, '--repo');
-    const base = readOption(argv, '--base');
-    const branch = readOption(argv, '--branch');
-    if (repo === null && localReviewUnconfigured(prKey, sherpaDir)) {
-        writeLog(
-            `ревью-хоста нет: ключ ${prKey} локальный, но ни --repo, ни сохранённого local-host.json — ` +
-                'запусти `devflow-diff-explain up --local <path>` из каталога проекта',
-        );
-    }
-
     const idleSeconds = readIdleSeconds(process.env);
     const host = readListenHost(process.env);
 
@@ -68,9 +53,6 @@ export async function runServer(argv: readonly string[]): Promise<number> {
             assets: bundledAssets(UI_ASSETS),
             idleSeconds,
             host,
-            ...(repo === null ? {} : { repo: path.resolve(repo) }),
-            ...(base === null ? {} : { base }),
-            ...(branch === null ? {} : { branch }),
             onIdleStop: (seconds) => {
                 writeLog(`остановка по простою: ${formatIdlePeriod(seconds)} без запросов и открытых соединений`);
             },
@@ -103,11 +85,6 @@ export async function runServer(argv: readonly string[]): Promise<number> {
     process.once('SIGTERM', stop);
 
     return 0;
-}
-
-/** Локальный ключ без каталога проекта: хоста не будет, и человеку нужно объяснить почему. */
-function localReviewUnconfigured(prKey: string, sherpaDir: string): boolean {
-    return localVcsOfPrKey(prKey) !== null && readLocalHostState(sherpaDir, prKey) === null;
 }
 
 function writeLog(text: string): void {

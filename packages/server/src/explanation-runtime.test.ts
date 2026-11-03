@@ -1,7 +1,8 @@
+import { checkpointJson } from '@sherpa/fixtures';
 import { makeFixtureHost, architectureStoryFixture } from '@sherpa/fixtures';
 import { UI_ENDPOINTS } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import type { SherpaServer } from './server.js';
 import { get, postJson, makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
@@ -33,9 +34,9 @@ describe('сервер объяснения подключает только н
         await server.route.warmup();
         const fixture = architectureStoryFixture();
         let next = server.queue.next('test'); if (next === null) throw new Error('No plan');
-        expect(server.queue.complete('test', next.task.id, JSON.stringify(fixture.outline)).kind).toBe('accepted');
+        expect(server.queue.complete('test', next.task.id, checkpointJson(fixture.outline)).kind).toBe('accepted');
         next = server.queue.next('test'); if (next === null) throw new Error('No body');
-        expect(server.queue.complete('test', next.task.id, JSON.stringify(fixture.body)).kind).toBe('accepted');
+        expect(server.queue.complete('test', next.task.id, checkpointJson(fixture.body)).kind).toBe('accepted');
         for (const pending of server.queue.listTasks()) if (pending.type === 'route.diagram') server.queue.cancel(pending.id);
         await server.chat.ask('Что изменилось в этой строке?', { ...fixture.anchor, fileId: fixture.first.fileId, diffId: fixture.diff.diffId, selectedText: 'saved' }, 'ru');
         const question = server.queue.next('test'); if (question === null) throw new Error('No question');

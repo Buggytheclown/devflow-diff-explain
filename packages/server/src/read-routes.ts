@@ -1,5 +1,5 @@
 import type { ServerResponse } from 'node:http';
-import type { PrDiff, ReviewSource, FileContent } from '@sherpa/protocol';
+import type { PrDiff, CodeReader, FileContent } from '@sherpa/protocol';
 import { UI_ENDPOINTS, uiReviewBlobRequestSchema, uiReviewDiffRequestSchema, uiReviewDiffResponseSchema, uiReviewFileContentRequestSchema, uiReviewFileContentResponseSchema } from '@sherpa/protocol';
 import type { BlobCache } from './blob-cache.js';
 import { RpcFailure } from './errors.js';
@@ -7,12 +7,11 @@ import type { Route, StreamContext } from './http.js';
 import { handlingRpcFailures, rpcFailureResponse, sendJson } from './http.js';
 import type { IterationFeed } from './iteration-feed.js';
 import type { IterationStore } from './iteration-store.js';
-import { rememberIterationDiff } from './iteration-store.js';
 import type { PrMetaCache } from './pr-meta.js';
 import { call, hostOf, messageOf, optionalParam, parseQuery, respond } from './host-http.js';
 
 export interface ReadRoutesOptions {
-    host: ReviewSource | null;
+    host: CodeReader | null;
     pinnedContent?: (diff: PrDiff, file: PrDiff['files'][number]) => Promise<FileContent | null>;
     iterations?: IterationStore | null;
     iterationFeed?: Pick<IterationFeed, 'active'> | null;
@@ -27,7 +26,6 @@ export function createReadRoutes(options: ReadRoutesOptions): Route[] {
             method: 'GET',
             path: UI_ENDPOINTS.reviewDiff,
             handle: handlingRpcFailures(async (ctx) => {
-                const host = hostOf(options);
                 const request = parseQuery(
                     uiReviewDiffRequestSchema,
                     {
@@ -37,10 +35,7 @@ export function createReadRoutes(options: ReadRoutesOptions): Route[] {
                     },
                     'диффа',
                 );
-                const diff =
-                    request.base !== undefined && request.head !== undefined
-                        ? await interdiffOf(options, host, request.base, request.head)
-                        : await diffOfIteration(options, host, request.diffId);
+                const diff = await diffOfIteration(options, request.diffId);
                 return respond(uiReviewDiffResponseSchema, { diff });
             }),
         },
@@ -48,7 +43,6 @@ export function createReadRoutes(options: ReadRoutesOptions): Route[] {
             method: 'GET',
             path: UI_ENDPOINTS.reviewFileContent,
             handle: handlingRpcFailures(async (ctx) => {
-                const host = hostOf(options);
                 const request = uiReviewFileContentRequestSchema.safeParse({
                     fileId: ctx.url.searchParams.get('fileId') ?? '',
                     ...(ctx.url.searchParams.has('diffId') ? { diffId: ctx.url.searchParams.get('diffId') } : {}),
@@ -57,31 +51,13 @@ export function createReadRoutes(options: ReadRoutesOptions): Route[] {
                     throw new RpcFailure('bad_request', 'В запросе содержимого файла нет параметра fileId.');
                 }
 
+                const diff = await diffOfIteration(options, request.data.diffId);
+                const file = diff.files.find((entry) => entry.fileId === request.data.fileId);
+                if (file === undefined) throw new RpcFailure('not_found', 'Файл отсутствует в этом снимке.');
                 const pinnedContent = options.pinnedContent;
-                if (request.data.diffId !== undefined && pinnedContent !== undefined && host.getSourceAtRevision !== undefined) {
-                    const diff = options.iterations?.get(request.data.diffId)?.diff;
-                    const file = diff?.files.find((entry) => entry.fileId === request.data.fileId);
-                    if (diff !== undefined && file !== undefined) return respond(uiReviewFileContentResponseSchema, { content: await call(() => pinnedContent(diff, file)) });
-                }
-                const getContent = host.getFileContent?.bind(host);
-                if (getContent === undefined) {
-                    // UI при `capabilities.fileContent: false` сюда не ходит; если пришёл — это
-                    // рассинхрон версий, и сказать об этом надо человеческим текстом.
-                    throw new RpcFailure(
-                        'bad_request',
-                        'Этот хост не умеет отдавать содержимое файлов — «Expand context» для него недоступен.',
-                    );
-                }
-
-                const pinned = request.data.diffId;
-                const ensureVersion = async (): Promise<void> => {
-                    if (pinned !== undefined && (await call(() => host.getDiff())).diffId !== pinned) {
-                        throw new RpcFailure('bad_request', 'ПР обновился. Контекст этой версии недоступен; откройте актуальный дифф.');
-                    }
-                };
-                await ensureVersion();
-                const content = await call(() => getContent(request.data.fileId));
-                await ensureVersion();
+                const content = pinnedContent === undefined
+                    ? await options.host?.getFileContent?.(file.fileId) ?? null
+                    : await call(() => pinnedContent(diff, file));
                 return respond(uiReviewFileContentResponseSchema, { content });
             }),
         },
@@ -133,7 +109,7 @@ async function writeBlob(options: ReadRoutesOptions, ctx: StreamContext): Promis
     const host = hostOf(options);
     const getBlob = host.getBlob?.bind(host);
     if (getBlob === undefined) {
-        // UI при `capabilities.blobs: false` сюда не ходит; пришёл — это рассинхрон версий.
+        // Байты недоступны в локальном хранилище.
         throw new RpcFailure(
             'bad_request',
             'Этот хост не умеет отдавать байты файлов — картинки в диффе для него недоступны.',
@@ -224,52 +200,12 @@ function looksLikeSvg(bytes: Uint8Array): boolean {
     return /^<svg[\s>/]/i.test(rest);
 }
 
-/**
- * Дифф одной итерации. Активная (или та, про которую фид ещё ничего не знает) берётся у хоста —
- * только он знает свежие отметки `viewed`; прошлая — из локального хранилища патчей, потому что
- * `getDiff` принимает лишь срез, а не «дифф итерации N».
- */
-async function diffOfIteration(
-    options: ReadRoutesOptions,
-    host: ReviewSource,
-    diffId: string | undefined,
-): Promise<PrDiff> {
-    const active = options.iterationFeed?.active() ?? null;
-    if (diffId === undefined || active === null || active.diffId === diffId) {
-        const diff = await call(() => host.getDiff());
-        // Патч активной итерации оседает в хранилище (docs/spec.md); ответ ручки этого не ждёт.
-        const iterations = options.iterations;
-        if (iterations != null) {
-            void rememberIterationDiff(iterations, host, diff);
-        }
-        if (diffId === undefined || diff.diffId === diffId) {
-            return diff;
-        }
+/** Зафиксированная версия читается локально, без обращения к текущему состоянию PR. */
+async function diffOfIteration(options: ReadRoutesOptions, diffId: string | undefined): Promise<PrDiff> {
+    if (diffId !== undefined) {
+        const stored = options.iterations?.get(diffId);
+        if (stored != null) return stored.diff;
+        throw new RpcFailure('not_found', `Дифф версии ${diffId} не импортирован.`);
     }
-
-    const stored = options.iterations?.get(diffId) ?? null;
-    if (stored === null) {
-        throw new RpcFailure('bad_request', `Дифф итерации ${diffId} не сохранён — показать его нечем.`);
-    }
-    return stored.diff;
-}
-
-/** Срез между итерациями: считает его хост, помнит — локальный кэш (у Арканума это 2.8–3.7 с). */
-async function interdiffOf(
-    options: ReadRoutesOptions,
-    host: ReviewSource,
-    base: string,
-    head: string,
-): Promise<PrDiff> {
-    if (options.prMeta.get()?.capabilities.iterations === false) {
-        throw new RpcFailure(
-            'bad_request',
-            'Этот хост не умеет срезы между итерациями — «что нового» для него недоступно.',
-        );
-    }
-    const iterations = options.iterations;
-    if (iterations == null) {
-        return call(() => host.getDiff({ base, head }));
-    }
-    return call(() => iterations.getInterdiff(base, head, () => host.getDiff({ base, head })));
+    return call(() => hostOf(options).getDiff());
 }

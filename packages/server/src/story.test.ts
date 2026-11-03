@@ -1,3 +1,4 @@
+import { checkpointJson } from '@sherpa/fixtures';
 import { architectureStoryFixture } from '@sherpa/fixtures';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
@@ -5,16 +6,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { explanationText, UI_ENDPOINTS, UI_DEV_ENDPOINTS, uiReviewRouteResponseSchema } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { mediumDiff, mediumRawResults } from './route/fixture-support.js';
+import { mediumDiff, mediumReadySnapshot } from './route/fixture-support.js';
 import { walkPatch } from './route/diff-index.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { databasePathFor } from './paths.js';
 import { openDatabase } from './db.js';
 import { MAX_RESULT_REJECTIONS, TaskQueue } from './queue.js';
 import { RouteStore } from './route-store.js';
-import { validateSkeleton } from './route/index.js';
 import type { SherpaServer } from './server.js';
-import { validateStorySection } from './story.js';
 import { get, postRaw, makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
 function limited(quote: string) { return { claims: [{ quote, sources: [], limitation: 'Synthetic fixture for lifecycle checks; semantic quality is tested separately.' }] }; }
@@ -57,7 +56,7 @@ describe('короткий рассказ', () => {
     }
     function complete(server: SherpaServer, result: unknown) {
         const task = next(server);
-        expect(server.queue.complete('worker', task.id, JSON.stringify(result)).kind).toBe('accepted');
+        expect(server.queue.complete('worker', task.id, checkpointJson(result)).kind).toBe('accepted');
         return task;
     }
 
@@ -84,7 +83,7 @@ describe('короткий рассказ', () => {
         const server = await start();
         complete(server, outline);
         const task = next(server);
-        expect(server.queue.complete('worker', task.id, JSON.stringify({ stops: [body.stops[0]] })).kind).toBe('rejected');
+        expect(server.queue.complete('worker', task.id, checkpointJson({ stops: [body.stops[0]] })).kind).toBe('rejected');
         server.queue.fail('worker', task.id, 'failed');
         const state = await read(server);
         expect(state.phase).toBe('failed');
@@ -99,7 +98,7 @@ describe('короткий рассказ', () => {
         await server.close();
         const restarted = await start();
         expect(next(restarted).id).toBe(leased.id);
-        expect(restarted.queue.complete('worker', leased.id, JSON.stringify(body)).kind).toBe('accepted');
+        expect(restarted.queue.complete('worker', leased.id, checkpointJson(body)).kind).toBe('accepted');
         expect((await read(restarted)).phase).toBe('ready');
     });
 
@@ -120,7 +119,7 @@ describe('короткий рассказ', () => {
         expect(await server.route.generate()).toBe('started');
         const task = next(server);
         server.queue.cancel(task.id);
-        expect(server.queue.complete('worker', task.id, JSON.stringify(outline)).kind).toBe('noop');
+        expect(server.queue.complete('worker', task.id, checkpointJson(outline)).kind).toBe('noop');
         const after = await read(server);
         expect(after.phase).toBe('ready');
         expect(after.snapshot).toEqual(before);
@@ -144,8 +143,8 @@ describe('короткий рассказ', () => {
         const store = new RouteStore({ db });
         const queue = new TaskQueue({ db });
         for (const task of queue.listTasks()) queue.cancel(task.id);
-        const accepted = validateSkeleton(JSON.stringify(mediumRawResults().skeleton));
-        if (!accepted.ok) throw new Error(accepted.errors.join('\n'));
+        const saved = mediumReadySnapshot();
+        const accepted = { value: { summary: saved.summary, stops: saved.stops, tourOrder: saved.tourOrder, intents: new Map<number, string>() } };
         store.beginSkeleton({ locale: 'ru', presentation: 'legacy' });
         store.acceptSkeleton({ skeleton: accepted.value, diff: mediumDiff(), snapshotId: 'saved-legacy',
             previousSnapshotId: null, provenance: { harness: 'codex', model: 'test', locale: 'ru' } });
@@ -180,7 +179,7 @@ describe('короткий рассказ', () => {
         complete(server, body);
         expect(await server.chat.retry(question.id)).toBe('retried');
         const retry = next(server);
-        const context = retry.contextFiles.find((file) => file.endsWith('route-context.md'));
+        const context = retry.contextFiles.find((file) => file.includes('route-context.md'));
         expect(context).toBeDefined();
         const text = fs.readFileSync(context ?? '', 'utf8');
         expect(text).toContain(outline.summary);
@@ -216,7 +215,7 @@ describe('короткий рассказ', () => {
         });
         expect(question.explanation?.evidence?.sections).toHaveLength(2);
         const chat = next(server);
-        const evidenceFile = chat.contextFiles.find((file) => file.endsWith('story-evidence.md'));
+        const evidenceFile = chat.contextFiles.find((file) => file.includes('story-evidence.md'));
         const context = fs.readFileSync(evidenceFile ?? '', 'utf8');
         expect(context).toContain(other.path);
         const actual = [...walkPatch(other.patch ?? '')].find((line) => line.new !== null)?.raw.slice(1);
@@ -227,7 +226,7 @@ describe('короткий рассказ', () => {
         expect((await postRaw(server.port, UI_DEV_ENDPOINTS.fixtureAdvanceIteration, '{}', server.token)).status).toBe(200);
         expect(await server.chat.retry(question.id)).toBe('retried');
         const retry = next(server);
-        expect(fs.readFileSync(retry.contextFiles.find((file) => file.endsWith('story-evidence.md')) ?? '', 'utf8')).toBe(context);
+        expect(fs.readFileSync(retry.contextFiles.find((file) => file.includes('story-evidence.md')) ?? '', 'utf8')).toBe(context);
     });
 
     it('обновление эпохи v6 сохраняет обзор и перевыдаёт файлы на том же снимке', async () => {
@@ -246,28 +245,4 @@ describe('короткий рассказ', () => {
         expect(pending).toHaveLength(1);
         expect(pending[0]?.type).toBe('route.prepare');
     });
-});
-
-it('ссылки рассказа допускают повторение и неизменённый контекст, но отвергают отсутствующие строки', () => {
-    const diff = mediumDiff();
-    const file = diff.files.find((entry) => entry.patch !== null && [...walkPatch(entry.patch)].some((line) => !line.changed && line.new !== null));
-    if (file?.patch == null) throw new Error('No context in fixture');
-    const line = [...walkPatch(file.patch)].find((entry) => !entry.changed && entry.new !== null)?.new;
-    if (line == null) throw new Error('No context line');
-    const anchor = { kind: 'lines' as const, path: file.path, side: 'new' as const, start: line, end: line };
-    const valid = { contractVersion: 2, stops: legacyBody.stops.map((stop) => ({ ...stop, evidence: { claims: [{ quote: stop.paragraph, sources: [anchor], limitation: null }] } })) };
-    expect(validateStorySection(JSON.stringify(valid), [1, 2], diff, 'ru').ok).toBe(true);
-    valid.stops[0]?.evidence.claims[0]?.sources.push({ ...anchor, start: 999999, end: 999999 });
-    expect(validateStorySection(JSON.stringify(valid), [1, 2], diff, 'ru').ok).toBe(false);
-});
-
-it('принимает сохранённый источник длиннее 20 строк, отклоняет недоступный диапазон', () => {
-    const diff = mediumDiff();
-    const anchor = mediumRawResults().sections[0]?.stops[0]?.anchors[0];
-    if (anchor === undefined) throw new Error('No code fixture');
-    const example = { kind: 'lines', ...anchor, end: anchor.start + 20 };
-    const long = { contractVersion: 2, stops: [{ ...legacyBody.stops[0], evidence: { claims: [{ quote: legacyBody.stops[0]?.paragraph, sources: [example], limitation: null }] } }] };
-    expect(validateStorySection(JSON.stringify(long), [1], diff, 'ru').ok).toBe(true);
-    example.end = 999999;
-    expect(validateStorySection(JSON.stringify(long), [1], diff, 'ru').ok).toBe(false);
 });

@@ -14,6 +14,7 @@ import { FlowDiagram, ExplanationExample } from '../../story/flow-diagram.tsx';
 import { OverviewSkeleton, Preparation } from '../../story/preparation.tsx';
 import { GuidedDocument } from '../../story/guided-document.tsx';
 import { ReadFile } from '../../story/read-file.tsx';
+import { SavedSourceContent } from '../../story/saved-source.tsx';
 import { StoryDocument } from '../../story/app.tsx';
 import { ChatPanel, ChatSelectionContext } from '../../components/chat-panel.tsx';
 import type { GalleryState } from './states.tsx';
@@ -25,7 +26,7 @@ const snapshot: RouteSnapshot = { ...source, presentation: 'story',
     tourOrder: source.tourOrder.filter((id) => id !== 'other'),
 };
 const diff = fixtureIteration('medium').diff;
-const firstAnchor = snapshot.stops.flatMap((stop) => stop.anchors)[0];
+const firstAnchor = snapshot.stops.flatMap((stop) => stop.anchors ?? [])[0];
 if (firstAnchor === undefined) throw new Error('Нужен источник рассказа');
 const sourceRef = { ...firstAnchor, kind: 'lines' as const, end: Math.min(firstAnchor.end, firstAnchor.start + 8) };
 const evidence = (quote: string) => ({ claims: [{ quote, sources: [sourceRef], limitation: null }] });
@@ -74,6 +75,10 @@ export const STORY_STATES: readonly GalleryState[] = [
         render: () => <main className="story-main"><StoryDocument snapshot={modern} onAsk={noop} renderSource={renderSource} /></main> },
     { id: 'story-v2-expanded', group: 'Рассказ', title: 'Тезис и строки сохранённой стороны',
         render: () => <main className="story-main"><StoryDocument snapshot={modern} expanded={new Set(['intro'])} onAsk={noop} renderSource={renderSource} /></main> },
+    { id: 'story-imported-source', group: 'Рассказ', title: 'Сохранённый источник · полный файл и происхождение',
+        render: () => <SavedSourceContent source={{ id: 'a'.repeat(64), hash: 'b'.repeat(64), diffId: diff.diffId, revision: diff.headCommit, path: 'docs/process.md', side: 'new', start: 12, end: 14,
+            text: 'Запрос проходит проверку перед сохранением.\nПодтверждённый результат возвращается вызывающему коду.', fullFile: true,
+            origin: { url: 'https://example.test/process', capturedAt: '2026-11-03T10:00:00.000Z', scope: 'Описание процесса' } }} onReadFull={noop} /> },
     { id: 'story-source-limit', group: 'Рассказ', title: 'Известное ограничение без фиктивного источника',
         render: () => <main className="story-main"><StoryDocument snapshot={{ ...modern, stops: [], summaryEvidence: { claims: [{ quote: modern.summary, sources: [], limitation: 'Единицы поля не определены в доступном фрагменте.' }] } }} onAsk={noop} /></main> },
     { id: 'story-source-error', group: 'Рассказ', title: 'Ошибка одного источника и локальный повтор',
@@ -105,7 +110,7 @@ function GuidedGallery({ page, pending = false, readableView = false }: { page: 
     return <main className="story-main story-main--diff"><GuidedDocument snapshot={view} page={page} onVisit={noop} onAsk={noop} renderFile={(id, description) => {
         const file = guided.diff.files.find((entry) => entry.fileId === id);
         const notes = view.stops.flatMap((stop) => stop.guidedFiles ?? []).find((entry) => entry.fileId === id)?.annotations;
-        return file === undefined ? null : <ReadFile description={description} file={file} diffId={guided.diff.diffId} data={data} token="gallery" current={false} annotations={notes} onSelect={noop} onLayout={noop} />;
+        return file === undefined ? null : <ReadFile description={description} file={file} diffId={guided.diff.diffId} data={data} token="gallery" originals annotations={notes} onSelect={noop} onLayout={noop} />;
     }} /></main>;
 }
 const readable = readableStoryFixture();

@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { databasePathFor } from './paths.js';
 import type { SherpaServer } from './server.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { SettingsStore } from './settings-store.js';
 import { directoryAssets } from './static.js';
 import { get, makeTempSherpaDir, patchJson, postJson, removeTempSherpaDir } from './test-support.js';

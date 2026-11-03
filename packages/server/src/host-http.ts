@@ -1,4 +1,4 @@
-import type { ReviewSource } from '@sherpa/protocol';
+import type { CodeReader } from '@sherpa/protocol';
 import type { z } from 'zod';
 import { RpcFailure } from './errors.js';
 import type { JsonResponse, RequestContext } from './http.js';
@@ -33,11 +33,11 @@ export async function readRequest<T>(ctx: RequestContext, schema: z.ZodType<T>, 
     return parsed.data;
 }
 
-export function hostOf<T extends ReviewSource>(options: { host: T | null }): T {
+export function hostOf<T extends CodeReader>(options: { host: T | null }): T {
     if (options.host === null) {
         throw new RpcFailure(
             'no_review_host',
-            'У этого ревью нет хост-адаптера: ключ не опознан как арканумный, локальный или фикстурный.',
+            'Для этого разбора ещё не импортирован снимок кода.',
         );
     }
     return options.host;

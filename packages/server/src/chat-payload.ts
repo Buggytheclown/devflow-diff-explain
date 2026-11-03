@@ -11,7 +11,7 @@ import type {
     FileDiff,
     Locale,
     PrDiff,
-    PrMeta,
+    CapturedPr,
     RouteSnapshot,
     RouteStop,
     UiRouteState,
@@ -45,7 +45,7 @@ export interface ChatPayloadContext {
     readonly question: string;
     readonly explanation?: ChatExplanation | null;
     readonly anchor: ChatAnchor | null;
-    readonly pr: PrMeta | null;
+    readonly pr: CapturedPr | null;
     readonly diff: PrDiff | null;
     readonly fileContent: FileContent | null;
     readonly route: UiRouteState;
@@ -69,7 +69,7 @@ export interface ChatPayloadFile {
 /** Неизменный контекст вопроса: пишется по стабильному пути под `shared/`, а не копией на задачу. */
 export type SharedChatContext =
     | { readonly kind: 'guide'; readonly name: string; readonly content: string }
-    | { readonly kind: 'pr-target'; readonly diff: PrDiff; readonly meta: PrMeta | null; readonly budgetBytes: number }
+    | { readonly kind: 'pr-target'; readonly diff: PrDiff; readonly meta: CapturedPr | null; readonly budgetBytes: number }
     | {
           readonly kind: 'file';
           readonly diffKey: string;
@@ -125,7 +125,7 @@ function chatTaskInstructions(context: ChatPayloadContext, files: readonly ChatP
     const inline = fitText(question, INLINE_QUESTION_BYTES, '[Question preview unavailable; read question.md.]');
     const diff = context.diff;
     return [chatInstructions(locale), '',
-        `Pinned code version: ${diff === null ? 'unavailable' : JSON.stringify({ pr: context.pr?.url ?? null, diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit })}`,
+        `Pinned code version: ${diff === null ? 'unavailable' : JSON.stringify({ pr: context.pr?.url ?? null, codeSnapshotId: diff.codeSnapshotId ?? null, diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit })}`,
         'Reviewer request and scope (quoted task data; full text in question.md):', JSON.stringify(inline),
     ].join('\n');
 }
@@ -148,6 +148,10 @@ export async function materializeChatPayload(
     await fs.chmod(taskDir, DIR_MODE);
 
     for (const file of payload.files) {
+        if (file.name === 'route-context.md' || file.name === 'story-evidence.md') {
+            contextFiles.push(shared.guide(`chat-${file.name}`, file.content));
+            continue;
+        }
         const filePath = path.join(taskDir, file.name);
         await fs.writeFile(filePath, file.content, { encoding: 'utf8', mode: FILE_MODE });
         contextFiles.push(filePath);
@@ -166,6 +170,9 @@ export async function materializeChatPayload(
 }
 
 function contextPurpose(name: string): string {
+    if (name.startsWith('target-')) return 'Pinned PR, changed-file map and imported source artifacts';
+    if (name.startsWith('chat-route-context.md-')) return 'Saved explanation shown with this question';
+    if (name.startsWith('chat-story-evidence.md-')) return 'Saved explanation evidence';
     if (name.startsWith('chat-guide-')) return 'Response rules';
     if (name.startsWith('attached-file-patch-')) return 'Explicitly attached file patch';
     switch (name) {
@@ -296,7 +303,7 @@ function flexibleSpec(name: string, order: number, content: string): PayloadFile
 function questionContext(
     question: string,
     anchor: ChatAnchor | null,
-    pr: PrMeta | null,
+    pr: CapturedPr | null,
     diffAvailable: boolean,
 ): string {
     const scope =
@@ -306,7 +313,7 @@ function questionContext(
     const prLines =
         pr === null
             ? ['Pull request metadata is unavailable.']
-            : [`Pull request: ${pr.title}`, `URL: ${pr.url}`];
+            : [pr.title === undefined ? null : `Pull request: ${pr.title}`, pr.url === undefined ? null : `URL: ${pr.url}`].filter((line): line is string => line !== null);
     // Отсутствие диффа надо назвать здесь: общего файла с ним в такой задаче просто нет.
     const diffLines = diffAvailable ? [] : ['[UNAVAILABLE: the host could not provide the active diff.]'];
     const quote = anchor?.selectedText === undefined ? [] : ['', 'Selected text from the rendered document (reviewer quotation):', JSON.stringify(anchor.selectedText)];
@@ -534,7 +541,7 @@ function anchoredRouteContext(anchor: ChatAnchor, snapshot: RouteSnapshot | null
 }
 
 function stopOverlaps(stop: RouteStop, anchor: ChatAnchor): boolean {
-    return stop.anchors.some(
+    return (stop.anchors ?? []).some(
         (candidate) =>
             (candidate.fileId === anchor.fileId || candidate.path === anchor.path) &&
             candidate.side === anchor.side &&
@@ -544,7 +551,7 @@ function stopOverlaps(stop: RouteStop, anchor: ChatAnchor): boolean {
 }
 
 function stopBlock(stop: RouteStop, anchor: ChatAnchor): string {
-    const anchors = stop.anchors
+    const anchors = (stop.anchors ?? [])
         .filter(
             (candidate) =>
                 (candidate.fileId === anchor.fileId || candidate.path === anchor.path) &&
@@ -556,9 +563,9 @@ function stopBlock(stop: RouteStop, anchor: ChatAnchor): string {
     return [
         `### Stop ${String(stop.planIndex)}: ${stop.title}`,
         '',
-        `Tier: ${stop.tier}; status: ${stop.status}.`,
+        `Status: ${stop.status}.`,
         ...(stop.paragraph === null ? [] : ['', stop.paragraph]),
-        ...(stop.bridge === null ? [] : ['', `Bridge: ${stop.bridge}`]),
+        ...(stop.bridge == null ? [] : ['', `Bridge: ${stop.bridge}`]),
         '',
         ...anchors,
     ].join('\n');
@@ -589,7 +596,7 @@ function routePlan(snapshot: RouteSnapshot): string[] {
     const stops = ordered.flatMap((stop) => [
         `#### ${String(stop.planIndex)}. ${stop.title}`,
         '',
-        `Tier: ${stop.tier}; status: ${stop.status}.`,
+        `Status: ${stop.status}.`,
         '',
         stop.paragraph ?? '[UNAVAILABLE: this route stop has no paragraph yet.]',
         '',

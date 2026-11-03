@@ -6,6 +6,9 @@ import { readListenHost } from './listen-host.js';
 import { DEFAULT_SHERPA_DIR, manifestPathFor } from './paths.js';
 import type { SherpaServer } from './server.js';
 import { startServer } from './server.js';
+import { exportFixture } from './fixture-import.js';
+import { FIXTURE_NAMES } from '@sherpa/fixtures';
+import type { FixtureName } from '@sherpa/fixtures';
 import { directoryAssets } from './static.js';
 
 /**
@@ -16,8 +19,7 @@ async function main(argv: readonly string[]): Promise<number> {
     const prKey = readOption(argv, '--pr');
     if (prKey === null) {
         process.stderr.write(
-            'Использование: dev --pr <ключ PR> [--sherpa-dir <путь>] [--ui <путь к dist>] ' +
-                '[--repo <каталог проекта>] [--base <ref>] [--branch <ветка>]\n',
+            'Использование: dev --pr <ключ PR> [--sherpa-dir <путь>] [--ui <путь к dist>]\n',
         );
         return 1;
     }
@@ -25,11 +27,6 @@ async function main(argv: readonly string[]): Promise<number> {
     const sherpaDir = readOption(argv, '--sherpa-dir') ?? DEFAULT_SHERPA_DIR;
     const uiDir = await resolveUiDir(readOption(argv, '--ui'));
     const host = readListenHost(process.env);
-    // Локальное ревью: каталог проекта, база сравнения и ветка — те же аргументы, что у бандла.
-    const repo = readOption(argv, '--repo');
-    const reviewBase = readOption(argv, '--base');
-    const reviewBranch = readOption(argv, '--branch');
-
     // Самоостановка по простою выключена: дев-сервер держит открытый терминал разработчика,
     // и внезапная смерть посреди работы над кодом ему только мешает — останавливает Ctrl+C.
     const options = {
@@ -37,11 +34,15 @@ async function main(argv: readonly string[]): Promise<number> {
         sherpaDir,
         host,
         idleSeconds: 0,
-        ...(repo === null ? {} : { repo: path.resolve(repo) }),
-        ...(reviewBase === null ? {} : { base: reviewBase }),
-        ...(reviewBranch === null ? {} : { branch: reviewBranch }),
     };
 
+    const fixtureName = prKey.startsWith('fixture-') ? prKey.slice(8) : '';
+    if ((FIXTURE_NAMES as readonly string[]).includes(fixtureName)) {
+        const manifest = await exportFixture(fixtureName as FixtureName, prKey, path.join(sherpaDir, 'dev-export'));
+        let index = 0;
+        Object.assign(options, { snapshot: manifest, development: true,
+            nextSnapshot: () => exportFixture(fixtureName as FixtureName, prKey, path.join(sherpaDir, 'dev-export'), ++index) });
+    }
     let server: SherpaServer;
     try {
         server = await startServer(uiDir === null ? options : { ...options, assets: directoryAssets(uiDir) });

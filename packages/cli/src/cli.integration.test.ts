@@ -12,7 +12,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CliIo } from './cli.js';
 import { run } from './cli.js';
-import { localPrKey } from './local.js';
 import { taskResultDirFor, taskResultFileFor, taskResultRootFor } from './paths.js';
 
 const PR_KEY = 'arcanum-777';
@@ -47,7 +46,7 @@ describe('CLI против сервера', () => {
     async function start(longPollSeconds = 0.2): Promise<SherpaServer> {
         // Живой Арканум в тестах запрещён: без хоста прогрев маршрута не ходит в сеть,
         // а этому набору важен только протокол CLI↔сервер.
-        server = await startServer({ prKey: PR_KEY, sherpaDir, longPollSeconds, reviewSourceFactory: () => null });
+        server = await startServer({ prKey: PR_KEY, sherpaDir, longPollSeconds, reader: null });
         return server;
     }
 
@@ -68,7 +67,6 @@ describe('CLI против сервера', () => {
         readonly entry?: string;
         readonly ensureServer?: NonNullable<CliIo['ensureServer']>;
         readonly openBrowser?: NonNullable<CliIo['openBrowser']>;
-        readonly runCommand?: NonNullable<CliIo['runCommand']>;
         readonly tmpDir?: string;
         readonly onOutput?: (text: string) => void;
     }
@@ -86,7 +84,6 @@ describe('CLI против сервера', () => {
             tmpDir: overrides.tmpDir ?? workDir,
             ...(overrides.ensureServer === undefined ? {} : { ensureServer: overrides.ensureServer }),
             ...(overrides.openBrowser === undefined ? {} : { openBrowser: overrides.openBrowser }),
-            ...(overrides.runCommand === undefined ? {} : { runCommand: overrides.runCommand }),
         };
 
         const code = await run(argv, io);
@@ -156,34 +153,10 @@ describe('CLI против сервера', () => {
         });
     });
 
-    // `--local` называет каталог, а не PR: ключ считается из каталога и ветки и бьёт даже SHERPA_PR.
-    it('up --local поднимает ревью каталога и называет его в выводе', async () => {
-        const localKey = localPrKey('arc', await fs.realpath(workDir), 'feature', 'trunk~3');
-        server = await startServer({
-            prKey: localKey,
-            sherpaDir,
-            longPollSeconds: 0.2,
-            reviewSourceFactory: () => null,
-        });
-        const arc: NonNullable<CliIo['runCommand']> = (_command, args) =>
-            Promise.resolve({
-                exitCode: 0,
-                stdout:
-                    args[0] === 'root'
-                        ? `${workDir}\n`
-                        : JSON.stringify({ branch: 'feature', user_login: 'alice', hash: 'a'.repeat(40) }),
-                stderr: '',
-                failure: null,
-            });
-
-        const result = await sherpaWith({ runCommand: arc }, 'up', '--local', workDir, '--base', 'trunk~3');
-
-        expect(result.code).toBe(0);
-        expect(result.stdout).toContain(`http://127.0.0.1:${String(server.port)}/#t=`);
-        expect(result.stdout).toContain('Reviewing the working tree of');
-        expect(result.stdout).toContain('on branch feature, base trunk~3');
-        expect(result.stdout).toContain(`devflow-diff-explain worker next --pr ${localKey}`);
-        expect(server.workerRegistry.status()).toMatchObject({ kind: 'connected' });
+    it('local acquisition is delegated to the agent', async () => {
+        const result = await sherpaWith({}, 'up', '--local', workDir, '--base', 'trunk~3');
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('up --snapshot');
     });
 
     it('браузер открывается только при холодном старте и без --no-open', async () => {
@@ -714,7 +687,7 @@ describe('CLI против сервера', () => {
         expect(running.queue.getTask(taskId)?.progressText).toBe(null);
     });
 
-    it('повторный complete по закрытой задаче — no-op', async () => {
+    it('повторный complete по закрытой задаче возвращает сохранённую квитанцию', async () => {
         const running = await start();
         const taskId = enqueueEcho(running);
         await sherpa('worker', 'next');
@@ -724,7 +697,7 @@ describe('CLI против сервера', () => {
         const repeated = await sherpa('task', 'complete', String(taskId), '--file', file);
 
         expect(repeated.code).toBe(0);
-        expect(repeated.stdout).toContain('is already finished');
+        expect(repeated.stdout).toContain('is accepted');
         expect(repeated.stdout).toContain('devflow-diff-explain worker next');
     });
 

@@ -1,9 +1,9 @@
+import { checkpointJson } from '@sherpa/fixtures';
 import { afterEach, expect, it, vi } from 'vitest';
-import { architectureStoryFixture, overviewStoryFixture } from '@sherpa/fixtures';
+import { architectureStoryFixture } from '@sherpa/fixtures';
 import { allFilesWorkerResultSchema, preparationProgress, UI_ENDPOINTS, uiReviewRouteResponseSchema } from '@sherpa/protocol';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import type { SherpaServer } from './server.js';
-import { validateStorySkeleton, validateStorySection } from './story.js';
 import { get, makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
 const fixture = architectureStoryFixture();
@@ -20,7 +20,7 @@ async function next(server: SherpaServer) {
 }
 async function complete(server: SherpaServer, result: unknown, type = 'route.prepare') {
     const task = await next(server); expect(task.type).toBe(type);
-    const accepted = server.queue.complete('worker', task.id, JSON.stringify(result)); expect(accepted, JSON.stringify(accepted)).toMatchObject({ kind: 'accepted' }); return task;
+    const accepted = server.queue.complete('worker', task.id, checkpointJson(result)); expect(accepted, checkpointJson(accepted)).toMatchObject({ kind: 'accepted' }); return task;
 }
 async function read(server: SherpaServer) { return uiReviewRouteResponseSchema.parse(await (await get(server.port, UI_ENDPOINTS.reviewRoute, server.token)).json()).route; }
 
@@ -55,10 +55,10 @@ it('перенос, удаление блока и новый порядок п�
     const { server } = await start(); await complete(server, fixture.outline, 'route.prepare');
     const before = (await read(server)).snapshot; if (before === null) throw new Error('No snapshot');
     const task = await next(server); const [one, two] = before.stops; if (one === undefined || two === undefined) throw new Error('No blocks');
-    expect(server.queue.complete('worker', task.id, JSON.stringify({ contractVersion: 6, update: { removeBlocks: [one.id] } })).kind).toBe('rejected');
+    expect(server.queue.complete('worker', task.id, checkpointJson({ contractVersion: 6, update: { removeBlocks: [one.id] } })).kind).toBe('rejected');
     const completeUpdate = { contractVersion: 6, update: { removeBlocks: [one.id], blockOrder: [two.id], blocks: [{ id: two.id,
         files: before.stops.flatMap((block) => block.guidedFiles?.map((file) => file.path) ?? []), nodeIds: [...new Set(before.stops.flatMap((block) => block.nodeIds ?? []))] }] } };
-    expect(server.queue.complete('worker', task.id, JSON.stringify(completeUpdate)).kind).toBe('accepted');
+    expect(server.queue.complete('worker', task.id, checkpointJson(completeUpdate)).kind).toBe('accepted');
     const after = (await read(server)).snapshot;
     expect(after?.stops.map((block) => block.id)).toEqual([two.id]); expect(after?.tourOrder).toEqual([two.id]);
     expect(after?.stops[0]?.guidedFiles).toHaveLength(fixture.diff.files.length);
@@ -70,13 +70,4 @@ it('отмена новой подготовки сохраняет предыд
     const progress = preparationProgress(await read(server)); expect(progress).toMatchObject({ completed: 0, total: null });
     if (progress.id === null) throw new Error('Missing generation'); server.route.cancelGeneration(progress.id);
     expect((await read(server)).snapshot).toEqual(before); expect(preparationProgress(await read(server)).status).toBe('cancelled');
-});
-
-it('парсер сохранённого v5 сохраняет его контракт, не создавая заданий агента', () => {
-    const legacy = overviewStoryFixture(); const summary = 'ПР меняет путь обработки запроса. '.repeat(22);
-    expect(validateStorySkeleton(JSON.stringify({ ...legacy.outline, summary, evidence: { claims: [{ quote: summary.trim(), sources: [], limitation: 'Synthetic fixture.' }] } }), legacy.diff, 'ru').ok).toBe(true);
-    const part = legacy.parts[0]; if (part === undefined) throw new Error('Missing part');
-    const assignment = { files: part.stops[0]?.files.map((file) => file.path) ?? [], introduction: true };
-    expect(validateStorySection(JSON.stringify(part), [1], legacy.diff, 'ru', legacy.snapshot.stops, 5, assignment).ok).toBe(true);
-    expect(validateStorySection(JSON.stringify(part), [1], legacy.diff, 'ru', legacy.snapshot.stops, 5, { ...assignment, files: ['another.ts'] }).ok).toBe(false);
 });

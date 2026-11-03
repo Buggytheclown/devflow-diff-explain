@@ -1,27 +1,17 @@
-import type { PrMeta, ReviewSource } from '@sherpa/protocol';
-import { prMetaSchema } from '@sherpa/protocol';
-
-/** Через столько повторяем первую загрузку меты, пока хост не ответил ни разу. */
-const RETRY_INTERVAL_MS = 30_000;
+import type { CapturedPr, CodeReader } from '@sherpa/protocol';
+import { capturedPrSchema } from '@sherpa/protocol';
 
 export interface PrMetaCacheOptions {
-    /** null — у PR нет хост-адаптера: мета останется null навсегда. */
-    readonly host: ReviewSource | null;
+    /** Локальный читатель импортированного снимка. */
+    readonly host: CodeReader | null;
     readonly retryIntervalMs?: number;
 }
 
-/**
- * Кеш меты PR для снапшота UI. `buildState` синхронна (её зовут таймер SSE и пуш изменений),
- * а `getPr()` — сетевой вызов хоста, поэтому мета наполняется вне сборки снапшота: при старте
- * сервера и после публикации вердикта. До первого успеха `get()` отдаёт null, и UI честно
- * рисует заглушки. Каждое обновление будит подписчиков — снапшот с новой метой уезжает по SSE.
- */
+/** Метаданные последнего явного импорта для синхронной сборки SSE-состояния. */
 export class PrMetaCache {
-    private readonly host: ReviewSource | null;
-    private readonly retryIntervalMs: number;
+    private readonly host: CodeReader | null;
     private readonly listeners = new Set<() => void>();
-    private meta: PrMeta | null = null;
-    private retry: ReturnType<typeof setTimeout> | null = null;
+    private meta: CapturedPr | null = null;
     private closed = false;
     /** Номер последнего выданного `refresh()`; растёт в порядке старта запросов. */
     private started = 0;
@@ -30,11 +20,10 @@ export class PrMetaCache {
 
     constructor(options: PrMetaCacheOptions) {
         this.host = options.host;
-        this.retryIntervalMs = options.retryIntervalMs ?? RETRY_INTERVAL_MS;
     }
 
     /** Синхронный источник для `buildState`. */
-    get(): PrMeta | null {
+    get(): CapturedPr | null {
         return this.meta;
     }
 
@@ -45,38 +34,24 @@ export class PrMetaCache {
         };
     }
 
-    /**
-     * Первая загрузка меты с повторами до первого успеха: без неё UI до самой публикации
-     * вердикта показывал бы заглушку вместо хлебных крошек. После успеха хост больше не опрашивается —
-     * мету обновляют события, которые её меняют.
-     */
+    /** Начальная загрузка из локального снимка; polling отсутствует. */
     start(): void {
         if (this.host === null || this.closed) {
             return;
         }
-        void this.refresh().then(() => {
-            if (this.meta === null && !this.closed) {
-                this.retry = setTimeout(() => {
-                    this.retry = null;
-                    this.start();
-                }, this.retryIntervalMs);
-                this.retry.unref();
-            }
-        });
+        void this.refresh();
     }
 
-    /**
-     * Перечитывает мету у хоста. Провал (сеть, токен, ответ не сошёлся с контрактом) глотается
-     * логом: прежнее значение кеша остаётся на экране, а вызвавшая ручка от этого не падает.
-     */
+    /** Явное обновление; ошибка чтения сохраняет прежнее значение. */
     async refresh(): Promise<void> {
         if (this.host === null || this.closed) {
             return;
         }
         const generation = ++this.started;
-        let meta: PrMeta;
+        let meta: CapturedPr | null;
         try {
-            meta = prMetaSchema.parse(await this.host.getPr());
+            const imported = await this.host.getPr();
+            meta = imported === null ? null : capturedPrSchema.parse(imported);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             process.stderr.write(`sherpa-server: мета PR не обновилась: ${message}\n`);
@@ -94,17 +69,13 @@ export class PrMetaCache {
         this.applied = generation;
         this.meta = meta;
         for (const listener of this.listeners) {
-            listener();
+            try { listener(); } catch (error) { console.error('sherpa-server: ошибка подписчика метаданных', error); }
         }
     }
 
-    /** Гасит ретрай: иначе он проснулся бы уже после остановки сервера. */
+    /** Останавливает локальные уведомления. */
     close(): void {
         this.closed = true;
-        if (this.retry !== null) {
-            clearTimeout(this.retry);
-            this.retry = null;
-        }
         this.listeners.clear();
     }
 }

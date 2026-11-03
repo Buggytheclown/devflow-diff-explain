@@ -1,10 +1,11 @@
+import { checkpointJson } from '@sherpa/fixtures';
 import { afterEach, expect, it, vi } from 'vitest';
 import { makeFixtureHost } from '@sherpa/fixtures';
 import { SAVED_SOURCE_ENDPOINT, WORKER_ENDPOINTS, PROTOCOL_VERSION, UI_ENDPOINTS, uiReviewRouteResponseSchema } from '@sherpa/protocol';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { makeTempSherpaDir, removeTempSherpaDir, postJson, get } from './test-support.js';
 import { architectureStoryFixture } from '@sherpa/fixtures';
-import type { ReviewSource } from '@sherpa/protocol';
+import type { CodeReader } from '@sherpa/protocol';
 import { openDatabase } from './db.js';
 import { SavedSources, withSavedSources } from './saved-sources.js';
 import { storyEvidenceResolver } from './story-evidence.js';
@@ -16,13 +17,13 @@ afterEach(() => { for (const db of databases.splice(0)) db.close(); });
 function setup() {
     const db = openDatabase(':memory:'); databases.push(db);
     const read = vi.fn((_path: string, _revision: string) => Promise.resolve('first\ncaller()\nlast'));
-    const source = new SavedSources(db, { getSourceAtRevision: read } as unknown as ReviewSource);
+    const source = new SavedSources(db, { getSourceAtRevision: read } as unknown as CodeReader);
     return { db, read, source, diff: architectureStoryFixture().diff };
 }
 it('сохраняет точную версию вне патча и повторно читает без хоста', async () => {
     const { db, read, source, diff } = setup();
     const raw = { summary: 'Вызов.', evidence: { claims: [{ sources: [{ kind: 'lines' as const, path: 'outside/caller.ts', side: 'new' as const, start: 2, end: 2 }], limitation: null }] } };
-    const result = JSON.parse(await source.prepare(diff, JSON.stringify(raw), false)) as typeof raw;
+    const result = JSON.parse(await source.prepare(diff, checkpointJson(raw), false)) as typeof raw;
     expect(read).toHaveBeenCalledWith('outside/caller.ts', diff.headCommit);
     const accepted = withSavedSources(source, () => storyEvidenceResolver(diff)(result.evidence, raw.summary));
     expect(accepted.ok).toBe(true);
@@ -65,7 +66,7 @@ it('сохранённый диапазон через промежуток ха
     const pinned = { ...diff, files: [file] };
     const graph = { ...architectureStoryFixture().diagram, nodes: [{ id: 'changed', label: 'Changed', change: 'modified' as const,
         sources: [{ kind: 'patch' as const, path: file.path, side: 'new' as const, start: 2, end: 11 }], limitation: null }], edges: [] };
-    const prepared = JSON.parse(await source.prepare(pinned, JSON.stringify(graph), false)) as typeof graph;
+    const prepared = JSON.parse(await source.prepare(pinned, checkpointJson(graph), false)) as typeof graph;
     expect(withSavedSources(source, () => diagramSourceErrors(prepared, pinned, []))).toEqual([]);
     expect(diagramSourceErrors(prepared, pinned, [])).not.toEqual([]);
     const unchanged = { ...graph, nodes: graph.nodes.map((node) => ({ ...node, sources: node.sources.map((item) => ({ ...item, start: 10, end: 12 })) })) };
@@ -84,7 +85,7 @@ it('HTTP complete сохраняет источник вне патча, пер�
         if (task === undefined) throw new Error('No task');
         const fixture = architectureStoryFixture();
         const result = { ...fixture.outline, evidence: { claims: [{ sources: [{ kind: 'lines', path: 'outside.ts', side: 'new', start: 1, end: 1 }], limitation: null }] } };
-        const response = await postJson(server.port, WORKER_ENDPOINTS.complete, { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.26.0', workerId: 'worker', taskId: task.id, result: JSON.stringify(result) }, server.token);
+        const response = await postJson(server.port, WORKER_ENDPOINTS.complete, { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.26.0', workerId: 'worker', taskId: task.id, result: checkpointJson(result) }, server.token);
         expect(await response.json()).toMatchObject({ kind: 'accepted' });
         const state = uiReviewRouteResponseSchema.parse(await (await get(server.port, UI_ENDPOINTS.reviewRoute, server.token)).json());
         const saved = state.route.snapshot?.summaryEvidence?.claims[0]?.sources[0];
@@ -105,17 +106,17 @@ it('повтор архитектуры сохраняет внешние ист
         const fixture = architectureStoryFixture(); server.workerRegistry.register('worker', 'test'); await server.route.warmup();
         for (const body of [fixture.outline, fixture.body]) {
             const task = server.queue.next('worker')?.task; if (task === undefined) throw new Error('No task');
-            expect(server.queue.complete('worker', task.id, JSON.stringify(body)).kind).toBe('accepted');
+            expect(server.queue.complete('worker', task.id, checkpointJson(body)).kind).toBe('accepted');
         }
         const readRoute = async () => uiReviewRouteResponseSchema.parse(await (await get(server.port, UI_ENDPOINTS.reviewRoute, server.token)).json()).route;
         const saved = (await readRoute()).snapshot; if (saved === null) throw new Error('No snapshot');
         await server.route.retryDiagram(saved.snapshotId);
-        await vi.waitFor(() => { expect(server.queue.listTasks().some((task) => task.type === 'route.diagram' && task.status === 'queued')).toBe(true); });
+        await vi.waitFor(() => { expect(server.queue.listTasks().some((task) => task.type === 'route.prepare' && task.status === 'queued')).toBe(true); });
         const task = server.queue.next('worker')?.task; if (task === undefined) throw new Error('No task');
         const diagram = structuredClone(fixture.diagram); const node = diagram.nodes[0]; if (node === undefined) throw new Error('No node');
         node.sources = [{ kind: 'patch', path: 'outside.ts', side: 'new', start: 1, end: 1 }];
         const response = await postJson(server.port, WORKER_ENDPOINTS.complete, { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.29.0', workerId: 'worker', taskId: task.id,
-            result: JSON.stringify({ contractVersion: 6, update: { flow: { status: 'ready', diagram } } }) }, server.token);
+            result: checkpointJson({ contractVersion: 6, update: { flow: { status: 'ready', diagram } } }) }, server.token);
         expect(await response.json()).toMatchObject({ kind: 'accepted' });
         expect(read).toHaveBeenCalledWith('outside.ts', fixture.diff.headCommit);
         const flow = (await readRoute()).snapshot?.flow;
@@ -127,11 +128,11 @@ it('повтор архитектуры сохраняет внешние ист
 
 it('ошибка источника одного файла не прерывает подготовку независимых соседей', async () => {
     const { source, diff } = setup();
-    const prepared = JSON.parse(await source.prepare(diff, JSON.stringify({ contractVersion: 6, files: [
+    const prepared = JSON.parse(await source.prepare(diff, checkpointJson({ contractVersion: 6, files: [
         { path: 'one.ts', explanation: 'First', example: { text: 'Example', evidence: { sources: [{ kind: 'lines', path: 'outside.ts', side: 'new', start: 50, end: 51 }] } } },
         { path: 'two.ts', explanation: 'Second' },
     ] }), false)) as { files: { path: string; __sourceError?: string }[] };
-    expect(prepared.files[0]?.__sourceError).toContain('Source unavailable');
+    expect(prepared.files[0]).not.toHaveProperty('__sourceError');
     expect(prepared.files[1]).toEqual({ path: 'two.ts', explanation: 'Second' });
 });
 

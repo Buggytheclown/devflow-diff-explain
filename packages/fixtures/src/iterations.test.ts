@@ -226,7 +226,7 @@ describe('итерации фикстур', () => {
         for (const stop of snapshot.stops) {
             let lines = 0;
             let hits = 0;
-            for (const anchor of stop.anchors) {
+            for (const anchor of stop.anchors ?? []) {
                 for (let line = anchor.start; line <= anchor.end; line += 1) {
                     lines += 1;
                     // Сторона `old` при общем base итераций переносится тождественно.

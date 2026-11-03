@@ -4,6 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 import type { Locale } from '@sherpa/protocol';
+import { checkpointJson } from '@sherpa/fixtures';
 
 const execFileAsync = promisify(execFile);
 
@@ -87,7 +88,9 @@ export class FakeWorker {
     async complete(taskId: number, content: string): Promise<WorkerRun> {
         this.resultFiles += 1;
         const file = path.join(this.options.workDir, `result-${String(this.resultFiles)}.md`);
-        await fs.writeFile(file, content);
+        let normalized = content;
+        try { normalized = checkpointJson(JSON.parse(content) as unknown); } catch { /* Тесты ошибок JSON/Markdown сдают исходный текст. */ }
+        await fs.writeFile(file, normalized);
         return this.run('task', 'complete', String(taskId), '--file', file);
     }
 

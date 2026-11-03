@@ -64,6 +64,15 @@ export async function fetchFileContent(token: string, fileId: string, diffId?: s
     return (await get(path, token, uiReviewFileContentResponseSchema)).content;
 }
 
+/** Оригинальные байты импортированного файла, включая binary и большие материалы. */
+export async function downloadFileOriginal(token: string, diffId: string, fileId: string, side: 'old' | 'new', name: string): Promise<void> {
+    const response = await fetch(`/api/snapshot/raw?${new URLSearchParams({ diffId, fileId, side })}`, { headers: { authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new ApiError(activeT()('error.originalNotImported'), response.status);
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a'); link.href = url; link.download = name; link.click();
+    setTimeout(() => { URL.revokeObjectURL(url); }, 1000);
+}
+
 /**
  * Байты стороны картинки (`FileDiff.image`). Зовётся только при `capabilities.blobs`;
  * `null` — хост такого блоба не знает или сторона больше лимита контракта.
@@ -112,9 +121,9 @@ export async function cancelRouteGeneration(token: string, generationId: string)
  */
 export async function generateReviewRoute(
     token: string,
-    locale: Locale,
+    locale: Locale | undefined,
 ): Promise<UiRouteGenerateResponse['outcome']> {
-    const request: UiRouteGenerateRequest = { locale };
+    const request: UiRouteGenerateRequest = locale === undefined ? {} : { locale };
     const body: UiRouteGenerateResponse = await post(
         UI_ENDPOINTS.reviewRouteGenerate,
         token,
@@ -151,10 +160,10 @@ export async function askReviewChat(
     token: string,
     text: string,
     anchor: UiChatAskAnchor | undefined,
-    locale: Locale,
+    locale: Locale | undefined,
     explanation?: ChatExplanation,
 ): Promise<ChatExchange> {
-    const request: UiChatAskRequest = { text, locale, ...(anchor === undefined ? {} : { anchor }), ...(explanation === undefined ? {} : { explanation }) };
+    const request: UiChatAskRequest = { text, ...(locale === undefined ? {} : { locale }), ...(anchor === undefined ? {} : { anchor }), ...(explanation === undefined ? {} : { explanation }) };
     return (await post(UI_ENDPOINTS.reviewChatAsk, token, request, uiChatAskResponseSchema)).exchange;
 }
 

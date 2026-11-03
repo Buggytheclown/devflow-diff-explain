@@ -32,7 +32,7 @@ export function StoryDocument({ snapshot, onAsk: _onAsk, renderSource, expanded,
         {section('intro', snapshot.summary, snapshot.summaryEvidence, [])}
         {snapshot.tourOrder.map((id) => {
             const stop = snapshot.stops.find((entry) => entry.id === id);
-            return stop?.paragraph == null ? null : section(id, stop.paragraph, stop.storyEvidence, stop.anchors, stop.title);
+            return stop?.paragraph == null ? null : section(id, stop.paragraph, stop.storyEvidence, stop.anchors ?? [], stop.title);
         })}
     </article>;
 }

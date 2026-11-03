@@ -52,10 +52,10 @@ describe('FixtureHost', () => {
         expect(() => host.advanceIteration()).toThrow(/итераций больше нет/);
     });
 
-    it('watchIterations получает снапшот сразу и после каждого пуша', () => {
+    it('subscribeVersions получает снапшот сразу и после каждого пуша', () => {
         const host = makeFixtureHost('medium');
         const seen: string[][] = [];
-        const stop = host.watchIterations((list) => seen.push(list.map((iteration) => iteration.diffId)));
+        const stop = host.subscribeVersions((list) => seen.push(list.map((iteration) => iteration.diffId)));
 
         host.advanceIteration();
         stop();

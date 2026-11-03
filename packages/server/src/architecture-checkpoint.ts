@@ -1,25 +1,38 @@
 import type { FlowState, PrDiff, RouteSnapshot, SectionAssignment } from '@sherpa/protocol';
-import { allFilesResultSchema } from '@sherpa/protocol';
-import { validateArchitectureOverview, validateAllFiles } from './architecture-story.js';
+import { allFilesResultSchema, checkpointEnvelopeSchema, explainedFileWorkerResultSchema } from '@sherpa/protocol';
+import { z } from 'zod';
+import { createFileValidator, validateArchitectureOverview, validateAllFiles } from './architecture-story.js';
 import { rawEvidence } from './story-evidence.js';
-import { stripCodeFence, parseResult } from './route/raw-result.js';
+import { parseResult } from './route/raw-result.js';
 import type { RouteValidation } from './route/types.js';
 import type { AcceptedExplanation, ExplanationFilling } from './story.js';
 
 export interface ArchitectureCheckpoint { overview?: AcceptedExplanation; files: ExplanationFilling[] }
 
+/** Внутренние claims не входят во входной контракт модели. */
+export function internalEvidence(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(internalEvidence);
+    if (value === null || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => [key,
+        key === 'evidence' && child !== null && typeof child === 'object' && 'sources' in child
+            ? { claims: [{ sources: child.sources, limitation: 'limitation' in child ? child.limitation : null }] }
+            : internalEvidence(child)]));
+}
+
+export function readCheckpoint(raw: string) {
+    const parsed = parseResult(raw, checkpointEnvelopeSchema, 'checkpoint');
+    if (!parsed.ok) return parsed;
+    const { files = [], ...structure } = parsed.value;
+    const paths = files.map((file) => file !== null && typeof file === 'object' && 'path' in file ? file.path : undefined);
+    if (paths.some((path) => typeof path !== 'string') || new Set(paths).size !== paths.length) return { ok: false as const, errors: ['Return a path for each file, without duplicates.'] };
+    return { ok: true as const, value: { body: parsed.value, files, structure: JSON.stringify({ ...internalEvidence(structure) as object, files: [] }) } };
+}
+
 /** Один валидатор для файлов и повтора схемы; граф и связи обновляются вместе. */
 export function validateArchitectureCheckpoint(raw: string, snapshot: RouteSnapshot, diff: PrDiff,
-    assignment?: SectionAssignment, previousFlow?: FlowState | null, requireFlow = false): RouteValidation<ArchitectureCheckpoint> {
-    let normalized = raw;
-    try {
-        const value: unknown = JSON.parse(stripCodeFence(raw));
-        if (typeof value === 'object' && value !== null) {
-            if ('summary' in value) normalized = JSON.stringify({ contractVersion: 6, overview: value });
-            else if ('flow' in value && !('contractVersion' in value)) normalized = JSON.stringify({ contractVersion: 6, update: value });
-        }
-    } catch { /* parseResult даёт адресную ошибку JSON. */ }
-    const parsed = parseResult(normalized, allFilesResultSchema, 'checkpoint');
+    assignment?: SectionAssignment, previousFlow?: FlowState | null, requireFlow = false, structureOnly = false): RouteValidation<ArchitectureCheckpoint> {
+    // Структурная часть уже отделена от массива файлов; пустой массив здесь допустим.
+    const parsed = parseResult(raw, structureOnly ? z.object(allFilesResultSchema.shape).strict() : allFilesResultSchema, 'checkpoint');
     if (!parsed.ok) return parsed;
     const body = parsed.value;
     if (requireFlow && body.overview?.flow === undefined && body.update?.flow === undefined) {
@@ -70,33 +83,25 @@ export function validateArchitectureCheckpoint(raw: string, snapshot: RouteSnaps
         overview = checked.value;
         if (update?.flow === undefined && body.overview === undefined && snapshot.flow?.status === 'pending') overview.flow = snapshot.flow;
     }
-    const files = validateAllFiles(JSON.stringify(body), diff, overview?.stops ?? snapshot.stops, assignment);
+    const files = (body.files?.length ?? 0) + body.stops.length === 0
+        ? { ok: true as const, value: [] }
+        : validateAllFiles(JSON.stringify(body), diff, overview?.stops ?? snapshot.stops, assignment);
     if (!files.ok) return files;
     return { ok: true, value: { ...(overview === undefined ? {} : { overview }), files: files.value } };
-}
-
-/** Envelope и структура проверяются целиком; файл принимается целиком независимо от соседей. */
-export function partitionCheckpoint(raw: string): { structure: string; files: unknown[] } | null {
-    try {
-        const value: unknown = JSON.parse(stripCodeFence(raw));
-        if (value === null || typeof value !== 'object' || !('files' in value)) return null;
-        if (!Array.isArray(value.files)) return null;
-        const paths = value.files.map((file: unknown) => file !== null && typeof file === 'object' && 'path' in file ? file.path : undefined);
-        if (paths.some((path) => typeof path !== 'string') || new Set(paths).size !== paths.length) return null;
-        const { files, ...structure } = value;
-        return { structure: JSON.stringify({ ...structure, files: [] }), files };
-    } catch { return null; }
 }
 
 export function checkIndividualFiles(files: unknown[], diff: PrDiff, blocks: Parameters<typeof validateAllFiles>[2], assignment?: SectionAssignment) {
     const accepted: string[] = [];
     const errors: { path: string; errors: string[] }[] = [];
     const fillings: ExplanationFilling[] = [];
+    const validate = createFileValidator(diff, blocks, assignment);
     for (const file of files) {
-        const path = (file as { path: string }).path;
-        const sourceError = (file as { __sourceError?: string }).__sourceError;
-        const checked = sourceError === undefined ? validateAllFiles(JSON.stringify({ contractVersion: 6, files: [file] }), diff, blocks, assignment) : { ok: false as const, errors: [sourceError] };
-        if (checked.ok) { accepted.push(path); fillings.push(...checked.value); }
+        const path = file !== null && typeof file === 'object' && 'path' in file && typeof file.path === 'string' ? file.path : '[missing path]';
+        const parsed = explainedFileWorkerResultSchema.safeParse(file);
+        const checked = parsed.success
+            ? validate(internalEvidence(parsed.data))
+            : { ok: false as const, errors: parsed.error.issues.map((issue) => `${path}.${issue.path.join('.')}: ${issue.message}`) };
+        if (checked.ok) { accepted.push(path); fillings.push(checked.value); }
         else errors.push({ path, errors: checked.errors });
     }
     // Несколько файлов одного блока должны применяться одной filling, иначе Map потеряет соседей.

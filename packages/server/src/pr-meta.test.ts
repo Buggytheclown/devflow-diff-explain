@@ -1,5 +1,5 @@
 import { makeFixtureHost } from '@sherpa/fixtures';
-import type { PrMeta, ReviewSource } from '@sherpa/protocol';
+import type { PrMeta, CodeReader } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PrMetaCache } from './pr-meta.js';
@@ -28,9 +28,9 @@ describe('кеш меты PR', () => {
     }
 
     /** Хост с подменяемым `getPr`; вызовы считает сам мок. */
-    function hostOf(getPr: () => Promise<PrMeta>): { host: ReviewSource; getPr: ReturnType<typeof vi.fn> } {
+    function hostOf(getPr: () => Promise<PrMeta>): { host: CodeReader; getPr: ReturnType<typeof vi.fn> } {
         const mock = vi.fn(getPr);
-        return { host: { getPr: mock } as unknown as ReviewSource, getPr: mock };
+        return { host: { getPr: mock } as unknown as CodeReader, getPr: mock };
     }
 
     it('до первого успеха отдаёт null и подписчиков не будит', async () => {
@@ -68,7 +68,7 @@ describe('кеш меты PR', () => {
         }
     });
 
-    it('провал первой загрузки повторяется по таймеру, после успеха хост не опрашивается', async () => {
+    it('провал не запускает polling; метаданные обновляет явный импорт', async () => {
         let attempt = 0;
         const { host, getPr } = hostOf(() => {
             attempt += 1;
@@ -84,9 +84,8 @@ describe('кеш меты PR', () => {
 
             await vi.advanceTimersByTimeAsync(RETRY_MS);
             expect(cache.get()).toBeNull();
-            expect(getPr).toHaveBeenCalledTimes(2);
-
-            await vi.advanceTimersByTimeAsync(RETRY_MS);
+            expect(getPr).toHaveBeenCalledTimes(1);
+            await cache.refresh(); await cache.refresh();
             expect(cache.get()?.title).toBe('доехало');
             expect(getPr).toHaveBeenCalledTimes(3);
 

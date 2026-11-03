@@ -30,7 +30,7 @@ test('изначально недоступная схема восстанав�
     const files = await server.worker.next(); await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('.story-preparation')).toContainText('Разбор подготовлен частично');
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();
-    const retry = await server.worker.next(); expect(retry.type).toBe('route.diagram');
+    const retry = await server.worker.next(); expect(retry.type).toBe('route.prepare');
     const result = { contractVersion: 6, update: { flow: fixture.outline.flow,
         blocks: fixture.outline.stops.map((block, i) => ({ id: `s${String(i + 1).padStart(2, '0')}`, nodeIds: block.nodeIds })) } };
     expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify(result))).stdout).not.toContain('rejected');

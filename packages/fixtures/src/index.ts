@@ -44,8 +44,10 @@ export type { RouteBrokenResults, RouteFixtures, RouteRawResults, RouteRawResult
 export { PNG_SMALL_BASE64 } from './data/images.js';
 /** Текст файла по обе стороны: галерее состояний он нужен без сервера и без хоста. */
 export { fileContentOf } from './file-content.js';
+export { fixtureBlob } from './patch.js';
 export type { FixtureData, FixtureInterdiff, FixtureIteration, FixtureIterationView, FixtureName } from './data/index.js';
 export { guidedStoryFixture } from './guided-story.js';
 export { readableStoryFixture } from './readable-story.js';
 export { overviewStoryFixture } from './overview-story.js';
 export { architectureStoryFixture } from './architecture-story.js';
+export { checkpointFixture, checkpointJson } from './checkpoint.js';

@@ -34,14 +34,11 @@ describe('глобальные настройки UI', () => {
     it('без загрузки отдаёт умолчания контракта', () => {
         expect(createUiSettingsStore().getSnapshot()).toEqual({
             diffMode: 'unified',
-            shipMode: 'ship',
-            composerLayout: 'visual',
+            generationLocale: 'auto',
             locale: 'auto',
             theme: 'auto',
             arcanum: false,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
         });
     });
 
@@ -54,7 +51,7 @@ describe('глобальные настройки UI', () => {
         store.update({ diffMode: 'split' });
 
         // Применение синхронное: ревьюер видит новый режим до всякой сети.
-        expect(store.getSnapshot()).toMatchObject({ diffMode: 'split', shipMode: 'ship' });
+        expect(store.getSnapshot()).toMatchObject({ diffMode: 'split', generationLocale: 'auto' });
         expect(seen).toEqual(['split']);
 
         await flush();
@@ -100,11 +97,11 @@ describe('глобальные настройки UI', () => {
         const store = createUiSettingsStore({ loaded: true, send });
 
         store.update({ diffMode: 'unified' });
-        store.update({ shipMode: 'sticky_ship' });
-        store.update({ shipMode: 'sticky_ship' });
+        store.update({ generationLocale: 'en' });
+        store.update({ generationLocale: 'en' });
 
         await flush();
-        expect(patches).toEqual([{ shipMode: 'sticky_ship' }]);
+        expect(patches).toEqual([{ generationLocale: 'en' }]);
     });
 
     it('провал записи не откатывает выбор', async () => {
@@ -153,26 +150,20 @@ describe('глобальные настройки UI', () => {
 
         store.applyLoaded({
             diffMode: 'unified',
-            shipMode: 'sticky_ship',
-            composerLayout: 'markdown',
+            generationLocale: 'en',
             locale: 'auto',
             theme: 'auto',
             arcanum: false,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
         });
 
         expect(store.getSnapshot()).toEqual({
             diffMode: 'split',
-            shipMode: 'sticky_ship',
-            composerLayout: 'markdown',
+            generationLocale: 'en',
             locale: 'auto',
             theme: 'auto',
             arcanum: false,
             textSize: 'm',
-            onboarding: { completedAt: null, step: 0 },
-            updates: { dismissedVersion: null },
         });
     });
 
@@ -183,14 +174,11 @@ describe('глобальные настройки UI', () => {
         await loadUiSettings(store, () =>
             Promise.resolve({
                 diffMode: 'split',
-                shipMode: 'ship',
-                composerLayout: 'visual',
+                generationLocale: 'auto',
                 locale: 'auto',
                 theme: 'auto',
             arcanum: false,
                 textSize: 'm',
-                onboarding: { completedAt: null, step: 0 },
-                updates: { dismissedVersion: null },
             }),
         );
 

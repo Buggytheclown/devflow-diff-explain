@@ -3,7 +3,7 @@ import { rpcErrorSchema, UI_DEV_ENDPOINTS, uiReviewDiffResponseSchema, uiReviewW
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { SherpaServer } from './server.js';
-import { startServer } from './server.js';
+import { startServer } from './test-support.js';
 import { get, makeTempSherpaDir, postJson, removeTempSherpaDir } from './test-support.js';
 
 /**

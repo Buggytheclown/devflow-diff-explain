@@ -7,6 +7,9 @@ import { LONG_POLL_DEFAULT_SECONDS, PROTOCOL_VERSION, READER_APPEARANCE } from '
 
 import { createToken } from './auth.js';
 import { BlobCache } from './blob-cache.js';
+import { CodeSnapshots } from './code-snapshots.js';
+import { SnapshotReader } from './snapshot-reader.js';
+import { artifactImportRequestSchema, ARTIFACT_ENDPOINTS } from '@sherpa/protocol';
 import { ChatOrchestrator } from './chat-orchestrator.js';
 import { createChatRoutes } from './chat-routes.js';
 import { ChatStore } from './chat-store.js';
@@ -14,10 +17,9 @@ import type { SherpaDatabase } from './db.js';
 import { openDatabase } from './db.js';
 import { createDevRoutes } from './dev-routes.js';
 import { ServerAlreadyRunningError } from './errors.js';
-import type { ReviewSourceFactory } from './hosts/select.js';
-import { selectReviewSource } from './hosts/select.js';
+import type { CodeReader } from '@sherpa/protocol';
 import type { RequestListenerOptions, Route } from './http.js';
-import { createRequestListener } from './http.js';
+import { createRequestListener, handlingRpcFailures, readJsonBody } from './http.js';
 import { DEFAULT_IDLE_SECONDS, IdleWatch } from './idle.js';
 import { IterationFeed } from './iteration-feed.js';
 import { IterationStore } from './iteration-store.js';
@@ -100,15 +102,11 @@ export interface StartServerOptions {
     /** Грейс ухода UI; контрактный дефолт меняется только в серверных тестах. */
     uiGoneGraceSeconds?: number;
     /** Источник кода для объяснения; методов записи и чтения тредов не требует. */
-    reviewSourceFactory?: ReviewSourceFactory;
-    /**
-     * Каталог проекта локального ревью (`--repo`), база сравнения (`--base`) и ветка, на которой
-     * CLI построил ключ (`--branch`): нужны только локальным ключам `local-*`. Без них локальный хост
-     * поднимается на состоянии, сохранённом прошлым запуском.
-     */
-    repo?: string;
-    base?: string;
-    branch?: string;
+    reader?: CodeReader | null;
+    developmentAction?: () => unknown;
+    snapshot?: string;
+    /** Только dev: следующий локальный manifest, без провайдерского кода в сервере. */
+    nextSnapshot?: () => Promise<string>;
 }
 
 export interface SherpaServer {
@@ -232,10 +230,11 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         });
         // Локальные патчи итераций и кэш срезов: наполняется отовсюду, где грузится дифф.
         const iterationStore = new IterationStore(options.now === undefined ? { db } : { db, now: options.now });
-        const source = (options.reviewSourceFactory ?? selectReviewSource)(prKey, {
-            sherpaDir, repo: options.repo ?? null, base: options.base ?? null, branch: options.branch ?? null,
-        });
-        const advanceIteration = source?.advanceIteration;
+        const snapshots = new CodeSnapshots(db, prKey);
+        if (options.snapshot !== undefined) await snapshots.importSnapshot(options.snapshot);
+        const reader = new SnapshotReader(snapshots, iterationStore);
+        const selectedReader = options.reader === undefined ? reader : options.reader;
+        const source = selectedReader === null ? null : { name: options.development ? 'fixture' : 'snapshot', host: selectedReader };
         const prMeta = new PrMetaCache({ host: source?.host ?? null });
         // Без источника диффа объяснение остаётся в фазе `none`.
         const routeStore = new RouteStore(options.now === undefined ? { db } : { db, now: options.now });
@@ -254,7 +253,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             }
         }
         // Старые заметки остаются в БД; объяснение создаёт только сообщения чата.
-        const chatStore = new ChatStore({ db, createNotes: false, ...(options.now === undefined ? {} : { now: options.now }) });
+        const chatStore = new ChatStore({ db, ...(options.now === undefined ? {} : { now: options.now }) });
         // Итерации PR: один вотчер на сервер — из него растут `uiState.iterations` и `stale`.
         const iterationFeed =
             source === null
@@ -268,8 +267,10 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         // смене ключа оставляют дифф, на который ещё ссылается открытая или удерживаемая задача.
         const sharedPayload = new SharedPayloadStore(sharedPayloadDirOf(sherpaDir, prKey), () =>
             queue.listTasks().flatMap((task) => (holdsPayload(task) ? task.contextFiles : [])),
+            (diff) => snapshots.contextArtifacts(diff.diffId),
         );
         sharedPayload.sweepDiffKeys();
+        const savedSources = new SavedSources(db, source?.host ?? null, selectedReader === reader ? snapshots : undefined);
         const routeOrchestrator = new RouteOrchestrator({
             store: routeStore,
             queue,
@@ -287,13 +288,17 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             queue,
             host: source?.host ?? null,
             payloadDir: chatPayloadDirOf(sherpaDir, prKey),
+            pinnedContent: (diff, file) => savedSources.file(diff, file),
             iterations: iterationStore,
-            iterationFeed,
             shared: sharedPayload,
             settings: settingsStore,
             registry: workerRegistry,
         });
-        const savedSources = new SavedSources(db, source?.host ?? null);
+        const nextSnapshot = options.nextSnapshot;
+        const advanceIteration = options.developmentAction ?? (nextSnapshot === undefined ? undefined : async () => {
+            await snapshots.importSnapshot(await nextSnapshot());
+            reader.changed(); await prMeta.refresh();
+        });
         queue.setResultAcceptor(
             (task, result) =>
                 withSavedSources(savedSources, () => routeOrchestrator.acceptResult(task, result) ??
@@ -301,6 +306,35 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         );
 
         routes.push(
+            { method: 'GET', path: ARTIFACT_ENDPOINTS.source, stream: (ctx) => {
+                const source = savedSources.get(ctx.url.searchParams.get('id') ?? '');
+                const artifact = source === null ? null : snapshots.sourceArtifact(source.diffId, source.revision, source.path);
+                const bytes = artifact === null ? null : snapshots.bytes(artifact.hash);
+                ctx.res.writeHead(bytes === null ? 404 : 200, { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff' });
+                ctx.res.end(bytes ?? 'Full source was not imported.');
+            } },
+            ...[ARTIFACT_ENDPOINTS.snapshot, ARTIFACT_ENDPOINTS.sources].map((endpoint): Route => ({
+                method: 'POST', path: endpoint, handle: handlingRpcFailures(async (ctx) => {
+                    const request = artifactImportRequestSchema.safeParse(await readJsonBody(ctx.req));
+                    if (!request.success) throw new RpcFailure('bad_request', 'Expected { manifest: "/absolute/path/manifest.json" }.');
+                    try {
+                        const receipt = endpoint === ARTIFACT_ENDPOINTS.snapshot
+                            ? await snapshots.importSnapshot(request.data.manifest) : await snapshots.importSources(request.data.manifest);
+                        if (endpoint === ARTIFACT_ENDPOINTS.snapshot) {
+                            reader.changed();
+                            await prMeta.refresh();
+                            await routeOrchestrator.warmup();
+                        }
+                        return { status: 200, body: receipt };
+                    } catch (error) { throw new RpcFailure('bad_request', error instanceof Error ? error.message : 'Artifact import failed.'); }
+                }),
+            })),
+            { method: 'GET', path: ARTIFACT_ENDPOINTS.raw, stream: (ctx) => {
+                const side = ctx.url.searchParams.get('side');
+                const bytes = side === 'old' || side === 'new' ? snapshots.raw(ctx.url.searchParams.get('diffId') ?? '', ctx.url.searchParams.get('fileId') ?? '', side) : null;
+                ctx.res.writeHead(bytes === null ? 404 : 200, { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment', 'x-content-type-options': 'nosniff' });
+                ctx.res.end(bytes ?? 'Artifact was not imported.');
+            } },
             { method: 'GET', path: SAVED_SOURCE_ENDPOINT, handle: (ctx) => {
                 const saved = savedSources.get(ctx.url.searchParams.get('id') ?? '');
                 return saved === null ? { status: 404, body: { error: 'Source unavailable' } } : { status: 200, body: savedSourceSchema.parse(saved) };

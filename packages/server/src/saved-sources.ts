@@ -1,10 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { codeLocationSchema, parseCodeLink, savedSourceSchema, fileContentSchema } from '@sherpa/protocol';
-import type { CodeLocation, PrDiff, ReviewSource, SavedSource, FileDiff, FileContent } from '@sherpa/protocol';
+import type { CodeLocation, PrDiff, CodeReader, SavedSource, FileDiff, FileContent } from '@sherpa/protocol';
 import type { SherpaDatabase, SqlRow } from './db.js';
 import { savedPatchIndex } from './saved-patch.js';
 import { stripCodeFence } from './route/raw-result.js';
+import type { CodeSnapshots } from './code-snapshots.js';
 
 const scope = new AsyncLocalStorage<SavedSources>();
 export function withSavedSources<T>(sources: SavedSources, run: () => T): T { return scope.run(sources, run); }
@@ -18,7 +19,7 @@ export function savedSourceById(id: string): SavedSource | null { return scope.g
 
 /** Источники привязаны к БД конкретного PR; AsyncLocalStorage изолирует параллельные серверы. */
 export class SavedSources {
-    constructor(private readonly db: SherpaDatabase, private readonly host: ReviewSource | null) {}
+    constructor(private readonly db: SherpaDatabase, private readonly host: CodeReader | null, private readonly snapshots?: CodeSnapshots) {}
     get(id: string): SavedSource | null {
         const row = this.db.prepare('SELECT data FROM saved_sources WHERE id = ?').get(id) as SqlRow | undefined;
         if (row === undefined) return null;
@@ -28,6 +29,7 @@ export class SavedSources {
         return parsed.data;
     }
     async file(diff: PrDiff, file: FileDiff): Promise<FileContent | null> {
+        if (this.snapshots?.forDiff(diff.diffId) != null) return this.snapshots.file(diff, file.fileId);
         if (file.binary) return null;
         const id = JSON.stringify([diff.diffId, diff.baseCommit, diff.headCommit, file.fileId]);
         const row = this.db.prepare('SELECT data FROM saved_file_content WHERE id = ?').get(id) as SqlRow | undefined;
@@ -49,13 +51,16 @@ export class SavedSources {
         const revision = location.side === 'old' ? diff.baseCommit : diff.headCommit;
         const id = digest(JSON.stringify([diff.diffId, revision, location]));
         const cached = this.get(id); if (cached !== null) return cached;
-        if (this.host?.getSourceAtRevision === undefined) throw new Error('Exact revision source is unavailable.');
-        const text = await this.host.getSourceAtRevision(location.path, revision);
+        const text = this.snapshots === undefined
+            ? await this.host?.getSourceAtRevision?.(location.path, revision) ?? null
+            : this.snapshots.source(diff.diffId, revision, location.path);
         const lines = text?.split('\n');
         if (text === null || text.includes('\0') || lines === undefined || location.end > lines.length) throw new Error(`Source unavailable: ${location.path}:${String(location.start)}-${String(location.end)} @ ${revision}.`);
         const excerpt = lines.slice(location.start - 1, location.end).join('\n');
-        if (excerpt.length > 2_000_000) throw new Error(`Source excerpt too large: ${location.path}:${String(location.start)}-${String(location.end)}. Select a smaller supporting range or state the unavailable evidence.`);
-        const saved = savedSourceSchema.parse({ ...location, id, diffId: diff.diffId, revision, text: excerpt, hash: digest(excerpt) });
+        if (this.snapshots === undefined && excerpt.length > 2_000_000) throw new Error(`Source excerpt too large: ${location.path}:${String(location.start)}-${String(location.end)}. Select a smaller supporting range or state the unavailable evidence.`);
+        const artifact = this.snapshots?.sourceArtifact(diff.diffId, revision, location.path);
+        const saved = savedSourceSchema.parse({ ...location, id, diffId: diff.diffId, revision, text: excerpt, hash: digest(excerpt),
+            fullFile: artifact != null, ...(artifact?.origin === undefined ? {} : { origin: artifact.origin }) });
         this.db.prepare('INSERT OR IGNORE INTO saved_sources (id, data) VALUES (?, ?)').run(id, JSON.stringify(saved));
         return saved;
     }
@@ -95,7 +100,7 @@ export class SavedSources {
             await visit(structure);
             for (const file of files) {
                 try { await visit(file); }
-                catch (error) { if (file !== null && typeof file === 'object') Object.assign(file, { __sourceError: error instanceof Error ? error.message : 'Pinned source unavailable.' }); }
+                catch { /* Неразрешённая ссылка отклоняет только этот файл в обычном валидаторе. */ }
             }
             return JSON.stringify({ ...structure, files });
         }

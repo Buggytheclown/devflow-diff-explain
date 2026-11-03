@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 
 import { parseExplanationBlocks } from '@sherpa/protocol/markdown';
 import { renderBlock } from '../markdown/markdown.tsx';
-import { fetchBlob, fetchFileContent } from '../api.js';
+import { downloadFileOriginal, fetchBlob, fetchFileContent } from '../api.js';
 import type { DiffFileModel } from '../diff/model.js';
 import { DiffRows } from '../diff-view/diff-rows.tsx';
 import { expandAllGaps, expandFileContext } from '../diff-view/expand.js';
@@ -19,9 +19,10 @@ import { FileGlyph } from './file-glyph.js';
 
 const changeMarks = { add: 'A', modify: 'M', delete: 'D', move: 'R', copy: 'C', conflict: '!' } as const;
 
-export function ReadFile({ file, diffId, data, token, current, navigation, anchor = null, onSelect, onLayout, onMediaLayout, annotations = [], onAttach, description }: {
+export function ReadFile({ file, diffId, data, token, originals = false, navigation, anchor = null, onSelect, onLayout, onMediaLayout, annotations = [], onAttach, description }: {
     onAttach?: (() => void) | undefined; description?: ReactNode;
-    file: FileDiff; diffId: string; data: StoryData; token: string; current: boolean;
+    file: FileDiff; diffId: string; data: StoryData; token: string;
+    originals?: boolean;
     annotations?: readonly GuidedAnnotation[] | undefined;
     navigation?: CodeLocation | undefined; anchor?: UiChatAskAnchor | null; onSelect: (anchor: UiChatAskAnchor, text: string | null) => void; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
 }) {
@@ -42,7 +43,7 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
         void (cached === null ? data.parse(diffId, file) : Promise.resolve(cached)).then(async (value) => {
             let next = value;
             if (navigation !== undefined && selectionForRange(next, navigation) === null) {
-                if (!current || next.content.kind !== 'text') throw new Error(t.unavailable);
+                if (next.content.kind !== 'text') throw new Error(t.unavailable);
                 const content = await fetchFileContent(token, file.fileId, diffId);
                 next = expandFileContext(next, content, expandAllGaps(next, new Map()));
                 if (selectionForRange(next, navigation) === null) throw new Error(t.unavailable);
@@ -54,7 +55,7 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
             if (alive) { layout.current(); setError(String(reason)); }
         });
         return () => { alive = false; };
-    }, [data, diffId, file, current, navigation, token, attempt, t.unavailable]);
+    }, [data, diffId, file, navigation, token, attempt, t.unavailable]);
     const select = (range: Pick<CodeLocation, 'side' | 'start' | 'end'>): void => {
         const next = { diffId, fileId: file.fileId, path: range.side === 'old' ? file.oldPath ?? file.path : file.path, ...range };
         const text = model === null ? null : selectedCode(model, next);
@@ -77,7 +78,10 @@ export function ReadFile({ file, diffId, data, token, current, navigation, ancho
     return <div className="story-code file-card" data-change={file.changeType} onLoadCapture={onMediaLayout} data-reading="file" data-reading-file={file.fileId} data-file-path={file.path} data-file-old-path={file.oldPath ?? file.path}>
         <header tabIndex={-1} data-reading-focus={`file:${file.fileId}`}><span className="story-file-status" data-change={file.changeType} title={t.changeTypes[file.changeType]} aria-label={t.changeTypes[file.changeType]}>{changeMarks[file.changeType]}</span><FileGlyph /><code title={file.path}><span className="story-file-directory"><bdi>{file.oldPath != null && file.oldPath !== file.path ? `${file.oldPath} → ` : ''}{directory}</bdi></span><span className="story-file-basename">{file.path.split('/').at(-1)}</span></code><span className="story-file-stats"><span className="story-file-added">+{file.additions}</span><span className="story-file-deleted">−{file.deletions}</span></span>
             {onAttach === undefined ? null : <button className="ctl" onClick={onAttach}>{t.attachFile}</button>}
-            {current ? <button className="ctl ctl--toolbar-icon story-file-expand" aria-label={t.expand} title={t.expand} onClick={() => {
+            {originals ? (['old', 'new'] as const).filter((side) => file.changeType !== (side === 'old' ? 'add' : 'delete')).map((side) => <button className="ctl" key={side} title={`${t.downloadOriginal}: ${side === 'old' ? t.before : t.after}`} onClick={() => {
+                void downloadFileOriginal(token, diffId, file.fileId, side, (side === 'old' ? file.oldPath ?? file.path : file.path).split('/').at(-1) ?? 'file').catch((reason: unknown) => { if (mounted.current) setError(String(reason)); });
+            }}>↓ {side === 'old' ? t.before : t.after}</button>) : null}
+            {!file.binary ? <button className="ctl ctl--toolbar-icon story-file-expand" aria-label={t.expand} title={t.expand} onClick={() => {
                 void fetchFileContent(token, file.fileId, diffId).then((content) => {
                     const base = data.file(diffId, file.fileId).model;
                     if (base === null) return;

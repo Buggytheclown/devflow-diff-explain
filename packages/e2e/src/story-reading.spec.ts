@@ -1,7 +1,7 @@
 import { fixtureIteration, MEDIUM_DIFF_ID_V2 } from '@sherpa/fixtures';
 import type { Page } from '@playwright/test';
 
-import { test, expect, advanceIteration, sherpaAuth, openBlocks } from './sherpa-fixture.js';
+import { test, expect, advanceIteration, openBlocks } from './sherpa-fixture.js';
 import type { SherpaServerHandle } from './sherpa-fixture.js';
 import { body, outline, evidence, evidenceSource, savedStory, currentStory } from './story-support.js';
 
@@ -126,32 +126,24 @@ test('ошибка источника повторяется локально б
     await intro.getByRole('button', { name: 'Повторить загрузку', exact: true }).click();
     await expect(intro.locator('.story-source-line')).not.toHaveCount(0);
     expect(writes).toEqual([]);
-    const legacyResponse: Parameters<Page['route']>[1] = async (route) => {
-        const response = await route.fetch();
-        const result = await response.json() as { route: { snapshot: Record<string, unknown> | null } };
-        if (result.route.snapshot !== null) {
-            delete result.route.snapshot.storyContractVersion; delete result.route.snapshot.summaryEvidence;
-            const stops = result.route.snapshot.stops as { storyEvidence?: unknown; anchors: unknown[] }[];
-            for (const stop of stops) { delete stop.storyEvidence; stop.anchors = [{ ...evidenceSource, collapsed: false, fileId: fixtureIteration('medium').diff.files.find((file) => file.path === evidenceSource.path)?.fileId }]; }
-        }
-        await route.fulfill({ response, json: result });
-    };
-    const stateResponse = await page.request.get(new URL('/api/ui/state', server.url).href, { headers: sherpaAuth(server) });
-    const state = await stateResponse.json() as Record<string, unknown>;
-    // Подмена SSE устанавливается до открытия отдельной страницы: навигация
-    // исходной вкладки с живым перехваченным потоком может зависнуть в Chromium.
-    const offline = await page.context().newPage();
-    try {
-        await offline.route('**/api/ui/review/route', legacyResponse);
-        await offline.route('**/api/ui/events?*', (route) => route.fulfill({ contentType: 'text/event-stream', body: `event: state\ndata: ${JSON.stringify({ ...state, worker: { kind: 'never' } })}\n\n` }));
-        await offline.goto(server.url, { waitUntil: 'domcontentloaded' });
-        await expect(offline.getByText(/Этот рассказ создан без связей/)).toHaveCount(1);
-        await expect(offline.locator('.story-source-line')).toHaveCount(0);
-        await expect(offline.getByText('Агент не подключён. Сохранённый рассказ и дифф доступны для чтения.')).toBeVisible();
-        await offline.getByRole('button', { name: 'Фрагменты кода', exact: true }).first().focus();
-        await offline.keyboard.press('Enter');
-        await expect(offline.locator('.story-source-line')).not.toHaveCount(0);
-    } finally { await offline.close(); }
+    // Настоящий сервер со старым сохранённым форматом и без регистрации агента.
+    // Подмена конечного SSE-ответа могла оставлять Chromium в незавершённой навигации.
+    const legacy = savedStory();
+    delete legacy.storyContractVersion; delete legacy.summaryEvidence;
+    const file = fixtureIteration('medium').diff.files.find((entry) => entry.path === evidenceSource.path);
+    if (file === undefined) throw new Error('Missing legacy evidence file');
+    for (const stop of legacy.stops) {
+        delete stop.storyEvidence;
+        stop.anchors = [{ ...evidenceSource, collapsed: false, fileId: file.fileId }];
+    }
+    const offline = await launchSherpa('fixture-medium', { savedSnapshot: legacy });
+    await page.goto(offline.url);
+    await expect(page.getByText(/Этот рассказ создан без связей/)).toHaveCount(1);
+    await expect(page.locator('.story-source-line')).toHaveCount(0);
+    await expect(page.getByText('Агент не подключён. Сохранённый рассказ и дифф доступны для чтения.')).toBeVisible();
+    await page.getByRole('button', { name: 'Фрагменты кода', exact: true }).first().focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.story-source-line')).not.toHaveCount(0);
 });
 
 test('источники показывают точные стороны, отдельный файл и картинку; раскрытие не меняет вопрос', async ({ page, launchSherpa }) => {

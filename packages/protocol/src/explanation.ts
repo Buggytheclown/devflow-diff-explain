@@ -22,6 +22,7 @@ export const explanationSnapshotSchema = z.object({
     format: z.literal('explanation/1'), presentation: z.literal('story'),
     storyContractVersion: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]),
     snapshotId: z.string().min(1), commit: z.string().min(1), baseCommit: z.string().min(1), diffId: hostIdSchema,
+    codeSnapshotId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     createdAt: z.iso.datetime(), provenance: routeProvenanceSchema,
     previousSnapshotId: z.string().nullable(), contentHash: z.string().nullable(),
     summary: z.string(), summaryEvidence: storyEvidenceBlockSchema.optional(), flow: flowStateSchema.optional(),

@@ -49,6 +49,7 @@ export const chatExchangeIdSchema = z.number().int().positive();
 export type ChatExchangeId = z.infer<typeof chatExchangeIdSchema>;
 
 export const chatExplanationSchema = z.object({
+    codeSnapshotId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     snapshotId: z.string().min(1).nullable(),
     diffId: hostIdSchema,
     commit: z.string().min(1),

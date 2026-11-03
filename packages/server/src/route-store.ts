@@ -20,10 +20,11 @@ import type {
 import { generationSchema, sectionAssignmentSchema, localeSchema, routeSnapshotSchema, uiGenerationCapSchema, uiRouteStateSchema, flowStateSchema } from '@sherpa/protocol';
 
 import type { AcceptedExplanation, ExplanationFilling } from './story.js';
-import { reviewProjection, storedSnapshot, restoreSnapshot } from './explanation-compat.js';
+import { storedSnapshot, restoreSnapshot } from './explanation-compat.js';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
 import { transaction, afterDatabaseCommit } from './db.js';
+import type { EnqueueInput, TaskQueue } from './queue.js';
 import type { AcceptedSkeleton, RouteStopFilling } from './route/index.js';
 import { applyFilling } from './route/index.js';
 
@@ -252,7 +253,7 @@ export class RouteStore {
             this.setGenerationPresentation(generation.presentation);
             if (generation.diffId !== undefined) this.pinGenerationDiff(generation.diffId);
             this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                .run(generation.version === 6 ? '7' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
+                .run(generation.version === 6 ? '8' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
             if ((generation.version ?? 0) >= 5) this.writeGeneration({ id: randomUUID(), commit: generation.commit ?? null,
                 snapshotId: null, previousSnapshotId: this.state.snapshot?.snapshotId ?? null, status: 'running' });
             else this.db.prepare("DELETE FROM meta WHERE key='preparation_generation'").run();
@@ -273,7 +274,7 @@ export class RouteStore {
         this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_diff_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(diffId);
     }
     upgradeTaskEpoch(): void {
-        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version','7') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
+        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version','8') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
     }
 
     /**
@@ -290,15 +291,16 @@ export class RouteStore {
             commit: input.diff.headCommit,
             baseCommit: input.diff.baseCommit,
             diffId: input.diff.diffId,
+            ...(input.diff.codeSnapshotId === undefined ? {} : { codeSnapshotId: input.diff.codeSnapshotId }),
             createdAt: this.now().toISOString(),
             provenance: input.provenance,
             previousSnapshotId: input.previousSnapshotId,
-            carried: null,
+            ...(input.presentation === 'story' ? {} : { carried: null }),
             summary: input.skeleton.summary,
             ...(input.skeleton.storyContractVersion === undefined ? {} : { storyContractVersion: input.skeleton.storyContractVersion }),
             ...(input.skeleton.summaryEvidence === undefined ? {} : { summaryEvidence: input.skeleton.summaryEvidence }),
             ...('flow' in input.skeleton ? { flow: input.skeleton.flow } : {}),
-            stops: input.skeleton.stops.map((stop) => 'tier' in stop ? stop : reviewProjection(stop)),
+            stops: input.skeleton.stops,
             tourOrder: input.skeleton.tourOrder,
             contentHash: null,
         };
@@ -347,7 +349,7 @@ export class RouteStore {
         const snapshot = this.state.snapshot;
         if (snapshot === null) return;
         const byIndex = new Map(fillings.map((file) => [file.planIndex, file]));
-        const stops = (overview?.stops.map(reviewProjection) ?? snapshot.stops).map((block) => {
+        const stops = (overview?.stops ?? snapshot.stops).map((block) => {
             const filling = byIndex.get(block.planIndex);
             const updated = filling === undefined ? block : { ...applyFilling(block, filling),
                 provenance: sameProvenance(provenance, snapshot.provenance) ? null : provenance };
@@ -366,10 +368,11 @@ export class RouteStore {
 
     fileCorrections(): { path: string; attempts: number; errors: string[] }[] {
         const pending = new Map<string, { path: string; attempts: number; errors: string[] }>();
+        const outcomes = new Map((this.db.prepare("SELECT key, value FROM meta WHERE key LIKE 'file_outcome:%'").all() as { key: string; value: string }[]).map((row) => [row.key, row.value]));
         for (const taskId of [...this.bindings().keys()].sort((a, b) => a - b)) {
-            const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`file_outcome:${String(taskId)}`);
-            if (typeof row?.value !== 'string') continue;
-            const outcome = JSON.parse(row.value) as { accepted: string[]; errors: { path: string; errors: string[] }[] };
+            const raw = outcomes.get(`file_outcome:${String(taskId)}`);
+            if (raw === undefined) continue;
+            const outcome = JSON.parse(raw) as { accepted: string[]; errors: { path: string; errors: string[] }[] };
             for (const path of outcome.accepted) pending.delete(path);
             for (const error of outcome.errors) pending.set(error.path, { ...error, attempts: (pending.get(error.path)?.attempts ?? 0) + 1 });
         }
@@ -576,6 +579,16 @@ export class RouteStore {
     }
 
     /** Задача генерации ↔ стопы, которые она заполняет. Состояние UI это не меняет — ревизия стоит. */
+    enqueueTask(queue: TaskQueue, input: EnqueueInput, binding: RouteTaskBinding & { diffId: string }, onTask?: (id: number) => void): number {
+        return transaction(this.db, () => {
+            const task = queue.enqueueInTransaction(input);
+            this.bindTask(task.record.id, binding.kind, binding.diffId, binding.planIndexes, binding.assignment);
+            onTask?.(task.record.id);
+            afterDatabaseCommit(this.db, task.onCommitted);
+            return task.record.id;
+        })();
+    }
+
     bindTask(
         taskId: number,
         kind: RouteTaskBinding['kind'],
@@ -679,10 +692,10 @@ export class RouteStore {
             this.revisionValue += 1;
             if (!this.closed) {
                 for (const listener of [...this.listeners]) {
-                    listener(this.revisionValue);
+                    afterDatabaseCommit(this.db, () => { listener(this.revisionValue); });
                 }
             }
-            afterCommit?.();
+            if (afterCommit !== undefined) afterDatabaseCommit(this.db, afterCommit);
         });
     }
 
@@ -819,7 +832,7 @@ export class RouteStore {
 export function contentHashOf(snapshot: RouteSnapshot): string {
     if (snapshot.presentation === 'story' && snapshot.storyContractVersion !== undefined) {
         const saved = storedSnapshot(snapshot) as ExplanationSnapshot;
-        const { snapshotId: _id, commit: _commit, baseCommit: _base, diffId: _diff, createdAt: _created, provenance: _provenance, previousSnapshotId: _previous, contentHash: _hash, ...content } = saved;
+        const { snapshotId: _id, commit: _commit, baseCommit: _base, diffId: _diff, codeSnapshotId: _codeSnapshotId, createdAt: _created, provenance: _provenance, previousSnapshotId: _previous, contentHash: _hash, ...content } = saved;
         return createHash('sha256').update(JSON.stringify({ ...content, stops: content.stops.map(({ provenance: _sectionProvenance, ...block }) => block) })).digest('hex').slice(0, CONTENT_HASH_LENGTH);
     }
     const payload = JSON.stringify({
@@ -836,7 +849,7 @@ export function contentHashOf(snapshot: RouteSnapshot): string {
             paragraph: stop.paragraph,
             ...(snapshot.storyContractVersion !== undefined ? { storyEvidence: stop.storyEvidence, guidedFiles: stop.guidedFiles, example: stop.example, relatedFiles: stop.relatedFiles } : {}),
             bridge: stop.bridge,
-            anchors: stop.anchors.map((anchor) => ({
+            anchors: (stop.anchors ?? []).map((anchor) => ({
                 fileId: anchor.fileId,
                 path: anchor.path,
                 side: anchor.side,
@@ -844,7 +857,7 @@ export function contentHashOf(snapshot: RouteSnapshot): string {
                 end: anchor.end,
                 collapsed: anchor.collapsed,
             })),
-            tests: stop.tests.map((claim) => ({
+            tests: (stop.tests ?? []).map((claim) => ({
                 kind: claim.kind,
                 text: claim.text,
                 anchor:
@@ -884,6 +897,7 @@ function withSnapshotDefaults(raw: unknown, baseCommitOf: (diffId: string) => st
     }
 
     const snapshot = raw as Record<string, unknown>;
+    if (snapshot.format === 'explanation/1') return raw;
     const diffId = snapshot.diffId;
     const stops = snapshot.stops;
     return {

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { FlowState, ExplanationBlock, FileDiff, Locale, PrDiff, PrMeta, RouteStop, StoryEvidenceBlock, UiGenerationCap, SectionAssignment } from '@sherpa/protocol';
+import type { FlowState, ExplanationBlock, FileDiff, Locale, PrDiff, CapturedPr, RouteStop, StoryEvidenceBlock, UiGenerationCap, SectionAssignment } from '@sherpa/protocol';
 import { generateJsonSchemas } from '@sherpa/protocol';
 
 import { architectureGuide } from './architecture-story.js';
@@ -47,7 +47,7 @@ const FILE_MODE = 0o600;
 /** Что билдеру нужно знать о PR: дифф обязателен, шапка — украшение (её отказ маршрут не рушит). */
 export interface RoutePayloadContext {
     readonly diff: PrDiff;
-    readonly meta: PrMeta | null;
+    readonly meta: CapturedPr | null;
 }
 
 /** Контекст задачи маршрута: тот же PR плюс язык, на котором задача просит писать результат. */
@@ -232,6 +232,8 @@ export function materializeReviewTarget(shared: SharedPayloadStore, context: Rou
         const savedPatchIndex = shared.savedPatchIndex(diffKeyOf(context.diff), JSON.stringify({ diffId: context.diff.diffId, headCommit: context.diff.headCommit, files: index }));
         const file = shared.prDiff(diffKeyOf(context.diff), built.content);
         const target = shared.target(diffKeyOf(context.diff), JSON.stringify({ pr: context.meta?.url ?? null, title: context.meta?.title ?? null,
+            codeSnapshotId: context.diff.codeSnapshotId ?? null,
+            importedSources: shared.codeIndex(context.diff),
             diffId: context.diff.diffId, baseCommit: context.diff.baseCommit, headCommit: context.diff.headCommit,
             files: context.diff.files.map((entry, i) => ({ path: entry.path, change: entry.changeType, oldPath: entry.oldPath,
                 binary: entry.binary, additions: entry.additions, deletions: entry.deletions, savedPatch: index[i]?.file, savedPatchBytes: index[i]?.bytes })),
@@ -399,22 +401,17 @@ function isTestPath(filePath: string): boolean {
     return TEST_PATH.test(filePath);
 }
 
-function metaBlock(diff: PrDiff, meta: PrMeta | null): string {
+function metaBlock(diff: PrDiff, meta: CapturedPr | null): string {
     const additions = diff.files.reduce((total, file) => total + file.additions, 0);
     const deletions = diff.files.reduce((total, file) => total + file.deletions, 0);
     const lines = ['# Pull request'];
     if (meta !== null) {
-        const { login, displayName } = meta.author;
-        const author = displayName === null ? login : `${login} (${displayName})`;
-        lines.push(
-            '',
-            `- Title: ${meta.title}`,
-            `- Author: ${author}`,
-            `- Branches: ${meta.fromBranch} -> ${meta.toBranch}`,
-            `- State: ${meta.state} (${meta.statusLabel})`,
-        );
+        if (meta.title !== undefined) lines.push(`- Title: ${meta.title}`);
+        if (meta.author !== undefined) lines.push(`- Author: ${meta.author.login}${meta.author.displayName == null ? '' : ` (${meta.author.displayName})`}`);
+        if (meta.fromBranch !== undefined && meta.toBranch !== undefined) lines.push(`- Branches: ${meta.fromBranch} -> ${meta.toBranch}`);
+        if (meta.state !== undefined) lines.push(`- State: ${meta.state}${meta.statusLabel === undefined ? '' : ` (${meta.statusLabel})`}`);
     } else {
-        lines.push('', '- The host adapter gave no pull request metadata: judge by the diff alone.');
+        lines.push('', '- There is no pull request metadata in this snapshot: judge by the pinned diff.');
     }
     lines.push(
         `- Diff: base ${diff.baseCommit} -> head ${diff.headCommit}`,

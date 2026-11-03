@@ -77,7 +77,7 @@ describe('сборка пакета скилла', () => {
         const skill = readFileSync(join(packageRoot, 'SKILL.md'), 'utf8');
 
         expect(skill).toMatch(/^---\nname: devflow-diff-explain\n/u);
-        expect(skill).toContain('bin/devflow-diff-explain.mjs up --pr');
+        expect(skill).toContain('bin/devflow-diff-explain.mjs up --snapshot');
         expect(skill).toContain('bin/devflow-diff-explain.mjs worker next --pr');
         expect(skill).toContain('--model');
         expect(skill).toContain('DONE');
@@ -135,6 +135,13 @@ describe('собранный дистрибутив в работе', () => {
         skillDir = join(workDir, 'skill');
         sherpaDir = join(workDir, 'state');
         cpSync(distDir, skillDir, { recursive: true });
+        writeFileSync(join(workDir, 'new.txt'), 'export const value = 1;\n');
+        writeFileSync(join(workDir, 'snapshot.json'), JSON.stringify({
+            format: 'code-snapshot/1', project: PR_KEY, diffId: 'standalone-1',
+            baseCommit: 'before', headCommit: 'after', capturedAt: new Date().toISOString(),
+            pr: { title: 'Standalone import' },
+            files: [{ path: 'value.ts', changeType: 'add', before: null, after: { file: 'new.txt', kind: 'text' } }],
+        }));
     });
 
     afterEach(async () => {
@@ -159,7 +166,7 @@ describe('собранный дистрибутив в работе', () => {
     }
 
     function up() {
-        return sherpa(['up', '--pr', PR_KEY, '--no-open', '--harness', 'test']);
+        return sherpa(['up', '--snapshot', join(workDir, 'snapshot.json'), '--no-open', '--harness', 'test']);
     }
 
     function readManifest() {
@@ -174,13 +181,9 @@ describe('собранный дистрибутив в работе', () => {
         expect(first).not.toBeNull();
         expect(cold.stdout).toContain(`http://127.0.0.1:${String(first.port)}/#t=`);
 
-        // Демон — этот же CLI командой `devflow-diff-explain server`, с флагами Node из корня CLI (`src/index.ts`):
-        // без `--use-system-ca` сервер не доверяет внутреннему CA, которым подписаны хосты.
+        // Демон — тот же CLI; доступ к провайдерам/корпоративным CA ему не требуется.
         const daemon = execFileSync('ps', ['-o', 'args=', '-p', String(first.pid)], { encoding: 'utf8' });
         expect(daemon).toContain(`bin/devflow-diff-explain.mjs server --pr ${PR_KEY}`);
-        if (process.allowedNodeEnvironmentFlags.has('--use-system-ca')) {
-            expect(daemon).toContain('--use-system-ca');
-        }
 
         const warm = up();
         expect(warm.status, warm.stderr).toBe(0);

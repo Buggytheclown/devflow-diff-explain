@@ -147,7 +147,7 @@ describe('фид итераций', () => {
     }
 
     /** Смена снапшота маршрута с уведомлением фида — так это делает `RouteStore`. */
-    function setSnapshot(next: RouteSnapshot): void {
+    function _setSnapshot(next: RouteSnapshot): void {
         snapshot = next;
         snapshots.push(next);
         routeRevision += 1;
@@ -160,7 +160,7 @@ describe('фид итераций', () => {
         return feed.subscribe((revision) => revisions.push(revision));
     }
 
-    it('до подписки список пуст, после — приходит из хоста', () => {
+    it('до подписки список пуст, после — приходит из хоста', async () => {
         makeFeed();
         expect(feed.iterations()).toEqual([]);
         expect(feed.active()).toBeNull();
@@ -169,6 +169,7 @@ describe('фид итераций', () => {
 
         expect(feed.iterations().map((iteration) => iteration.diffId)).toEqual([V1.diffId]);
         expect(feed.active()?.diffId).toBe(V1.diffId);
+        await waitFor(() => revisions.length > 0);
         expect(revisions).toEqual([1]);
     });
 
@@ -191,52 +192,16 @@ describe('фид итераций', () => {
         listen();
 
         await waitFor(() => logs.length > 0);
-        expect(logs.some((message) => message.includes(V2.diffId))).toBe(true);
+        expect(logs.some((message) => message.includes(V1.diffId))).toBe(true);
         expect(store.get(V1.diffId)).toBeNull();
         expect(store.get(V2.diffId)).toBeNull();
     });
 
-    it('пуш делает снапшот устаревшим, затронутые остановки приезжают вторым уведомлением', async () => {
-        const { host } = makeFeed();
-        snapshot = snapshotOn(V1);
-        listen();
-        expect(feed.staleFor(snapshot)).toBeNull();
-
-        host.advanceIteration();
-
-        expect(feed.active()?.diffId).toBe(V2.diffId);
-        // Список итераций публикуется сразу: ждать интердифф Арканума (2.8–3.7 с) баннеру нельзя.
-        expect(feed.staleFor(snapshot)).toEqual({
-            routeCommit: V1.headCommit,
-            prCommit: V2.headCommit,
-            prDiffId: V2.diffId,
-            newIterations: 1,
-            affectedStopIds: [],
-        });
-        const beforeInterdiff = revisions.length;
-
-        await waitFor(() => (feed.staleFor(snapshot)?.affectedStopIds.length ?? 0) > 0);
-
-        expect(feed.staleFor(snapshot)?.affectedStopIds).toEqual(['s02', 's03', 's06']);
-        expect(revisions.length).toBeGreaterThan(beforeInterdiff);
-    });
-
-    it('якоря снапшота дописала приёмка секции — затронутые остановки пересчитываются', async () => {
-        const { host } = makeFeed();
-        // Пуш застал генерацию: скелет уже принят, но якорей у стопов ещё нет.
-        const bare = { ...snapshotOn(V1), stops: mediumReadySnapshot().stops.map((stop) => ({ ...stop, anchors: [] })) };
-        setSnapshot(bare);
-        listen();
-        host.advanceIteration();
-
-        // Первый расчёт честно даёт пустой список: сравнивать интердифф не с чем.
-        await waitFor(() => revisions.length >= 3);
-        expect(feed.staleFor(snapshot)?.affectedStopIds).toEqual([]);
-
-        setSnapshot(snapshotOn(V1));
-
-        await waitFor(() => (feed.staleFor(snapshot)?.affectedStopIds.length ?? 0) > 0);
-        expect(feed.staleFor(snapshot)?.affectedStopIds).toEqual(['s02', 's03', 's06']);
+    it('новая импортированная версия отмечает старый разбор; interdiff не вычисляется', async () => {
+        const { host } = makeFeed(); snapshot = snapshotOn(V1); listen();
+        host.advanceIteration(); await waitFor(() => feed.active()?.diffId === V2.diffId);
+        expect(feed.staleFor(snapshot)).toMatchObject({ prDiffId: V2.diffId, affectedStopIds: [] });
+        expect(db.prepare('SELECT count(*) AS n FROM interdiffs').get()?.n).toBe(0);
     });
 
     it('после force-push переписанная итерация становится gone, а прошлый снапшот — устаревшим', async () => {
@@ -254,25 +219,6 @@ describe('фид итераций', () => {
             [V3.diffId, 'active'],
         ]);
         expect(feed.staleFor(snapshot)).toMatchObject({ newIterations: 1, prDiffId: V3.diffId });
-    });
-
-    it('хост без срезов оставляет баннер без остановок и жалуется один раз', async () => {
-        const host = makeFixtureHost('medium');
-        host.getDiff = (slice) =>
-            slice === undefined
-                ? makeFixtureHost('medium').getDiff()
-                : Promise.reject(new Error('срезы этому хосту недоступны'));
-        makeFeed(host);
-        snapshot = snapshotOn(V1);
-        listen();
-        host.advanceIteration();
-
-        await waitFor(() => logs.length > 0);
-        host.advanceIteration();
-        await waitFor(() => feed.active()?.diffId === V3.diffId);
-
-        expect(feed.staleFor(snapshot)?.affectedStopIds).toEqual([]);
-        expect(logs.filter((message) => message.includes('затронутые остановки'))).toHaveLength(1);
     });
 
     it('уход последнего слушателя гасит подписку на хост', () => {

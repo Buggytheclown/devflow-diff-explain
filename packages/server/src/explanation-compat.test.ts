@@ -1,19 +1,19 @@
+import { checkpointJson } from '@sherpa/fixtures';
 import { makeFixtureHost, architectureStoryFixture, readableStoryFixture } from '@sherpa/fixtures';
 import { routeSnapshotSchema, explanationSnapshotSchema } from '@sherpa/protocol';
-import type { ReviewSource } from '@sherpa/protocol';
+import type { CodeReader } from '@sherpa/protocol';
 import { DatabaseSync } from 'node:sqlite';
 import { expect, it } from 'vitest';
 import { restoreSnapshot, storedSnapshot } from './explanation-compat.js';
 import { contentHashOf } from './route-store.js';
-import { validateStorySkeleton } from './story.js';
-import { startServer } from './server.js';
+import { acceptedFixture } from './test-support.js';
+import { startServer } from './test-support.js';
 import { databasePathFor } from './paths.js';
 import { makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
 const fixture = readableStoryFixture();
 it('генерация и хранение не несут поля ревью; совместимая проекция не теряет данные объяснения', () => {
-    const accepted = validateStorySkeleton(JSON.stringify(fixture.outline), fixture.diff, 'ru');
-    if (!accepted.ok) throw new Error(accepted.errors.join('\n'));
+    const accepted = acceptedFixture(fixture.snapshot);
     const saved = storedSnapshot(fixture.snapshot) as { stops: Record<string, unknown>[] };
     for (const block of [...accepted.value.stops, ...saved.stops]) {
         for (const field of ['tier', 'bridge', 'anchors', 'tests', 'droppedClaims', 'change']) expect(block).not.toHaveProperty(field);
@@ -33,16 +33,16 @@ it('источник только для чтения строит текущи�
     const dir = await makeTempSherpaDir();
     const full = makeFixtureHost('medium');
     // Методов комментариев, публикации и тредов здесь нет даже на объекте во время выполнения.
-    const host: ReviewSource = {
-        getPr: () => full.getPr(), getDiff: (slice) => full.getDiff(slice),
-        listIterations: () => full.listIterations(), watchIterations: (listener) => full.watchIterations(listener),
+    const host: CodeReader = {
+        getPr: () => full.getPr(), getDiff: () => full.getDiff(),
+        listIterations: () => full.listIterations(), subscribeVersions: (listener) => full.subscribeVersions(listener),
     };
     const options = { prKey: 'fixture-medium', sherpaDir: dir, presentation: 'story' as const, reviewSourceFactory: () => ({ name: 'fixture', host }) };
     let server = await startServer(options);
     try {
         server.workerRegistry.register('test', 'codex', 'test'); await server.route.warmup();
         const next = () => { const lease = server.queue.next('test'); if (lease === null) throw new Error('No task'); return lease.task; };
-        expect(server.queue.complete('test', next().id, JSON.stringify(fixture.outline)).kind).toBe('accepted');
+        expect(server.queue.complete('test', next().id, checkpointJson(fixture.outline)).kind).toBe('accepted');
         server.queue.fail('test', next().id, 'temporary failure');
         await server.close();
         const db = new DatabaseSync(databasePathFor(dir, 'fixture-medium'));
@@ -54,7 +54,7 @@ it('источник только для чтения строит текущи�
         let retry = next();
         if (retry.type === 'route.diagram') { server.queue.cancel(retry.id); retry = next(); }
         expect(server.route.stopsOfTask(retry.id)).toEqual([1]);
-        expect(server.queue.complete('test', retry.id, JSON.stringify({ ...fixture.body, stops: [fixture.body.stops[0]] })).kind).toBe('accepted');
+        expect(server.queue.complete('test', retry.id, checkpointJson({ ...fixture.body, stops: [fixture.body.stops[0]] })).kind).toBe('accepted');
     } finally { await server.close(); await removeTempSherpaDir(dir); }
 });
 

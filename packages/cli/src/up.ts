@@ -53,14 +53,6 @@ export interface EnsureServerOptions {
      * Значения задаёт композиционный корень CLI (`index.ts`).
      */
     readonly nodeFlags?: readonly string[];
-    /**
-     * Локальный diff: каталог проекта, база сравнения и ветка, на которой построен ключ.
-     * Всё это знает только CLI — серверу оно уезжает аргументами и сохраняется в стейте
-     * ключа, чтобы перезапуск обошёлся без них.
-     */
-    readonly repo?: string | undefined;
-    readonly base?: string | undefined;
-    readonly branch?: string | undefined;
     /** Сколько ждём публикации манифеста; в тестах сокращается. */
     readonly startupTimeoutMs?: number;
 }
@@ -228,9 +220,6 @@ async function spawnDaemon(
         options.prKey,
         '--sherpa-dir',
         options.sherpaDir,
-        ...(options.repo === undefined ? [] : ['--repo', options.repo]),
-        ...(options.base === undefined ? [] : ['--base', options.base]),
-        ...(options.branch === undefined ? [] : ['--branch', options.branch]),
     ];
 
     const log = await fs.open(logPath, 'a');

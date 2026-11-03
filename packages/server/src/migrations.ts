@@ -493,6 +493,11 @@ export const MIGRATIONS: readonly Migration[] = [
         sql: `ALTER TABLE route_tasks ADD COLUMN assignment TEXT;`,
     },
     { name: '024-saved-sources', sql: `CREATE TABLE saved_sources (id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE saved_file_content (id TEXT PRIMARY KEY, data TEXT NOT NULL);` },
+    { name: '025-code-snapshots', sql: `
+        CREATE TABLE code_artifacts (hash TEXT PRIMARY KEY, bytes BLOB NOT NULL);
+        CREATE TABLE code_snapshots (id TEXT PRIMARY KEY, project TEXT NOT NULL, diff_id TEXT NOT NULL UNIQUE, data TEXT NOT NULL);
+        CREATE TABLE code_sources (snapshot_id TEXT NOT NULL REFERENCES code_snapshots(id), revision TEXT NOT NULL, path TEXT NOT NULL, hash TEXT NOT NULL REFERENCES code_artifacts(hash), kind TEXT NOT NULL, origin TEXT, PRIMARY KEY(snapshot_id, revision, path));
+    ` },
 ];
 
 /** Ключ версии схемы в таблице `meta`. */

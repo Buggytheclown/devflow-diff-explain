@@ -48,7 +48,7 @@ const GUTTER = /^ *(\d+|\.) +(\d+|\.) \| (.*)$/gm;
 function fixtureAnchor(): ChatAnchor {
     const diff = mediumDiff();
     for (const stop of mediumReadySnapshot().stops) {
-        for (const candidate of stop.anchors) {
+        for (const candidate of stop.anchors ?? []) {
             const file = diff.files.find((item) => item.fileId === candidate.fileId);
             if (file?.patch !== null && file?.patch !== undefined) {
                 const { collapsed: _collapsed, ...anchor } = candidate;
@@ -139,7 +139,7 @@ describe('chat payload с якорем', () => {
             expect.stringMatching(/\.new\.md$/),
             'question.md',
             'selection.patch.md',
-            'route-context.md',
+            expect.stringMatching(/^chat-route-context\.md-[a-f0-9]{8}\.md$/),
             'history.md',
         ]);
         // Первые два пути общие: при необходимости модель переиспользует уже прочитанное.
@@ -150,14 +150,14 @@ describe('chat payload с якорем', () => {
         );
         // Свои файлы — в своём каталоге вопроса: retry не перезаписывает payload прежней задачи.
         expect(path.dirname(first.contextFiles[2] ?? '')).not.toBe(path.dirname(second.contextFiles[2] ?? ''));
-        expect(first.contextFiles.slice(2).every((file) => file.startsWith(payloadDir))).toBe(true);
+        expect(first.contextFiles.slice(2).filter((file) => !file.includes('chat-route-context')).every((file) => file.startsWith(payloadDir))).toBe(true);
         expect(first.contextFiles.every((file) => fs.existsSync(file))).toBe(true);
         expect(fs.readFileSync(first.contextFiles[0] ?? '', 'utf8')).toContain('Answer the reviewer\'s question.');
         expect(fs.readFileSync(first.contextFiles[1] ?? '', 'utf8')).toContain(`File: ${anchor.path}`);
         expect(fs.readFileSync(first.contextFiles[2] ?? '', 'utf8')).toContain(context.question);
         const routeContext = fs.readFileSync(first.contextFiles[4] ?? '', 'utf8');
         const coveringStop = mediumReadySnapshot().stops.find((stop) =>
-            stop.anchors.some(
+            (stop.anchors ?? []).some(
                 (candidate) =>
                     candidate.fileId === anchor.fileId &&
                     candidate.side === anchor.side &&
@@ -180,9 +180,9 @@ describe('chat payload с якорем', () => {
         const input = await materialize({ question, anchor: null, pr: META, diff, fileContent: null, route: READY_ROUTE, history: [exchange(1)] });
 
         expect(input.instructions).toContain(question.replace('\n', '\\n'));
-        expect(input.instructions).toContain(JSON.stringify({ pr: META.url, diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit }));
+        expect(input.instructions).toContain(JSON.stringify({ pr: META.url, codeSnapshotId: null, diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit }));
         expect(input.instructions).toContain('Available context (read selectively');
-        expect(input.instructions).toContain('Pinned PR and changed-file map; read individual patches as needed');
+        expect(input.instructions).toContain('Pinned PR, changed-file map and imported source artifacts');
         expect(input.instructions).toContain('Recent completed questions and answers');
         expect(input.instructions).not.toContain('Read the guide first, then every context file');
         for (const file of input.contextFiles) {
@@ -250,7 +250,7 @@ describe('chat payload с якорем', () => {
             'question.md',
             'selection.patch.md',
             'file-context.md',
-            'route-context.md',
+            expect.stringMatching(/^chat-route-context\.md-[a-f0-9]{8}\.md$/),
             'history.md',
         ]);
         const slice = input.contextFiles[3] ?? '';
@@ -359,12 +359,12 @@ describe('chat payload уровня PR', () => {
 
         expect(input.contextFiles.map((file) => path.basename(file))).toEqual([
             expect.stringMatching(/^chat-guide-[0-9a-f]{8}\.md$/),
-            'target.json',
+            expect.stringMatching(/^target-[a-f0-9]{8}\.json$/),
             'question.md',
-            'route-context.md',
+            expect.stringMatching(/^chat-route-context\.md-[a-f0-9]{8}\.md$/),
             'history.md',
         ]);
-        expect(input.contextFiles[1]).toBe(path.join(sharedDir, 'diff', diffKeyOf(diff), 'target.json'));
+        expect(path.dirname(input.contextFiles[1] ?? '')).toBe(path.join(sharedDir, 'diff', diffKeyOf(diff)));
 
         const route = fs.readFileSync(input.contextFiles[3] ?? '', 'utf8');
         expect(route).toContain(snapshot.summary);
@@ -401,7 +401,7 @@ describe('chat payload уровня PR', () => {
         expect(new Set(inputs.map((input) => input.contextFiles[1])).size).toBe(1);
         expect(sixth.contextFiles[1]).toBe(diffPath);
         expect(fs.readFileSync(diffPath, 'utf8')).toBe('подменённый дифф');
-        expect(fs.readdirSync(path.dirname(diffPath))).toEqual(['patches', 'pr-diff.md', 'saved-patch-index.json', 'target.json']);
+        expect(fs.readdirSync(path.dirname(diffPath))).toEqual(['patches', 'pr-diff.md', 'saved-patch-index.json', expect.stringMatching(/^target-[a-f0-9]{8}\.json$/)]);
         // Свой каталог у каждого вопроса всё равно свой.
         expect(new Set(inputs.map((input) => path.dirname(input.contextFiles[2] ?? ''))).size).toBe(5);
     });

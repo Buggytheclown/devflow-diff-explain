@@ -48,7 +48,7 @@ export const architectureDiagramSchema = z.object({
     nodes: z.array(z.object({
         id: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/), label: z.string().trim().min(1).max(160).default('Architecture node'),
         change: z.enum(['existing', 'added', 'modified', 'affected', 'unknown']),
-        sources: z.array(flowCitationSchema).max(4), limitation: z.string().trim().min(1).max(400).nullable(),
+        sources: z.array(flowCitationSchema).max(4).default([]), limitation: z.string().trim().min(1).max(400).nullable().default(null),
     }).strict()).max(120).default([]),
     edges: z.array(flowDiagramSchema.shape.edges.element).max(256).optional().default([]),
 }).strict().superRefine((diagram, ctx) => {
