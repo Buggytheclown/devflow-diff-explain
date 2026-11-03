@@ -40,7 +40,8 @@ test('описание → блок → полный дифф → файл/ст�
     expect(question.type).toBe('chat');
     const fileContext = question.stdout.split('\n').find((line) => line.includes('attached-file-patch-'));
     expect(fileContext).toBeDefined();
-    expect(await fs.readFile(fileContext?.trim() ?? '', 'utf8')).toContain(fixture.first.path);
+    const patchPath = fileContext === undefined ? '' : JSON.parse(fileContext.slice(fileContext.indexOf('): ') + 3)) as string;
+    expect(await fs.readFile(patchPath, 'utf8')).toContain(fixture.first.path);
     const location = `#code?path=${encodeURIComponent(fixture.anchor.path)}&side=${fixture.anchor.side}&start=${String(fixture.anchor.start)}&end=${String(fixture.anchor.start)}`;
     expect((await server.worker.complete(question.taskId ?? 0, `См. [важную строку](${location}).`)).stdout).not.toContain('rejected');
     await page.getByRole('button', { name: 'Свернуть всё', exact: true }).click();
@@ -154,8 +155,9 @@ test('выделение синхронизировано с чатом, уда�
     await input.press('Enter');
     const question = await server.worker.next();
     expect(question.type).toBe('chat');
-    const questionFile = question.stdout.split('\n').find((line) => line.endsWith('question.md'))?.trim();
-    const payload = await fs.readFile(questionFile ?? '', 'utf8');
+    const questionEntry = question.stdout.split('\n').find((line) => line.includes('Full reviewer question and scope ('));
+    const questionFile = questionEntry === undefined ? '' : JSON.parse(questionEntry.slice(questionEntry.indexOf('): ') + 3)) as string;
+    const payload = await fs.readFile(questionFile, 'utf8');
     expect(payload).toContain(`Selected range: ${fixture.first.path}:${String(start)}-`);
     expect(payload).toContain(JSON.stringify(code));
     expect(payload).not.toContain('Whole pull request.');

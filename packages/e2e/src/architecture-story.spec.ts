@@ -77,7 +77,7 @@ test('два этапа: контрастная вертикальная арх�
     const rows = await page.locator('.story-code .diff-row').allTextContents();
     const files = await server.worker.next(); expect(files.type).toBe('route.section');
     const assignment = files.stdout.split('\n').find((line) => line.endsWith('-plan.md'));
-    expect(await fs.readFile(assignment?.trim() ?? '', 'utf8')).toContain('Accepted architecture');
+    expect(await fs.readFile(assignment?.trim() ?? '', 'utf8')).toContain('Accepted overview and files (read when useful):');
     expect((await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body))).stdout).not.toContain('rejected');
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
     await expect(page.locator('.story-inline-note')).not.toHaveCount(0);
@@ -161,4 +161,31 @@ test('внешний источник сохраняется на версии �
     await page.reload();
     await page.getByRole('link', { name: 'caller', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Сохранённый источник' })).toContainText('context/caller.ts');
+});
+
+test('checkpoint перегруппирует блоки, сохраняя готовый файл и место чтения', async ({ page, launchSherpa }) => {
+    const server = await launchSherpa('fixture-medium'); await page.goto(server.url);
+    await server.worker.register('codex', 'ru');
+    const plan = await server.worker.next(); await server.worker.complete(plan.taskId ?? 0, JSON.stringify(fixture.outline));
+    const all = fixture.body.stops.flatMap((block) => block.files);
+    const first = all[0]; if (first === undefined) throw new Error('Missing file');
+    const files = await server.worker.next();
+    expect((await server.worker.complete(files.taskId ?? 0, JSON.stringify({ contractVersion: 6, files: [first] }))).stdout).not.toContain('rejected');
+    await openBlocks(page);
+    await page.locator('.story-nav').getByRole('button', { name: first.path, exact: true }).click();
+    const code = page.locator(`[data-reading-file="${fixture.first.fileId}"]`);
+    await expect(code.locator('.story-file-description')).toContainText(first.explanation);
+    const row = code.locator('.diff-row').nth(20); await row.scrollIntoViewIfNeeded();
+    const y = (await row.boundingBox())?.y ?? 0;
+    const blocks = fixture.outline.stops.map((block, i) => ({ ...block, id: `s${String(i + 1).padStart(2, '0')}` }));
+    const [one, two] = blocks; if (one === undefined || two === undefined) throw new Error('Missing block');
+    one.files = one.files.filter((path) => path !== first.path); two.files = [first.path, ...two.files];
+    const update = await server.worker.next();
+    expect((await server.worker.complete(update.taskId ?? 0, JSON.stringify({ contractVersion: 6, update: { stops: [two, one] } }))).stdout).not.toContain('rejected');
+    await expect(page.locator('.story-continuous-block > h2')).toHaveText([`1. ${two.title}`, `2. ${one.title}`]);
+    await expect(code.locator('.story-file-description')).toContainText(first.explanation);
+    await expect(async () => { expect(Math.abs(((await row.boundingBox())?.y ?? 9999) - y)).toBeLessThan(4); }).toPass({ timeout: 10_000 });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.story-nav-file[aria-current=page]')).toHaveAttribute('aria-label', first.path);
+    await expect(code.locator('.story-file-description')).toContainText(first.explanation);
 });

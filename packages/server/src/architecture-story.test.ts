@@ -23,7 +23,8 @@ async function next(server: SherpaServer) {
 }
 async function complete(server: SherpaServer, result: unknown, type: string) {
     const task = await next(server); expect(task.type).toBe(type);
-    expect(server.queue.complete('worker', task.id, JSON.stringify(result))).toMatchObject({ kind: 'accepted' });
+    const accepted = server.queue.complete('worker', task.id, JSON.stringify(result));
+    expect(accepted, JSON.stringify(accepted)).toMatchObject({ kind: 'accepted' });
     return task;
 }
 
@@ -161,4 +162,101 @@ it('произвольная часть файлов после рестарта
     const restarted = (await start(dir)).server;
     await complete(restarted, { contractVersion: 6, files: files.slice(1) }, 'route.section');
     await vi.waitFor(async () => { expect(preparationProgress(await read(restarted)).percent).toBe(100); });
+});
+
+it('checkpoint обновляет только summary; перегруппировка переносит готовый файл и его ID', async () => {
+    const { server, dir } = await start();
+    await complete(server, fixture.outline, 'route.skeleton');
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    const first = files[0]; if (first === undefined) throw new Error('Missing file');
+    await complete(server, { contractVersion: 6, files: [first] }, 'route.section');
+    const before = (await read(server)).snapshot; if (before === null) throw new Error('Missing snapshot');
+    await complete(server, { contractVersion: 6, update: { summary: 'Уточнён только смысл изменения.' } }, 'route.section');
+    const summaryOnly = (await read(server)).snapshot;
+    expect(summaryOnly?.summary).toBe('Уточнён только смысл изменения.');
+    expect(summaryOnly?.flow).toEqual(before.flow);
+    expect(summaryOnly?.stops).toEqual(before.stops);
+    const blocks = fixture.outline.stops.map((block, i) => ({ ...block, id: before.stops[i]?.id }));
+    const [one, two] = blocks; if (one === undefined || two === undefined) throw new Error('Missing block');
+    one.files = one.files.filter((path) => path !== first.path); two.files = [first.path, ...two.files];
+    const ready = before.stops.flatMap((block) => block.guidedFiles ?? []).find((file) => file.path === first.path);
+    await complete(server, { contractVersion: 6, update: { stops: [two, one] } }, 'route.section');
+    const regrouped = (await read(server)).snapshot;
+    expect(regrouped?.stops.map((block) => block.id)).toEqual([before.stops[1]?.id, before.stops[0]?.id]);
+    expect(regrouped?.stops[0]?.guidedFiles?.[0]).toEqual(ready);
+    expect(regrouped?.tourOrder).toEqual(regrouped?.stops.map((block) => block.id));
+    await server.close(); const restarted = (await start(dir)).server;
+    await complete(restarted, { contractVersion: 6, files: files.slice(1) }, 'route.section');
+    expect((await read(restarted)).phase).toBe('ready');
+    expect(preparationProgress(await read(restarted)).percent).toBe(100);
+});
+
+it('незамкнутое обновление графа/владельцев отклоняется без изменения принятого обзора', async () => {
+    const { server } = await start(); await complete(server, fixture.outline, 'route.skeleton');
+    const task = await next(server);
+    const before = (await read(server)).snapshot;
+    const broken = { contractVersion: 6, update: { stops: fixture.outline.stops.slice(1) } };
+    expect(server.queue.complete('worker', task.id, JSON.stringify(broken)).kind).toBe('rejected');
+    expect((await read(server)).snapshot).toEqual(before);
+    expect(server.queue.complete('worker', task.id, JSON.stringify({ contractVersion: 6, update: { summary: 'Корректный checkpoint.' } })).kind).toBe('accepted');
+});
+
+it('при перестановке блоков без явных ID приложение узнаёт их по файлам', () => {
+    const before = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
+    if (!before.ok) throw new Error(before.errors.join('\n'));
+    const after = validateArchitectureOverview(JSON.stringify({ ...fixture.outline, stops: [...fixture.outline.stops].reverse() }), fixture.diff, before.value.stops);
+    expect(after.ok).toBe(true);
+    if (after.ok) expect(after.value.stops.map((block) => block.id)).toEqual(before.value.stops.map((block) => block.id).reverse());
+});
+
+it('обновление задания отзывает старую аренду, сохраняет точный diff и готовые файлы v5', async () => {
+    const { server, dir } = await start(); await server.close();
+    const { openDatabase } = await import('./db.js');
+    const { databasePathFor } = await import('./paths.js');
+    const { RouteStore } = await import('./route-store.js');
+    const { TaskQueue } = await import('./queue.js');
+    const { validateStorySkeleton } = await import('./story.js');
+    const { overviewStoryFixture, makeFixtureHost } = await import('@sherpa/fixtures');
+    const legacy = overviewStoryFixture();
+    const db = openDatabase(databasePathFor(dir, 'fixture-medium'));
+    const store = new RouteStore({ db }); const queue = new TaskQueue({ db });
+    for (const task of queue.listTasks()) queue.cancel(task.id); store.clearBindings();
+    const parsed = validateStorySkeleton(JSON.stringify(legacy.outline), legacy.diff, 'ru');
+    if (!parsed.ok) throw new Error(parsed.errors.join('\n'));
+    const first = parsed.value.stops[0]?.guidedFiles?.[0]; if (first === undefined) throw new Error('Missing file');
+    first.explanation = 'Уже принятое пояснение этого снимка.';
+    store.beginSkeleton({ locale: 'ru', presentation: 'story', version: 5, diffId: legacy.diff.diffId });
+    store.acceptSkeleton({ skeleton: parsed.value, diff: legacy.diff, snapshotId: 'legacy-v5', previousSnapshotId: null,
+        presentation: 'story', provenance: { harness: 'codex', model: 'test', locale: 'ru' } });
+    const old = queue.enqueue({ type: 'route.section', priority: 'background', instructions: 'Old task', contextFiles: [] });
+    store.bindTask(old.id, 'section', legacy.diff.diffId, [1]); queue.next('old-worker');
+    store.close(); db.close();
+    const pushed = makeFixtureHost('medium'); pushed.advanceIteration();
+    const restarted = await startServer({ prKey: 'fixture-medium', sherpaDir: dir, reviewSourceFactory: () => ({ name: 'fixture', host: pushed }) }); servers.push(restarted);
+    restarted.workerRegistry.register('worker', 'codex', 'test'); await restarted.route.warmup();
+    expect(restarted.queue.getTask(old.id)?.status).toBe('cancelled');
+    expect(restarted.queue.complete('old-worker', old.id, 'Late result').kind).toBe('noop');
+    const task = await next(restarted);
+    const context = task.contextFiles.find((file) => file.endsWith('pr-diff.md'));
+    const fs = await import('node:fs');
+    expect(fs.readFileSync(context ?? '', 'utf8')).toContain(legacy.diff.headCommit);
+    expect(restarted.queue.complete('worker', task.id, JSON.stringify(fixture.outline)).kind).toBe('accepted');
+    const saved = (await read(restarted)).snapshot;
+    expect(saved?.diffId).toBe(legacy.diff.diffId);
+    expect(saved?.stops.flatMap((block) => block.guidedFiles ?? []).find((file) => file.fileId === first.fileId)?.explanation).toBe(first.explanation);
+    const remaining = await next(restarted);
+    const plan = remaining.contextFiles.find((file) => file.endsWith('-plan.md'));
+    expect(fs.readFileSync(plan ?? '', 'utf8')).not.toContain(`"${first.path}"`);
+});
+
+it('новая схема для модели содержит прямые источники и не предлагает legacy-формат files', async () => {
+    const { generateJsonSchemas } = await import('@sherpa/protocol');
+    const schemas = generateJsonSchemas();
+    const overview = JSON.stringify(schemas.architectureOverviewResult);
+    expect(overview).toContain('"sources"'); expect(overview).not.toContain('"claims"'); expect(overview).not.toContain('"quote"');
+    const files = schemas.allFilesResult as { properties: Record<string, unknown> };
+    expect(files.properties.files).toBeDefined(); expect(files.properties.stops).toBeUndefined();
+    const result = validateArchitectureOverview(JSON.stringify({ ...fixture.outline, evidence: { sources: [], limitation: 'Synthetic fixture.' },
+        stops: fixture.outline.stops.map((block) => ({ ...block, evidence: { sources: [], limitation: 'Synthetic fixture.' } })) }), fixture.diff);
+    expect(result.ok).toBe(true);
 });

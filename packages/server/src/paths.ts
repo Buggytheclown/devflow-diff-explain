@@ -64,16 +64,6 @@ export function localHostStatePathFor(sherpaDir: string, prKey: string): string 
     return path.join(prStateDirOf(sherpaDir, prKey), 'local-host.json');
 }
 
-/** Карта «ключ повтора черновика → комментарий GitHub»: ключей идемпотентности GitHub не знает. */
-export function githubDraftsPathFor(sherpaDir: string, prKey: string): string {
-    return path.join(prStateDirOf(sherpaDir, prKey), 'github-drafts.json');
-}
-
-/** Комментарии локального ревью: удалённого хоста у них нет — они живут здесь. */
-export function localReviewPathFor(sherpaDir: string, prKey: string): string {
-    return path.join(prStateDirOf(sherpaDir, prKey), 'local-review.json');
-}
-
 /** История итераций локального ревью: индекс и блобы новых сторон текстовых файлов. */
 export function localIterationsDirOf(sherpaDir: string, prKey: string): string {
     return path.join(prStateDirOf(sherpaDir, prKey), 'local-iterations');

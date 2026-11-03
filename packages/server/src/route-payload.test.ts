@@ -316,10 +316,13 @@ describe('запись payload на диск', () => {
         expect(path.basename(pr ?? '')).toBe('pr-diff.md');
         expect(fs.readFileSync(guide ?? '', 'utf8')).toContain('PR');
         expect(fs.readFileSync(pr ?? '', 'utf8')).toContain('## Changed files (21, complete list)');
-        expect(input.instructions).toContain('Plan a concise coherent explanation');
+        expect(input.instructions).toContain('draw its affected architecture');
+        expect(input.instructions).toContain(META.url);
+        expect(input.instructions).toContain(context().diff.headCommit);
+        expect(input.instructions).toContain(context().diff.baseCommit);
         // Своего у скелета нет: каталог генерации держит только схему результата.
         expect(fs.readdirSync(path.dirname(input.resultSchemaFile ?? ''))).toEqual([
-            'route-overviewSkeleton-result.schema.json',
+            'route-architectureOverview-result.schema.json',
         ]);
     });
 
@@ -330,21 +333,21 @@ describe('запись payload на диск', () => {
 
         const schemas = generateJsonSchemas();
         const readSchema = (file: string | undefined): unknown => JSON.parse(fs.readFileSync(file ?? '', 'utf8'));
-        expect(readSchema(skeleton.resultSchemaFile)).toEqual(schemas.overviewSkeletonResult);
-        expect(readSchema(sections.resultSchemaFile)).toEqual(schemas.readableSectionResult);
+        expect(readSchema(skeleton.resultSchemaFile)).toEqual(schemas.architectureOverviewResult);
+        expect(readSchema(sections.resultSchemaFile)).toEqual(schemas.allFilesResult);
     });
 
     it('задача секции: целевые номера в инструкции, план — свой файл без патчей', () => {
         const input = writer().sectionTask(context(), [3, 4], mediumReadySnapshot().stops, intents());
 
         expect(input.type).toBe('route.section');
-        expect(input.instructions).toContain('3, 4');
+        expect(input.instructions).toContain('remaining assigned files');
         expect(input.contextFiles).toHaveLength(3);
         const plan = input.contextFiles[2] ?? '';
         expect(plan.startsWith(payloadDir)).toBe(true);
         expect(path.basename(plan)).toBe('section-03-04-plan.md');
         const text = fs.readFileSync(plan, 'utf8');
-        expect(text).toContain('## Accepted blocks and ordered file assignments');
+        expect(text).toContain('## Accepted blocks and remaining files');
         expect(text).not.toContain('## Patches');
     });
 

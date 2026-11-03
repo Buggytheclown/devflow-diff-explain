@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -69,6 +70,7 @@ describe('CLI против сервера', () => {
         readonly openBrowser?: NonNullable<CliIo['openBrowser']>;
         readonly runCommand?: NonNullable<CliIo['runCommand']>;
         readonly tmpDir?: string;
+        readonly onOutput?: (text: string) => void;
     }
 
     async function sherpaWith(overrides: Overrides, ...argv: string[]): Promise<Invocation> {
@@ -76,7 +78,7 @@ describe('CLI против сервера', () => {
         const stderr: string[] = [];
         const io: CliIo = {
             env: { SHERPA_DIR: sherpaDir, SHERPA_PR: PR_KEY, ...overrides.extraEnv },
-            out: (text) => stdout.push(text),
+            out: (text) => { stdout.push(text); overrides.onOutput?.(text); },
             err: (text) => stderr.push(text),
             // Рядом с файлом теста модуля сервера нет: там, где сервер уже поднят, он и не нужен.
             entry: overrides.entry ?? fileURLToPath(import.meta.url),
@@ -529,16 +531,58 @@ describe('CLI против сервера', () => {
         await fs.writeFile(resultFile, 'Готовый ответ.');
         const printed = issued.stdout.split('\n').find((line) => line.trimStart().startsWith('devflow-diff-explain task complete '));
         expect(printed).toContain(`--pr ${PR_KEY}`);
-        const completed = await sherpaWith({ extraEnv: { SHERPA_PR: undefined } }, ...(printed?.trim().split(' ').slice(1) ?? []));
+        const nextTaskId = enqueueEcho(running, 'Second task.');
+        expect(printed).toContain('--next');
+        const completeArgs = printed?.trim().split(' ').slice(1) ?? [];
+        const completed = await sherpaWith({ extraEnv: { SHERPA_PR: undefined } }, ...completeArgs);
         expect(completed.code).toBe(0);
         expect(completed.stdout).toContain('accepted');
-        expect(completed.stdout).toContain('devflow-diff-explain worker next');
+        expect(completed.stdout).toContain(`TASK sherpa/${String(nextTaskId)} (echo), attempt 1`);
         expect(running.queue.getTask(taskId)).toMatchObject({ status: 'done', result: 'Готовый ответ.' });
 
         // Сданная задача повторно не выдаётся: следующий next берёт новую.
-        const nextTaskId = enqueueEcho(running, 'Вторая задача.');
-        const again = await sherpa('worker', 'next');
+        // Повтор после потерянного ответа не применяет результат дважды и возвращает ту же аренду.
+        const again = await sherpa(...completeArgs);
         expect(again.stdout).toContain(`TASK sherpa/${String(nextTaskId)} (echo), attempt 1`);
+    });
+
+    it('complete --next не арендует следующую задачу при отклонённом результате', async () => {
+        const running = await start();
+        running.queue.setResultAcceptor(() => ({ kind: 'rejected', errors: ['Fix the result.'] }));
+        const first = enqueueEcho(running); const second = enqueueEcho(running);
+        await sherpa('worker', 'next');
+        const file = await writeFile('rejected.txt', 'Invalid');
+        const response = await sherpa('task', 'complete', String(first), '--file', file, '--next');
+        expect(response.stdout).toContain('rejected');
+        expect(response.stdout).not.toContain('TASK sherpa/');
+        expect(running.queue.getTask(first)?.status).toBe('leased');
+        expect(running.queue.getTask(second)?.status).toBe('queued');
+    });
+
+    it('complete --next после отмены не применяет поздний результат', async () => {
+        const running = await start();
+        const first = enqueueEcho(running); const second = enqueueEcho(running);
+        await sherpa('worker', 'next'); running.queue.cancel(first);
+        const file = await writeFile('late.txt', 'Late result');
+        const response = await sherpa('task', 'complete', String(first), '--file', file, '--next');
+        expect(response.stdout).toContain(`TASK sherpa/${String(second)} (echo)`);
+        expect(running.queue.getTask(first)).toMatchObject({ status: 'cancelled', result: null });
+    });
+
+    it('complete --next сохраняет идентичность при перехвате слота между запросами', async () => {
+        const running = await start();
+        const first = enqueueEcho(running); const second = enqueueEcho(running);
+        await sherpa('worker', 'next');
+        const file = await writeFile('accepted.txt', 'Accepted result');
+        const response = await sherpaWith({ onOutput: (text) => {
+            if (!text.includes('accepted')) return;
+            running.workerRegistry.register('replacement', 'codex', 'test');
+            writeFileSync(path.join(sherpaDir, 'prs', PR_KEY, 'worker-id'), 'replacement\n');
+        } }, 'task', 'complete', String(first), '--file', file, '--next');
+        expect(response.code).toBe(1);
+        expect(response.stderr).toContain('stop the loop');
+        expect(running.queue.getTask(first)?.status).toBe('done');
+        expect(running.queue.getTask(second)?.status).toBe('queued');
     });
 
     it('выданный путь: каталоги создаются только для себя', async () => {

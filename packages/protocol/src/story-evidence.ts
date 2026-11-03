@@ -13,12 +13,21 @@ export const storySourceSchema = z.union([
 function evidence<T extends z.ZodType>(source: T) {
     return z.object({ claims: z.array(z.object({
         quote: z.string().trim().min(1).max(4000).optional(),
-        sources: z.array(source).max(8),
+        sources: z.array(source).max(64),
         limitation: z.string().trim().min(1).max(4000).nullable(),
     }).strict().refine((claim) => claim.sources.length > 0 || claim.limitation !== null,
         'Provide sources or an explicit evidence limit.')).min(1).max(8) }).strict();
 }
-export const rawStoryEvidenceBlockSchema = evidence(rawStorySourceSchema);
+/** Минимальный вход агента; claims остаётся представлением сохранённых разборов. */
+export const evidenceSourcesSchema = z.object({
+    sources: z.array(rawStorySourceSchema).max(64).default([]),
+    limitation: z.string().trim().min(1).max(4000).nullable().default(null),
+}).strict().refine((value) => value.sources.length > 0 || value.limitation !== null,
+    'Provide sources or an explicit evidence limit.');
+export const rawStoryEvidenceBlockSchema = z.union([
+    evidence(rawStorySourceSchema),
+    evidenceSourcesSchema.transform((value) => evidence(rawStorySourceSchema).parse({ claims: [value] })),
+]);
 export const storyEvidenceBlockSchema = evidence(storySourceSchema);
 export const storyExplanationEvidenceSchema = z.object({
     contractVersion: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]),

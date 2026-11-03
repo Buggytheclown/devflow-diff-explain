@@ -6,8 +6,8 @@ import type { LocalVcsKind } from '@sherpa/protocol';
 import { localPrKeyPrefix } from '@sherpa/protocol';
 
 import { CliError } from './errors.js';
-import type { CommandOutcome, CommandRunner } from './pr-discovery.js';
-import { runArcCommand } from './pr-discovery.js';
+import type { CommandOutcome, CommandRunner } from './command-runner.js';
+import { runVcsCommand } from './command-runner.js';
 
 /**
  * Локальное ревью из каталога проекта (`devflow-diff-explain up --local <path>`): какая VCS, какой каталог,
@@ -47,7 +47,7 @@ export interface LocalTarget {
 export async function resolveLocalTarget(
     rawPath: string,
     base: string | undefined,
-    run: CommandRunner = runArcCommand,
+    run: CommandRunner = runVcsCommand,
 ): Promise<LocalTarget> {
     const repo = await realDirectory(rawPath);
 

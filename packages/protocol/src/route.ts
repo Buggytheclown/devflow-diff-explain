@@ -1,3 +1,4 @@
+import { evidenceSourcesSchema } from './story-evidence.js';
 import { z } from 'zod';
 
 import { relativeCodePathSchema } from './code-link.js';
@@ -428,6 +429,7 @@ export const architectureOverviewResultSchema = z.object({
         z.object({ status: z.enum(['not_applicable', 'unavailable']), reason: z.string().trim().min(1).max(400) }).strict(),
     ]),
     stops: z.array(z.object({
+        id: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/).optional(),
         title: z.string().trim().min(1).max(160), paragraph: z.string().trim().min(1), evidence: rawStoryEvidenceBlockSchema,
         nodeIds: z.array(z.string().min(1)).max(120), files: z.array(relativeCodePathSchema).min(1),
         relatedFiles: z.array(relativeCodePathSchema).max(100),
@@ -438,12 +440,30 @@ const explainedFileResultSchema = z.object({
     path: relativeCodePathSchema, explanation: z.string().trim().min(1),
     example: rawReadableExampleSchema.nullable().optional(), annotations: z.array(guidedAnnotationSchema).max(12).default([]),
 }).strict();
+/** Обновляются предметные поля целиком; связанные блоки и граф проверяются вместе. */
+export const overviewUpdateSchema = architectureOverviewResultSchema.omit({ contractVersion: true }).partial()
+    .refine((value) => Object.keys(value).length > 0, 'Provide at least one overview field.');
 export const allFilesResultSchema = z.object({
     contractVersion: z.literal(6), overview: architectureOverviewResultSchema.optional(),
-    files: z.array(explainedFileResultSchema).optional(),
+    update: overviewUpdateSchema.optional(), files: z.array(explainedFileResultSchema).optional(),
     stops: z.array(z.object({ planIndex: z.number().int().positive(), files: z.array(explainedFileResultSchema).min(1) }).strict()).max(100).default([]),
-}).strict().refine((value) => value.files === undefined ? value.stops.length > 0 : value.files.length > 0 && value.stops.length === 0,
-    'Return nonempty files, or legacy stops, but not both.');
+}).strict().refine((value) => (value.files?.length ?? 0) + value.stops.length > 0 || value.overview !== undefined || value.update !== undefined,
+    'Return files or an overview update.')
+    .refine((value) => !(value.files !== undefined && value.stops.length > 0) && !(value.overview !== undefined && value.update !== undefined),
+        'Use either files or legacy stops, and either overview or update.');
+/** Единственный формат, который показываем новой worker-сессии. */
+export const architectureOverviewWorkerResultSchema = architectureOverviewResultSchema.extend({
+    evidence: evidenceSourcesSchema,
+    stops: z.array(architectureOverviewResultSchema.shape.stops.element.extend({ evidence: evidenceSourcesSchema })).min(1).max(100),
+});
+export const allFilesWorkerResultSchema = z.object({
+    contractVersion: z.literal(6), overview: architectureOverviewWorkerResultSchema.optional(),
+    update: architectureOverviewWorkerResultSchema.omit({ contractVersion: true }).partial().optional(),
+    files: z.array(explainedFileResultSchema.extend({
+        example: z.object({ text: z.string().trim().min(1), evidence: evidenceSourcesSchema }).strict().nullable().optional(),
+    })).optional(),
+}).strict().refine((value) => (value.files?.length ?? 0) > 0 || value.overview !== undefined || value.update !== undefined,
+    'Return files or an overview update.');
 export type StorySectionResult = z.infer<typeof storySectionResultSchema>;
 
 /** Точный текст для контекста вопроса; одинаковое представление на сервере и в UI. */

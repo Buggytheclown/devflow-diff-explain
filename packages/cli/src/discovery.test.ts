@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { connect, resolvePrKey, resolveWorkerId } from './discovery.js';
 import { CliError } from './errors.js';
 import { manifestPathFor, sherpaDirFrom, workerIdPathFor } from './paths.js';
-import type { CommandRunner } from './pr-discovery.js';
+import type { CommandRunner } from './command-runner.js';
 
 const PR_KEY = 'arcanum-777';
 
@@ -55,14 +55,6 @@ describe('discovery', () => {
                 });
         }
 
-        const noCheckout: CommandRunner = () =>
-            Promise.resolve({
-                exitCode: 1,
-                stdout: '',
-                stderr: 'Not a mounted arc repository. Did you forget to mount arcadia?',
-                failure: null,
-            });
-
         it('берётся из флага, иначе из SHERPA_PR', async () => {
             await expect(resolvePrKey('arcanum-1', { SHERPA_PR: 'arcanum-2' }, arcOnBranch(3))).resolves.toBe(
                 'arcanum-1',
@@ -72,15 +64,10 @@ describe('discovery', () => {
             );
         });
 
-        it('без того и другого — PR текущей ветки arc-чекаута', async () => {
-            await expect(resolvePrKey(undefined, {}, arcOnBranch(4242))).resolves.toBe('arcanum-4242');
-            await expect(resolvePrKey(undefined, { SHERPA_PR: '  ' }, arcOnBranch(7))).resolves.toBe('arcanum-7');
-        });
-
-        it('discovery не удалось — прежняя просьба про скилл и --pr, с причиной одной строкой', async () => {
-            await expect(resolvePrKey(undefined, {}, noCheckout)).rejects.toThrow(CliError);
-            await expect(resolvePrKey(undefined, {}, noCheckout)).rejects.toThrow('--pr');
-            await expect(resolvePrKey(undefined, {}, noCheckout)).rejects.toThrow('not an arc checkout');
+        it('не ищет цель по каталогу: worker повторно использует ключ сессии', async () => {
+            const neverRun: CommandRunner = () => { throw new Error('Unexpected VCS discovery'); };
+            await expect(resolvePrKey(undefined, {}, neverRun)).rejects.toThrow(CliError);
+            await expect(resolvePrKey(undefined, { SHERPA_PR: '  ' }, neverRun)).rejects.toThrow('Reuse the printed');
         });
 
         it('ссылка на PR github.com нормализуется в ключ до всего остального', async () => {

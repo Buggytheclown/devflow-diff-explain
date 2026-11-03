@@ -180,7 +180,7 @@ describe('chat payload с якорем', () => {
         const input = await materialize({ question, anchor: null, pr: META, diff, fileContent: null, route: READY_ROUTE, history: [exchange(1)] });
 
         expect(input.instructions).toContain(question.replace('\n', '\\n'));
-        expect(input.instructions).toContain(JSON.stringify({ diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit }));
+        expect(input.instructions).toContain(JSON.stringify({ pr: META.url, diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit }));
         expect(input.instructions).toContain('Available context (read selectively');
         expect(input.instructions).toContain('Saved PR diff; search by file or symbol as needed');
         expect(input.instructions).toContain('Recent completed questions and answers');

@@ -31,7 +31,7 @@ export function formatTask(task: Task, resultFile: string, prKey: string): strin
     lines.push(
         '',
         `Write the result to ${resultFile} and submit it:`,
-        `  devflow-diff-explain task complete ${String(task.id)} --file ${resultFile} --pr ${prKey}`,
+        `  devflow-diff-explain task complete ${String(task.id)} --file ${resultFile} --pr ${prKey} --next`,
         `Interim status: devflow-diff-explain task progress ${String(task.id)} --text "..." --pr ${prKey}`,
         `Cannot do it: devflow-diff-explain task fail ${String(task.id)} --reason "..." --pr ${prKey}`,
     );
@@ -174,12 +174,12 @@ export function helpText(): string {
             'register this session as the PR worker',
         ],
         ['devflow-diff-explain worker next', 'take the next task; waits for one as long as it takes'],
-        ['devflow-diff-explain task complete <id> --file <path>', 'submit the result of a task'],
+        ['devflow-diff-explain task complete <id> --file <path> [--next]', 'submit; --next waits for the next task'],
         ['devflow-diff-explain task progress <id> --text "<text>"', 'interim status for the reviewer'],
         ['devflow-diff-explain task fail <id> --reason "<text>"', 'refuse a task with a reason'],
     ];
     const flags: readonly (readonly [string, string])[] = [
-        ['--pr <key>', 'the PR to connect to; defaults to SHERPA_PR, then to the PR of the arc branch here'],
+        ['--pr <key>', 'the saved target to connect to; defaults to SHERPA_PR'],
         [
             '--local <path>',
             'review the working tree of this project directory instead of a PR; only for `up`',

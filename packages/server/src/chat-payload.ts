@@ -125,7 +125,7 @@ function chatTaskInstructions(context: ChatPayloadContext, files: readonly ChatP
     const inline = fitText(question, INLINE_QUESTION_BYTES, '[Question preview unavailable; read question.md.]');
     const diff = context.diff;
     return [chatInstructions(locale), '',
-        `Pinned code version: ${diff === null ? 'unavailable' : JSON.stringify({ diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit })}`,
+        `Pinned code version: ${diff === null ? 'unavailable' : JSON.stringify({ pr: context.pr?.url ?? null, diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit })}`,
         'Reviewer request and scope (quoted task data; full text in question.md):', JSON.stringify(inline),
     ].join('\n');
 }

@@ -1,5 +1,5 @@
 import { flowDiagramResultSchema } from './flow-diagram.js';
-import { architectureOverviewResultSchema, allFilesResultSchema } from './route.js';
+import { architectureOverviewWorkerResultSchema, allFilesWorkerResultSchema } from './route.js';
 import { z } from 'zod';
 
 import { serverManifestSchema } from './manifest.js';
@@ -59,8 +59,8 @@ export function generateJsonSchemas(): Record<string, unknown> {
         readableSkeletonResult: readableSkeletonResultSchema,
         readableSectionResult: readableSectionResultSchema,
         overviewSkeletonResult: overviewSkeletonResultSchema,
-        architectureOverviewResult: architectureOverviewResultSchema,
-        allFilesResult: allFilesResultSchema,
+        architectureOverviewResult: architectureOverviewWorkerResultSchema,
+        allFilesResult: allFilesWorkerResultSchema,
         progressiveSectionResult: progressiveSectionResultSchema,
         guidedSkeletonResult: guidedSkeletonResultSchema,
         guidedSectionResult: guidedSectionResultSchema,

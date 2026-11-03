@@ -1,3 +1,4 @@
+import { rawEvidence } from './story-evidence.js';
 import { stripCodeFence } from './route/raw-result.js';
 import { allFilesResultSchema } from '@sherpa/protocol';
 import { validateArchitectureOverview } from './architecture-story.js';
@@ -89,6 +90,7 @@ export class RouteOrchestrator {
      * Дифф фиксируется на старте: после пуша идущая генерация заканчивается на своей итерации.
      */
     private generation: PrDiff | null = null;
+    private upgradingDiff: string | null = null;
     /**
      * Последний дифф активной итерации: с него начинается следующая генерация. Диффом идущей
      * он не становится — её итерацию называет привязка задачи, а после рестарта только она.
@@ -123,13 +125,15 @@ export class RouteOrchestrator {
     /** Подписки автомата и разовый прогрев. Зовётся один раз при сборке сервера. */
     start(): void {
         this.flow.start();
-        if (this.store.generationPresentation() === 'story' && ![2, 3, 4].includes(this.store.generationTaskEpoch())) {
-            const phase = this.store.read().phase;
-            if (phase === 'reading' || phase === 'filling' || this.hasOpenRouteTask()) {
-                this.cancelOpenRouteTasks();
-                this.store.clearBindings();
-                this.store.fail('Формат рассказа обновлён. Сохранённый текст доступен; повторите построение.', null);
-            }
+        const state = this.store.read();
+        if (this.store.generationTaskEpoch() !== 5 && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
+            const binding = [...this.store.bindings().values()].find((entry) => entry.diffId !== null);
+            const pinned = state.phase === 'filling' ? state.snapshot?.diffId : binding?.diffId ?? this.store.generationDiffId();
+            this.upgradingDiff = pinned ?? null;
+            if (pinned != null) this.store.pinGenerationDiff(pinned);
+            this.cancelOpenRouteTasks();
+            this.store.clearBindings();
+            if (pinned == null) this.store.fail('Снимок незавершённой подготовки неизвестен. Сохранённый текст доступен; повторите построение.', null);
         }
         this.unsubscribeQueue = this.queue.subscribeChanges(() => {
             this.reconcile();
@@ -193,6 +197,17 @@ export class RouteOrchestrator {
         }
 
         this.store.setSmallPr(false);
+        if (this.upgradingDiff !== null) {
+            const pinned = this.diffOf(this.upgradingDiff);
+            if (pinned === null) { this.store.fail(this.lostDiffMessage(this.upgradingDiff), null); this.upgradingDiff = null; return; }
+            this.upgradingDiff = null;
+            const saved = this.store.current();
+            if (this.store.read().phase === 'filling' && saved?.storyContractVersion === 6) {
+                this.generation = pinned;
+                this.store.upgradeTaskEpoch();
+                this.payload.beginGeneration();
+            } else this.startSkeleton(pinned, this.skeletonLocale());
+        }
 
         // Починка прерванной генерации идёт до автопостановки: фаза `filling` без задач — это
         // рестарт сервера, а не повод строить маршрут заново.
@@ -351,6 +366,10 @@ export class RouteOrchestrator {
             kind: 'accepted',
             onCommitted: () => {
                 const previous = this.store.current();
+                if (skeleton.storyContractVersion === 6 && previous?.diffId === diff.diffId && previous.storyContractVersion !== 6) {
+                    const files = new Map(previous.stops.flatMap((block) => block.guidedFiles ?? []).filter((file) => file.explanation !== null).map((file) => [file.fileId, file]));
+                    for (const block of skeleton.stops) block.guidedFiles = block.guidedFiles?.map((file) => files.get(file.fileId) ?? file);
+                }
                 const snapshotId = randomUUID();
                 this.store.acceptSkeleton({
                     skeleton,
@@ -383,17 +402,22 @@ export class RouteOrchestrator {
         if (snapshot.storyContractVersion === 6) {
             try {
                 const body = allFilesResultSchema.parse(JSON.parse(stripCodeFence(result)));
-                if (body.overview !== undefined) {
-                    refinement = validateArchitectureOverview(JSON.stringify(body.overview), diff);
+                if (body.overview !== undefined || body.update !== undefined) {
+                    const current = { contractVersion: 6, summary: snapshot.summary, evidence: body.update?.summary !== undefined && body.update.evidence === undefined
+                        ? { claims: snapshot.summaryEvidence?.claims.map(({ sources, limitation }) => ({ sources: sources.map(({ fileId: _fileId, ...source }) => source), limitation })) }
+                        : rawEvidence(snapshot.summaryEvidence),
+                        flow: snapshot.flow?.status === 'ready' ? { status: 'ready', diagram: snapshot.flow.diagram } : snapshot.flow,
+                        stops: snapshot.stops.map((block) => ({ id: block.id, title: block.title, paragraph: block.paragraph,
+                            evidence: rawEvidence(block.storyEvidence), nodeIds: block.nodeIds ?? [],
+                            files: block.guidedFiles?.map((file) => file.path) ?? [], relatedFiles: block.relatedFiles?.map((file) => file.path) ?? [] })) };
+                    refinement = validateArchitectureOverview(JSON.stringify(body.overview ?? { ...current, ...body.update }), diff, snapshot.stops);
                     if (!refinement.ok) return { kind: 'rejected', errors: refinement.errors };
-                    const identity = (stops: readonly { guidedFiles?: readonly { path: string }[] | undefined }[]) =>
-                        JSON.stringify(stops.map((stop) => stop.guidedFiles?.map((file) => file.path)));
-                    if (identity(refinement.value.stops) !== identity(snapshot.stops)) return { kind: 'rejected', errors: ['Keep accepted block order and primary file assignments when refining the overview.'] };
+
                 }
             } catch { /* Основной валидатор ниже сообщает ошибки JSON и схемы. */ }
         }
         const locale = snapshotLocale(snapshot);
-        const validation = validateStorySection(result, binding.planIndexes, diff, locale, snapshot.stops, snapshot.storyContractVersion, binding.assignment);
+        const validation = validateStorySection(result, binding.planIndexes, diff, locale, refinement?.ok ? refinement.value.stops : snapshot.stops, snapshot.storyContractVersion, binding.assignment);
         if (!validation.ok) {
             return { kind: 'rejected', errors: validation.errors };
         }
@@ -459,7 +483,7 @@ export class RouteOrchestrator {
     }
 
     private reconcileOnce(): void {
-        if (this.store.generation()?.status === 'cancelled') return;
+        if (this.upgradingDiff !== null || this.store.generation()?.status === 'cancelled') return;
         this.cancelOrphanRouteTasks();
 
         const state = this.store.read();
@@ -652,20 +676,19 @@ export class RouteOrchestrator {
         // Язык — в хранилище, а не в поле: задачу скелета может принять уже следующий процесс.
         this.cancelOpenRouteTasks();
         this.store.clearBindings();
-        this.store.beginSkeleton({ locale, presentation: 'story', version: 6, commit: diff.headCommit });
+        this.store.beginSkeleton({ locale, presentation: 'story', version: 6, commit: diff.headCommit, diffId: diff.diffId });
         // Payload прошлой генерации больше никому не нужен: её задачи только что отменены.
         this.payload.beginGeneration();
         this.startSkeletonTask();
     }
 
     private startSkeletonTask(): void {
-        // Перепостановка после рестарта начинает план заново и берёт активную итерацию: какой
-        // была прежняя, знала привязка её задачи, а её к этому моменту уже нет.
-        const diff = this.generation ?? this.activeDiff;
+        // Перезапуск использует сохранённую цель, даже если active head уже сменился.
+        const pinnedId = this.store.generationDiffId() ?? [...this.store.bindings().values()].find((binding) => binding.kind === 'skeleton')?.diffId;
+        const diff = this.generation ?? (pinnedId == null ? null : this.diffOf(pinnedId));
         if (diff === null) {
-            // Рестарт сервера застал фазу генерации: собирать payload не из чего, и постановка
-            // ждёт диффа — прогрев доведёт её сам, его хвост зовёт сверку заново.
-            this.warmupInBackground();
+            if (pinnedId != null) this.awaitOrAbandonDiff(pinnedId);
+            else this.store.fail('Снимок подготовки неизвестен. Сохранённый текст доступен; повторите построение.', null);
             return;
         }
         this.generation ??= diff;
@@ -677,7 +700,7 @@ export class RouteOrchestrator {
                 diff,
                 meta: this.meta,
                 locale: this.skeletonLocale(),
-                version: this.store.generationTaskEpoch() >= 4 ? 6 : 5,
+                version: 6,
             }),
         );
     }

@@ -246,12 +246,13 @@ export class RouteStore {
     }
 
     /** Новая генерация: старый снапшот остаётся читаемым до приёмки нового плана. */
-    beginSkeleton(generation?: { locale: Locale; presentation: 'legacy' | 'story'; version?: number; commit?: string }): void {
+    beginSkeleton(generation?: { locale: Locale; presentation: 'legacy' | 'story'; version?: number; commit?: string; diffId?: string }): void {
         this.commit({ ...this.state, phase: 'reading', failure: null }, new Map(), generation === undefined ? undefined : () => {
             this.setGenerationLocale(generation.locale);
             this.setGenerationPresentation(generation.presentation);
+            if (generation.diffId !== undefined) this.pinGenerationDiff(generation.diffId);
             this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                .run(generation.version === 6 ? '4' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
+                .run(generation.version === 6 ? '5' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
             if ((generation.version ?? 0) >= 5) this.writeGeneration({ id: randomUUID(), commit: generation.commit ?? null,
                 snapshotId: null, previousSnapshotId: this.state.snapshot?.snapshotId ?? null, status: 'running' });
             else this.db.prepare("DELETE FROM meta WHERE key='preparation_generation'").run();
@@ -262,6 +263,17 @@ export class RouteStore {
     /** Эпоха формата задания; прежний ключ meta сохранён для рестарта незавершённых задач. */
     generationTaskEpoch(): number {
         return Number(this.db.prepare("SELECT value FROM meta WHERE key='generation_story_contract_version'").get()?.value ?? 1);
+    }
+
+    generationDiffId(): string | null {
+        const saved = this.db.prepare("SELECT value FROM meta WHERE key='generation_diff_id'").get()?.value;
+        return typeof saved === 'string' ? saved : null;
+    }
+    pinGenerationDiff(diffId: string): void {
+        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_diff_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(diffId);
+    }
+    upgradeTaskEpoch(): void {
+        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
     }
 
     /**
@@ -325,19 +337,17 @@ export class RouteStore {
         this.commit({ ...this.state, snapshot: { ...snapshot, stops } });
     }
 
-    /** Уточнение обзора сохраняет слоты блоков и уже принятые файлы. */
+    /** Группировка меняется целиком; готовые файлы переносятся по fileId валидатором. */
     refineOverview(overview: AcceptedExplanation): void {
         const snapshot = this.state.snapshot;
         if (snapshot === null) return;
-        const stops = snapshot.stops.map((stop, index) => {
-            const block = overview.stops[index];
-            return block === undefined ? stop : { ...stop, title: block.title, paragraph: block.paragraph,
-                nodeIds: block.nodeIds, storyEvidence: block.storyEvidence, relatedFiles: block.relatedFiles };
-        });
+        const stops = overview.stops.map((block) => reviewProjection({ ...block,
+            status: block.guidedFiles?.every((file) => file.explanation !== null) ? 'ready' : 'queued',
+        }));
         const updated = { ...snapshot, summary: overview.summary, summaryEvidence: overview.summaryEvidence,
-            flow: overview.flow, stops };
+            flow: overview.flow, stops, tourOrder: overview.tourOrder };
         if (updated.contentHash !== null) updated.contentHash = contentHashOf(updated);
-        this.commit({ ...this.state, snapshot: updated });
+        this.commit({ ...this.state, snapshot: updated }, overview.intents);
     }
 
     /** Схема не участвует в готовности файлов и не блокирует основной маршрут. */

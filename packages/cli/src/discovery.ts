@@ -7,8 +7,7 @@ import { githubPrKey, parseGithubPrUrl, serverManifestSchema } from '@sherpa/pro
 
 import { CliError } from './errors.js';
 import { assertValidPrKey, manifestPathFor, sherpaDirFrom, workerIdPathFor } from './paths.js';
-import type { CommandRunner } from './pr-discovery.js';
-import { discoverPrKeyFromCheckout, runArcCommand } from './pr-discovery.js';
+import type { CommandRunner } from './command-runner.js';
 
 /** Всё, что нужно знать CLI, чтобы обратиться к серверу PR. */
 export interface ServerConnection {
@@ -26,9 +25,9 @@ const STATE_DIR_MODE = 0o700;
 export async function connect(
     prKeyArg: string | undefined,
     env: Readonly<Record<string, string | undefined>>,
-    run?: CommandRunner,
+    _run?: CommandRunner,
 ): Promise<ServerConnection> {
-    const prKey = await resolvePrKey(prKeyArg, env, run);
+    const prKey = await resolvePrKey(prKeyArg, env);
     const sherpaDir = sherpaDirFrom(env);
     const workerId = await resolveWorkerId(sherpaDir, prKey, env);
 
@@ -43,9 +42,9 @@ export async function connectAs(
     prKeyArg: string | undefined,
     env: Readonly<Record<string, string | undefined>>,
     workerId: string,
-    run?: CommandRunner,
+    _run?: CommandRunner,
 ): Promise<ServerConnection> {
-    const prKey = await resolvePrKey(prKeyArg, env, run);
+    const prKey = await resolvePrKey(prKeyArg, env);
     return openConnection(sherpaDirFrom(env), prKey, workerId);
 }
 
@@ -55,25 +54,21 @@ async function openConnection(sherpaDir: string, prKey: string, workerId: string
 }
 
 /**
- * Ключ PR: `--pr` → `SHERPA_PR` → PR текущей ветки arc-чекаута (`pr-discovery.ts`).
+ * Ключ сессии: `--pr` → `SHERPA_PR`; каталог запуска не меняет цель.
  * Явные источники старше discovery: сессия могла быть запущена не из того каталога,
  * и молча подменять переданный PR найденным нельзя.
  */
-export async function resolvePrKey(
+export function resolvePrKey(
     prKeyArg: string | undefined,
     env: Readonly<Record<string, string | undefined>>,
-    run: CommandRunner = runArcCommand,
+    _run?: CommandRunner,
 ): Promise<string> {
     const explicit = (prKeyArg ?? env.SHERPA_PR ?? '').trim();
     if (explicit !== '') {
-        return assertValidPrKey(normalizePrKey(explicit));
+        return Promise.resolve().then(() => assertValidPrKey(normalizePrKey(explicit)));
     }
 
-    const discovered = await discoverPrKeyFromCheckout(run);
-    if (discovered.kind === 'found') {
-        return assertValidPrKey(discovered.prKey);
-    }
-    throw new CliError(unclearWhichPr(discovered.hint));
+    return Promise.reject(new CliError('devflow-diff-explain: no target supplied. Reuse the printed `--pr <key>` or set SHERPA_PR.'));
 }
 
 /**
@@ -91,16 +86,6 @@ function normalizePrKey(value: string): string {
     } catch { /* Готовый ключ не является URL. */ }
     const github = parseGithubPrUrl(value);
     return github === null ? value : githubPrKey(github);
-}
-
-/** Провал discovery — не сбой, а вопрос человеку: строка причины и три способа ответить. */
-function unclearWhichPr(hint: string): string {
-    return (
-        'devflow-diff-explain: it is unclear which PR to connect to.\n' +
-        `Tried to detect it from the current directory: ${hint}.\n` +
-        'Run the command through the Devflow Diff Explain skill (it fills the PR in), pass `--pr <pr key>`, ' +
-        'or run it from an arc checkout with the PR branch checked out.'
-    );
 }
 
 /**

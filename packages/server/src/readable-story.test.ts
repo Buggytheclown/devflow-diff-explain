@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { readableStoryFixture } from '@sherpa/fixtures';
 import { readableSectionResultSchema, readableSkeletonResultSchema, routeSnapshotSchema } from '@sherpa/protocol';
-import { validateStorySection, storyGuide } from './story.js';
+import { validateStorySection } from './story.js';
 
 const fixture = readableStoryFixture();
 it('принимает короткие пояснения с необязательными примерами и ограничивает общий объём', () => {
@@ -17,14 +17,6 @@ it('отклоняет выдуманный диапазон примера и �
     expect(validateStorySection(JSON.stringify(body), [1, 2], fixture.diff, 'ru', fixture.snapshot.stops, 4).ok).toBe(false);
     expect(validateStorySection(JSON.stringify({ ...body, contractVersion: 3 }), [1, 2], fixture.diff, 'ru', fixture.snapshot.stops, 4).ok).toBe(false);
 });
-it('промпт сохраняет важные условия и не требует примеров для механических правок', () => {
-    const guide = storyGuide('section', 'ru');
-    expect(guide).toContain('only permits retries');
-    expect(guide).toContain('not imply live integration');
-    expect(guide).toContain('example: null');
-    expect(guide).toContain('one or two short sentences');
-});
-
 it('не смешивает сохранённый внешний контекст с другой ревизией', () => {
     const snapshot = { ...fixture.snapshot, flow: { status: 'ready', diagram: fixture.diagram, contexts: [{ id: 'external', path: 'caller.ts', start: 1, end: 1, text: 'caller()', revision: 'another-head' }] } };
     expect(routeSnapshotSchema.safeParse(snapshot).success).toBe(false);

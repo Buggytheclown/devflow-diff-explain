@@ -31,7 +31,7 @@ import {
     taskResultFileFor,
     taskResultRootFor,
 } from './paths.js';
-import type { CommandRunner } from './pr-discovery.js';
+import type { CommandRunner } from './command-runner.js';
 import type { EnsureServerOptions, EnsureServerResult } from './up.js';
 import { ensureServer, loadServerModule, resolveServerBin } from './up.js';
 import { CLI_VERSION } from './version.js';
@@ -172,6 +172,11 @@ function labelsOf(command: Extract<Command, { kind: 'up' | 'worker-register' }>)
 
 async function workerNext(command: Extract<Command, { kind: 'worker-next' }>, io: CliIo): Promise<number> {
     const connection = await connect(command.prKey, io.env, io.runCommand);
+    return nextForConnection(connection, io);
+}
+
+/** Complete-and-next сохраняет workerId, даже если другая сессия уже перехватила слот. */
+async function nextForConnection(connection: ServerConnection, io: CliIo): Promise<number> {
     const resultDir = await prepareResultDir(io.tmpDir ?? os.tmpdir(), sherpaDirFrom(io.env), connection);
     const response = await awaitTask(connection);
 
@@ -251,6 +256,10 @@ async function taskComplete(command: Extract<Command, { kind: 'task-complete' }>
 
     const connection = await connect(prKey, io.env, io.runCommand);
     const response = await requestComplete(connection, command.taskId, result);
+    if (command.next === true && response.kind !== 'rejected') {
+        io.out(response.message);
+        return nextForConnection(connection, io);
+    }
     io.out(formatCompleteResponse(response, command.taskId, command.file, connection.prKey));
     return 0;
 }

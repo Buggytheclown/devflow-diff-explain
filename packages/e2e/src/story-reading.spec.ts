@@ -140,12 +140,6 @@ test('ошибка источника повторяется локально б
         }
         await route.fulfill({ response, json: result });
     };
-    await page.route('**/api/ui/review/route', legacyResponse);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByText(/Этот рассказ создан без связей/)).toHaveCount(1);
-    await expect(page.locator('.story-source-line')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Фрагменты кода', exact: true }).first().click();
-    await expect(page.locator('.story-source-line')).not.toHaveCount(0);
     const stateResponse = await page.request.get(new URL('/api/ui/state', server.url).href, { headers: sherpaAuth(server) });
     const state = await stateResponse.json() as Record<string, unknown>;
     // Подмена SSE устанавливается до открытия отдельной страницы: навигация
@@ -155,6 +149,8 @@ test('ошибка источника повторяется локально б
         await offline.route('**/api/ui/review/route', legacyResponse);
         await offline.route('**/api/ui/events?*', (route) => route.fulfill({ contentType: 'text/event-stream', body: `event: state\ndata: ${JSON.stringify({ ...state, worker: { kind: 'never' } })}\n\n` }));
         await offline.goto(server.url, { waitUntil: 'domcontentloaded' });
+        await expect(offline.getByText(/Этот рассказ создан без связей/)).toHaveCount(1);
+        await expect(offline.locator('.story-source-line')).toHaveCount(0);
         await expect(offline.getByText('Агент не подключён. Сохранённый рассказ и дифф доступны для чтения.')).toBeVisible();
         await offline.getByRole('button', { name: 'Фрагменты кода', exact: true }).first().click();
         await expect(offline.locator('.story-source-line')).not.toHaveCount(0);

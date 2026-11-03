@@ -1,11 +1,10 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
 import type { FlowState, ExplanationBlock, FileDiff, Locale, PrDiff, PrMeta, RouteStop, StoryEvidenceBlock, UiGenerationCap, SectionAssignment } from '@sherpa/protocol';
 import { generateJsonSchemas } from '@sherpa/protocol';
 
-import { storyGuide } from './story.js';
 import { architectureGuide } from './architecture-story.js';
 import type { EnqueueInput } from './queue.js';
 import { walkPatch } from './route/diff-index.js';
@@ -98,13 +97,13 @@ export class RoutePayloadWriter {
         return {
             type: 'route.skeleton',
             priority: 'background',
-            instructions: context.version === 6 ? 'Explain the PR, draw its architecture and plan its blocks. Follow the guide and result schema.' : 'Read the guide and PR context. Plan a concise coherent explanation. Return JSON matching the attached schema.',
+            instructions: 'Help explain this pinned PR: draw its affected architecture, connect blocks and assign all files. Choose your research; context paths are available selectively. Follow the result schema.\n' + pinnedTarget(context),
             // Своего у скелета нет: и методичка, и дифф — общие пути.
             contextFiles: [
-                this.shared.guide('skeleton-guide', context.version === 6 ? architectureGuide('overview', locale) : storyGuide('skeleton', locale)),
+                this.shared.guide('skeleton-guide', architectureGuide('overview', locale)),
                 prDiff.file,
             ],
-            resultSchemaFile: this.writeSchema(context.version === 6 ? 'architectureOverview' : 'overviewSkeleton'),
+            resultSchemaFile: this.writeSchema('architectureOverview'),
         };
     }
 
@@ -130,18 +129,20 @@ export class RoutePayloadWriter {
     ): EnqueueInput {
         const locale = context.locale;
         const name = `section-${planIndexes.map(pad2).join('-')}${context.assignment === undefined ? '' : `-${randomBytes(4).toString('hex')}`}-plan.md`;
-        const plan = this.writeFile(name, explanationPlanContext(planIndexes, stops, intents, context));
+        const accepted = JSON.stringify({ summary: context.introduction, evidence: context.introductionEvidence, flow: context.flow, blocks: stops }, null, 2);
+        const known = this.writeFile(`accepted-${createHash('sha256').update(accepted).digest('hex').slice(0, 12)}.json`, accepted);
+        const plan = this.writeFile(name, explanationPlanContext(planIndexes, stops, intents, context) + `\nAccepted overview and files (read when useful): ${known}\n`);
         const prDiff = this.prDiff(context);
         return {
             type: 'route.section',
             priority: 'background',
-            instructions: context.version === 6 ? 'Explain all assigned files in accepted block order. Follow the guide and result schema.' : `Write every assigned section (${planIndexes.join(', ')}) as one coherent concise explanation, continuing the introduction without repeating it. Follow the guide and attached result schema.`,
+            instructions: 'Explain the remaining assigned files. Choose your research and publish useful checkpoints; context paths are available selectively. Follow the result schema.\n' + pinnedTarget(context),
             contextFiles: [
-                this.shared.guide('section-guide', context.version === 6 ? architectureGuide('files', locale) : storyGuide('section', locale, context.version === 5 ? 5 : 4)),
+                this.shared.guide('section-guide', architectureGuide('files', locale)),
                 prDiff.file,
                 plan,
             ],
-            resultSchemaFile: this.writeSchema(context.version === 6 ? 'allFiles' : context.version === 5 ? 'progressiveSection' : 'readableSection'),
+            resultSchemaFile: this.writeSchema('allFiles'),
         };
     }
 
@@ -226,7 +227,7 @@ export class RoutePayloadWriter {
     }
 
     /** Схема результата файлом (docs/protocol.md §4): канон — zod, JSON Schema — производная. */
-    private writeSchema(kind: 'architectureOverview' | 'allFiles' | 'overviewSkeleton' | 'readableSkeleton' | 'readableSection' | 'progressiveSection'): string {
+    private writeSchema(kind: 'architectureOverview' | 'allFiles'): string {
         const key = `${kind}Result`;
         const schema = generateJsonSchemas()[key];
         return this.writeFile(`route-${kind}-result.schema.json`, `${JSON.stringify(schema, null, 2)}\n`);
@@ -253,20 +254,14 @@ export function prDiffPayload(context: RoutePayloadContext, budgetBytes: number)
 /** План объяснения не включает триаж, покрытие тестами или поля прежнего ревью. */
 function explanationPlanContext(
     planIndexes: readonly number[], stops: readonly ExplanationBlock[],
-    intents: ReadonlyMap<number, string>, context: RouteTaskContext,
+    _intents: ReadonlyMap<number, string>, context: RouteTaskContext,
 ): string {
     const blocks = stops.filter((stop) => planIndexes.includes(stop.planIndex)).map((stop) => ({
-        planIndex: stop.planIndex, title: stop.title, intent: intents.get(stop.planIndex),
-        files: stop.guidedFiles?.filter((file) => context.assignment === undefined || context.assignment.files.includes(file.path)), relatedFiles: stop.relatedFiles,
-        paragraph: stop.paragraph, nodeIds: stop.nodeIds,
+        id: stop.id, title: stop.title, nodeIds: stop.nodeIds,
+        files: stop.guidedFiles?.filter((file) => context.assignment === undefined || context.assignment.files.includes(file.path)).map((file) => file.path),
     }));
-    return [
-        '## Assignment', JSON.stringify(context.assignment ?? null),
-        '## Accepted blocks and ordered file assignments', JSON.stringify(blocks),
-        '## Already shown introduction', context.introduction ?? '',
-        ...(context.flow === undefined ? [] : ['## Accepted architecture', JSON.stringify(context.flow)]),
-        '## Accepted introduction evidence', JSON.stringify(context.introductionEvidence ?? null), '',
-    ].join('\n\n');
+    return ['## Assignment', JSON.stringify(context.assignment ?? null),
+        '## Accepted blocks and remaining files', JSON.stringify(blocks), ''].join('\n\n');
 }
 
 /**
@@ -527,4 +522,9 @@ function pad2(value: number): string {
 
 function byteLength(text: string): number {
     return Buffer.byteLength(text, 'utf8');
+}
+
+function pinnedTarget({ diff, meta }: RoutePayloadContext): string {
+    return `Pinned target (quoted task data): ${JSON.stringify({ pr: meta?.url ?? null,
+        diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit })}`;
 }

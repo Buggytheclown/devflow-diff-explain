@@ -47,6 +47,7 @@ export type Command =
           readonly prKey: string | undefined;
           readonly taskId: number;
           readonly file: string;
+          readonly next?: boolean;
       }
     | {
           readonly kind: 'task-progress';
@@ -72,7 +73,7 @@ const OPTIONS = [
     '--model',
     '--lang',
 ] as const;
-const FLAGS = ['--no-open'] as const;
+const FLAGS = ['--no-open', '--next'] as const;
 type OptionName = (typeof OPTIONS)[number];
 type FlagName = (typeof FLAGS)[number];
 
@@ -101,11 +102,14 @@ export function parseArgs(argv: readonly string[]): Command {
     const prKey = options.get('--pr');
     const group = positionals[0];
 
-    if (group !== 'up' && flags.size > 0) {
+    if (group !== 'up' && flags.has('--no-open')) {
         throw new CliError('devflow-diff-explain: --no-open is only available for `devflow-diff-explain up`.');
     }
     if (group !== 'up' && (options.has('--local') || options.has('--base'))) {
         throw new CliError('devflow-diff-explain: --local and --base are only available for `devflow-diff-explain up`.');
+    }
+    if (flags.has('--next') && !(group === 'task' && positionals[1] === 'complete')) {
+        throw new CliError('devflow-diff-explain: --next is only available for `task complete`.');
     }
     if (group === 'up') {
         return parseUpCommand(positionals, options, flags, prKey);
@@ -114,7 +118,7 @@ export function parseArgs(argv: readonly string[]): Command {
         return parseWorkerCommand(positionals, options, prKey);
     }
     if (group === 'task') {
-        return parseTaskCommand(positionals, options, prKey);
+        return parseTaskCommand(positionals, options, prKey, flags);
     }
 
     throw new CliError(
@@ -153,7 +157,7 @@ function parseUpCommand(
             `devflow-diff-explain: unexpected arguments after \`up\`: ${positionals.slice(1).join(' ')}.\n` +
                 'Expected `devflow-diff-explain up [--pr <pr key> | --local <path> [--base <ref>]] ' +
                 '[--harness <harness name>] [--model <model name>] [--lang <ru|en>] [--no-open]`; ' +
-                'without `--pr` and `--local` the PR is taken from the arc branch of the current directory.',
+                'without `--pr` and `--local`, review the current local directory.',
         );
     }
 
@@ -247,6 +251,7 @@ function parseTaskCommand(
     positionals: readonly string[],
     options: ReadonlyMap<OptionName, string>,
     prKey: string | undefined,
+    flags: ReadonlySet<FlagName>,
 ): Command {
     const sub = positionals[1];
     if (sub !== 'complete' && sub !== 'progress' && sub !== 'fail') {
@@ -266,7 +271,7 @@ function parseTaskCommand(
 
     switch (sub) {
         case 'complete':
-            return { kind: 'task-complete', prKey, taskId, file: requireOption(options, '--file', sub) };
+            return { kind: 'task-complete', prKey, taskId, file: requireOption(options, '--file', sub), ...(flags.has('--next') ? { next: true } : {}) };
         case 'progress':
             return { kind: 'task-progress', prKey, taskId, text: requireOption(options, '--text', sub) };
         case 'fail':

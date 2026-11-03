@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { localPrKey, resolveLocalTarget } from './local.js';
-import type { CommandOutcome, CommandRunner } from './pr-discovery.js';
+import type { CommandOutcome, CommandRunner } from './command-runner.js';
 
 /**
  * Ключ локального ревью и резолюция каталога. Живой `arc` не зовётся — исполнитель подставляется,

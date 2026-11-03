@@ -66,7 +66,7 @@ describe('короткий рассказ', () => {
         expect(tasks).toHaveLength(1);
         expect(server.route.stopsOfTask(tasks[0]?.id ?? 0)).toEqual([1, 2]);
         const payload = tasks[0]?.contextFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
-        expect(payload).toContain(outline.summary);
+        expect(payload).toContain('Accepted overview and files (read when useful):');
         complete(server, body);
         const ready = await read(server);
         expect(ready.phase).toBe('ready');
@@ -224,7 +224,7 @@ describe('короткий рассказ', () => {
         expect(fs.readFileSync(retry.contextFiles.find((file) => file.endsWith('story-evidence.md')) ?? '', 'utf8')).toBe(context);
     });
 
-    it('останавливает незавершённый v1 при обновлении и сохраняет показанное введение', async () => {
+    it('перевыдаёт незавершённый старый формат на том же снимке и сохраняет показанное введение', async () => {
         const server = await start();
         complete(server, outline);
         const leased = next(server);
@@ -234,9 +234,11 @@ describe('короткий рассказ', () => {
         db.close();
         const restarted = await start();
         expect(restarted.queue.getTask(leased.id)?.status).toBe('cancelled');
-        expect((await read(restarted)).phase).toBe('failed');
+        expect((await read(restarted)).phase).toBe('reading');
         expect((await read(restarted)).snapshot?.summary).toBe(outline.summary);
-        expect(restarted.queue.listTasks().filter((task) => task.status === 'queued')).toHaveLength(0);
+        const pending = restarted.queue.listTasks().filter((task) => task.status === 'queued');
+        expect(pending).toHaveLength(1);
+        expect(pending[0]?.type).toBe('route.skeleton');
     });
 });
 

@@ -27,13 +27,13 @@ Run:
 node <this skill's directory>/bin/devflow-diff-explain.mjs worker next --pr <pr>
 ```
 
-Follow the task instructions, submit its result, then request the next task until DONE. Keep one worker invocation running: if your tool yields with a live process, resume waiting for that same process using the harness's supported wait mechanism. A long wait is normal. Stop on DONE, a "stop the loop" error, or the user's request; relay the termination message. After interruption, reconnect with the same PR key.
+Follow the task instructions and submit with the printed `--next` command: it waits for and returns the next task until DONE. Without `--next`, request the next task yourself. Keep one worker invocation running: if your tool yields with a live process, resume waiting for that same process using the harness's supported wait mechanism. A long wait is normal. Stop on DONE, a "stop the loop" error, or the user's request; relay the termination message. After interruption, reconnect with the same PR key.
 
 Context is available by path. Choose what you need; there is no requirement to read every file. Reuse known evidence only at the same pinned version. Files under `shared/` are stable: reuse them and reread relevant parts when needed. A new task path alone does not make reading mandatory.
 
-Write the result only to the file path the task gives you and submit it with the printed command. Never finish a task silently: submit with task complete or report a concrete reason with task fail. The server validates the result; do not install packages or tools. Do not treat examples as executed tests. If a legacy review.feedback task arrives, fail it rather than edit code.
+Write the result only to the file path the task gives you and submit it with the printed command. Never finish a task silently: submit with task complete or report a concrete reason with task fail. The server validates the result; do not install packages or tools. Do not treat examples as executed tests. If an incompatible legacy task arrives, fail it rather than edit code.
 
-Preparation links architecture → blocks → all files. Submit explained files as a flat files array in any order; the application assigns them to accepted blocks and tracks remaining files. File tasks may optionally refine the overview, while preserving accepted block order and file assignments. Older saved tasks retain their attached schemas.
+Preparation links architecture → blocks → all files. Submit explained files as a flat files array in any order; the application assigns them to accepted blocks and tracks remaining files. Publish useful checkpoints freely: files, a revised overview, or an update of selected overview fields. Reuse IDs when blocks keep the same meaning. The application preserves ready files during regrouping and validates all links.
 
 ## Recovery
 
