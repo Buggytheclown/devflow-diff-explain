@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { architectureStoryFixture } from '@sherpa/fixtures';
-import { preparationProgress, routeSnapshotSchema, UI_ENDPOINTS, uiReviewRouteResponseSchema } from '@sherpa/protocol';
+import { architectureOverviewResultSchema, preparationProgress, routeSnapshotSchema, UI_ENDPOINTS, uiReviewRouteResponseSchema } from '@sherpa/protocol';
 import { architectureGuide, validateArchitectureOverview, validateAllFiles } from './architecture-story.js';
 import { startServer } from './server.js';
 import type { SherpaServer } from './server.js';
@@ -149,6 +149,26 @@ it('файлы по путям: произвольная часть и поря�
     expect(validateAllFiles(JSON.stringify({ ...raw, files: [raw.files[0], raw.files[0]] }), fixture.diff, checked.value.stops).ok).toBe(false);
     expect(validateAllFiles(JSON.stringify({ ...raw, files: [{ ...raw.files[0], path: 'missing.ts' }] }), fixture.diff, checked.value.stops).ok).toBe(false);
     expect(validateAllFiles(JSON.stringify(raw), fixture.diff, checked.value.stops, { files: [], introduction: false }).ok).toBe(false);
+});
+
+it('окружение не требует пустых оговорок, а затронутый узел наследует источники блока', () => {
+    const outline = architectureOverviewResultSchema.parse(fixture.outline);
+    if (outline.flow.status !== 'ready') throw new Error('No diagram');
+    const node = outline.flow.diagram.nodes.find((entry) => entry.change === 'affected'); if (node === undefined) throw new Error('No node');
+    node.sources = []; node.limitation = null;
+    const block = outline.stops.find((entry) => entry.nodeIds.includes(node.id)); if (block === undefined) throw new Error('No block');
+    block.evidence = { claims: [{ sources: [{ kind: 'lines', path: fixture.anchor.path, side: fixture.anchor.side, start: fixture.anchor.start, end: fixture.anchor.start }], limitation: null }] };
+    outline.flow.diagram.mermaid += '\n ambient["External system"]';
+    outline.flow.diagram.nodes.push({ id: 'ambient', label: 'External system', change: 'existing', sources: [], limitation: null });
+    const checked = validateArchitectureOverview(JSON.stringify(outline), fixture.diff);
+    if (!checked.ok) throw new Error(checked.errors.join('\n'));
+    if (checked.value.flow?.status !== 'ready') throw new Error('No diagram');
+    expect(checked.value.flow.diagram.nodes.find((entry) => entry.id === node.id)?.sources.length).toBeGreaterThan(0);
+    const ambient = outline.flow.diagram.nodes.find((entry) => entry.id === 'ambient');
+    if (ambient === undefined) throw new Error('No ambient node');
+    ambient.change = 'unknown';
+    const unknown = validateArchitectureOverview(JSON.stringify(outline), fixture.diff);
+    expect(unknown.ok).toBe(false);
 });
 
 it('произвольная часть файлов после рестарта продолжается без потери и повторной сдачи', async () => {

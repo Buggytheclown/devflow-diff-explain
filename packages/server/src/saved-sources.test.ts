@@ -9,6 +9,7 @@ import { openDatabase } from './db.js';
 import { SavedSources, withSavedSources } from './saved-sources.js';
 import { storyEvidenceResolver } from './story-evidence.js';
 import { chatCodeLinkErrors } from './chat-code-links.js';
+import { diagramSourceErrors } from './diagram-sources.js';
 
 const databases: ReturnType<typeof openDatabase>[] = [];
 afterEach(() => { for (const db of databases.splice(0)) db.close(); });
@@ -46,6 +47,21 @@ it('не подтверждает отсутствующую сторону уд
     const file = diff.files[0]; if (file === undefined) throw new Error('No file');
     await expect(source.capture({ ...diff, files: [{ ...file, changeType: 'delete' }] }, { path: file.path, side: 'new', start: 1, end: 1 })).rejects.toThrow('absent');
     expect(read).not.toHaveBeenCalled();
+});
+
+it('сохранённый диапазон через промежуток ханков подтверждает реальные изменённые строки', async () => {
+    const { source, diff, read } = setup();
+    read.mockResolvedValue(Array.from({ length: 12 }, (_, i) => `line ${String(i + 1)}`).join('\n'));
+    const original = diff.files[0]; if (original === undefined) throw new Error('No file');
+    const file = { ...original, patch: '@@ -1,3 +1,3 @@\n one\n-old\n+new\n three\n@@ -10,3 +10,3 @@\n ten\n eleven\n twelve\n' };
+    const pinned = { ...diff, files: [file] };
+    const graph = { ...architectureStoryFixture().diagram, nodes: [{ id: 'changed', label: 'Changed', change: 'modified' as const,
+        sources: [{ kind: 'patch' as const, path: file.path, side: 'new' as const, start: 2, end: 11 }], limitation: null }], edges: [] };
+    const prepared = JSON.parse(await source.prepare(pinned, JSON.stringify(graph), false)) as typeof graph;
+    expect(withSavedSources(source, () => diagramSourceErrors(prepared, pinned, []))).toEqual([]);
+    expect(diagramSourceErrors(prepared, pinned, [])).not.toEqual([]);
+    const unchanged = { ...graph, nodes: graph.nodes.map((node) => ({ ...node, sources: node.sources.map((item) => ({ ...item, start: 10, end: 12 })) })) };
+    expect(withSavedSources(source, () => diagramSourceErrors(unchanged, pinned, []))).toContain('PR changes need supporting changed patch lines.');
 });
 
 it('HTTP complete сохраняет источник вне патча, перезапуск читает его без агента и сети', async () => {

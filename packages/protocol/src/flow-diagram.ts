@@ -56,7 +56,7 @@ export const architectureDiagramSchema = z.object({
     if (ids.size !== diagram.nodes.length) ctx.addIssue({ code: 'custom', message: 'Use unique architecture node IDs.' });
     for (const node of diagram.nodes) {
         if (!new RegExp(`(^|[^a-zA-Z0-9_-])${node.id}(?=$|[^a-zA-Z0-9_-])`, 'm').test([diagram.mermaid, ...(diagram.views ?? []).map((view) => view.mermaid)].join('\n'))) ctx.addIssue({ code: 'custom', message: `Architecture node ${node.id} is missing from the flowchart.` });
-        if (node.sources.length === 0 && node.limitation === null) ctx.addIssue({ code: 'custom', message: 'Architecture nodes need saved sources or an explicit evidence limitation.' });
+        if (node.change === 'unknown' && node.limitation === null) ctx.addIssue({ code: 'custom', message: `Unknown architecture node ${node.id} needs an explicit evidence limitation.` });
     }
 });
 export type ArchitectureDiagram = z.infer<typeof architectureDiagramSchema>;

@@ -29,13 +29,18 @@ export function validateArchitectureOverview(raw: string, diff: PrDiff, previous
     if (!summary.ok) errors.push(...summary.errors);
     const diagram = value.flow.status === 'ready' ? value.flow.diagram : null;
     if (diagram !== null) {
-        const known = new Set(diagram.nodes.map((node) => node.id));
         for (const block of value.stops) for (const id of block.nodeIds) {
             if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/.test(id)) { errors.push(`Invalid architecture node ID: ${id}.`); continue; }
-            if (known.has(id)) continue;
-            known.add(id);
             const sources = block.evidence.claims.flatMap((claim) => claim.sources.flatMap((source) => source.kind === 'lines'
                 ? [{ kind: 'patch' as const, path: source.path, side: source.side, start: source.start, end: source.end, ...(source.sourceId === undefined ? {} : { sourceId: source.sourceId }) }] : [])).slice(0, 4);
+            const existing = diagram.nodes.find((node) => node.id === id);
+            if (existing !== undefined) {
+                if (existing.change !== 'unknown' && existing.sources.length === 0 && existing.limitation === null) {
+                    existing.sources = sources;
+                    existing.limitation = sources.length > 0 ? null : block.evidence.claims.map((claim) => claim.limitation ?? '').filter(Boolean).join('; ').slice(0, 400) || 'Sources are attached to the related block.';
+                }
+                continue;
+            }
             diagram.nodes.push({ id, label: id, change: 'affected', sources,
                 limitation: sources.length > 0 ? null : block.evidence.claims.map((claim) => claim.limitation ?? '').filter(Boolean).join('; ').slice(0, 400) || 'Sources are attached to the related block.' });
         }

@@ -1,6 +1,7 @@
 import type { FlowDiagram, PrDiff, FlowContext } from '@sherpa/protocol';
 import { sourceEvidence } from './saved-sources.js';
 import { savedPatchIndex } from './saved-patch.js';
+import { walkPatch } from './route/diff-index.js';
 
 /** Проверяем наличие всех строк, а не только попадание концов в разные ханки. */
 export function diagramSourceErrors(diagram: FlowDiagram, diff: PrDiff, contexts: readonly FlowContext[]): string[] {
@@ -15,6 +16,14 @@ export function diagramSourceErrors(diagram: FlowDiagram, diff: PrDiff, contexts
             }
             if (source.sourceId !== undefined) {
                 if (sourceEvidence(diff, source) === null) errors.push(`Unknown pinned source: ${source.sourceId}`);
+                else {
+                    // Сохранённый диапазон может пересекать несколько ханков и промежутки между ними.
+                    const file = index.file(source.path, source.side);
+                    for (const line of walkPatch(file?.patch ?? '')) {
+                        const number = line[source.side];
+                        if (line.changed && number !== null && number >= source.start && number <= source.end) { changed = true; break; }
+                    }
+                }
                 continue;
             }
             const lines = index.range(index.file(source.path, source.side), source);
