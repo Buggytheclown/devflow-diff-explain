@@ -51,15 +51,22 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
                 element.replaceChildren(svg);
                 if (element.querySelectorAll('g.node').length > 120) throw new Error('Too many architecture nodes');
                 const targets = new Map<string, SVGGElement>();
-                const renderedNodes = [...element.querySelectorAll<SVGGElement>('g.node')].map((target) => {
-                    const id = target.getAttribute('data-id') ?? /(?:^|-)flowchart-(.+)-[0-9]+$/.exec(target.id)?.[1];
-                    if (id === undefined) throw new Error('Missing Mermaid node ID');
+                // Mermaid добавляет render ID к DOM-id групп; смысловой ID остаётся из исходной схемы.
+                const groupId = (target: SVGGElement) => target.getAttribute('data-id') ??
+                    (target.id.startsWith(`${id}-`) ? target.id.slice(id.length + 1) : target.id);
+                const groups = [...element.querySelectorAll<SVGGElement>('g.cluster')].filter((target) =>
+                    diagram.nodes.some((node) => node.id === groupId(target)));
+                const renderedNodes = [...element.querySelectorAll<SVGGElement>('g.node'), ...groups].map((target) => {
+                    const group = target.classList.contains('cluster');
+                    const id = target.getAttribute('data-id') ?? (group ? groupId(target) : /(?:^|-)flowchart-(.+)-[0-9]+$/.exec(target.id)?.[1]);
+                    if (id === undefined || id === '') throw new Error('Missing Mermaid node ID');
                     targets.set(id, target);
                     const metadata = diagram.nodes.find((node) => node.id === id);
-                    const label = (target.querySelector('.nodeLabel')?.textContent ?? target.querySelector('text')?.textContent ?? id).trim();
+                    const label = (target.querySelector(group ? '.cluster-label' : '.nodeLabel')?.textContent ?? target.querySelector('text')?.textContent ?? id).trim();
                     return { ...(metadata ?? { id, change: 'existing' as const, sources: [], limitation: null }), label };
                 });
-                if (diagram.nodes.some((node) => !renderedNodes.some((entry) => entry.id === node.id))) throw new Error('Missing annotated diagram node');
+                const missing = diagram.nodes.find((node) => !renderedNodes.some((entry) => entry.id === node.id));
+                if (missing !== undefined) throw new Error(`Missing annotated diagram node: ${missing.id}`);
                 setNodes(renderedNodes);
                 for (const node of renderedNodes) {
                     const target = targets.get(node.id);
@@ -71,14 +78,15 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
                     // Цвет задаётся токенами приложения, а не оформлением, выбранным моделью.
                     paint(target, { opacity: '1' });
                     for (const shape of target.querySelectorAll<SVGElement>('rect, polygon, circle, ellipse, path, line')) {
+                        if (shape.closest('g.node, g.cluster') !== target) continue;
                         paint(shape, { fill: 'var(--architecture-node-fill)', stroke: 'var(--architecture-highlight, var(--architecture-node-stroke))',
                             'stroke-width': 'var(--architecture-highlight-width, 2px)', 'stroke-dasharray': 'var(--architecture-node-dash, none)', 'fill-opacity': '1', 'stroke-opacity': '1' });
                     }
                     target.setAttribute('role', 'button'); target.setAttribute('tabindex', '0');
                     target.setAttribute('aria-label', `${node.label} · ${diagram.nodes.some((entry) => entry.id === node.id) ? t[node.change] : t.context}`);
                     const select = () => { setSelected(node.id); };
-                    target.addEventListener('click', select);
-                    target.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } });
+                    target.addEventListener('click', (event) => { event.stopPropagation(); select(); });
+                    target.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); select(); } });
                     if (node.id === focused) target.focus({ preventScroll: true });
                 }
                 setStatus('ready');

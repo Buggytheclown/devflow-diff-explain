@@ -227,7 +227,7 @@ body:has(.story-app) { min-width: 0; }
 .story-architecture-scroll .architecture-node--added { --architecture-node-fill: var(--ownership-mine-surface); --architecture-node-stroke: var(--success-text); }
 .story-architecture-scroll .architecture-node--affected { --architecture-node-fill: var(--accent-surface); --architecture-node-stroke: var(--accent-text); --architecture-node-dash: 5 3; }
 .story-architecture-scroll .architecture-node--unknown { --architecture-node-dash: 3 4; }
-.story-architecture-scroll .node:is(.is-architecture-active, :focus-visible) { --architecture-highlight: var(--accent-text-bright); --architecture-highlight-width: 4px; }
+.story-architecture-scroll :is(.node, .cluster):is(.is-architecture-active, :focus-visible) { --architecture-highlight: var(--accent-text-bright); --architecture-highlight-width: 4px; }
 .story-architecture-selection { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; border-top: 1px solid var(--border-standard); padding-top: .75rem; }
 .story-architecture-selection p { flex-basis: 100%; margin: 0; }
 .story-flow--affected { border-style: dashed !important; border-color: var(--accent) !important; }

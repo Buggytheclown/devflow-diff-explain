@@ -211,3 +211,27 @@ test('единая сдача с ошибкой одного файла сохр
     await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
     await expect(page.locator('[data-file-path]')).toHaveCount(files.length);
 });
+
+
+test('именованная группа Mermaid связывается с блоком и файлами без искусственного узла', async ({ page, launchSherpa }) => {
+    page.on('console', (message) => { if (message.type() === 'error') process.stdout.write(message.text() + '\n'); });
+    const server = await launchSherpa('fixture-medium'); await page.goto(server.url);
+    await server.worker.register('codex', 'ru');
+    const overview = await server.worker.next();
+    const stops = fixture.outline.stops.map((block, index) => ({ ...block, nodeIds: [index === 0 ? 'pipeline' : 'saved'] }));
+    await server.worker.complete(overview.taskId ?? 0, JSON.stringify({ ...fixture.outline, stops, flow: { status: 'ready', diagram: {
+        title: 'Обработка запроса', mermaid: 'flowchart TB\nsubgraph pipeline["Проверка и сохранение"]\n request["Запрос"] --> rule["Проверка"]\nend\nrule --> saved["Результат"]',
+    } } }));
+    const group = page.locator('.cluster[data-architecture-node="pipeline"]');
+    await expect(group).toHaveCount(1); await expect(group).toHaveAttribute('role', 'button');
+    await group.focus(); await page.keyboard.press('Enter');
+    await expect(page.locator('.story-architecture-selection')).toContainText('Проверка и сохранение');
+    await expect(page.locator('.story-architecture-selection')).toContainText(stops[0]?.title ?? '');
+    await page.locator('[data-architecture-node="request"]').click();
+    await expect(page.locator('.story-architecture-selection strong')).toHaveText('Запрос');
+    const files = await server.worker.next(); await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
+    await expect(page.locator('.story-preparation--ready')).toBeVisible();
+    await group.locator('.cluster-label').click(); await page.locator('.story-architecture-selection button').first().click();
+    await expect(page.locator('.story-code .diff-row').first()).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('architecture-group-linked.png') });
+});
