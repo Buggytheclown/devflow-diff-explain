@@ -313,9 +313,12 @@ describe('запись payload на диск', () => {
         const [guide, pr] = input.contextFiles;
         expect(guide).toMatch(/shared[/\\]guides[/\\]skeleton-guide-[0-9a-f]{8}\.md$/);
         expect(pr?.startsWith(sharedDir)).toBe(true);
-        expect(path.basename(pr ?? '')).toBe('pr-diff.md');
+        expect(path.basename(pr ?? '')).toBe('target.json');
         expect(fs.readFileSync(guide ?? '', 'utf8')).toContain('PR');
-        expect(fs.readFileSync(pr ?? '', 'utf8')).toContain('## Changed files (21, complete list)');
+        const target = JSON.parse(fs.readFileSync(pr ?? '', 'utf8')) as { files: { path: string; savedPatch: string }[]; optionalFullDiff: string };
+        expect(target.files.map((file) => file.path)).toEqual(context().diff.files.map((file) => file.path));
+        for (const file of target.files) expect(fs.existsSync(file.savedPatch)).toBe(true);
+        expect(fs.readFileSync(target.optionalFullDiff, 'utf8')).toContain('## Changed files (21, complete list)');
         expect(input.instructions).toContain('draw its affected architecture');
         expect(input.instructions).toContain(META.url);
         expect(input.instructions).toContain(context().diff.headCommit);
@@ -360,13 +363,13 @@ describe('запись payload на диск', () => {
         expect(first.contextFiles[1]).toBe(skeleton.contextFiles[1]);
         expect(second.contextFiles[1]).toBe(skeleton.contextFiles[1]);
         expect(first.contextFiles[0]).toBe(second.contextFiles[0]);
-        expect(fs.readdirSync(path.dirname(skeleton.contextFiles[1] ?? ''))).toEqual(['patches', 'pr-diff.md', 'saved-patch-index.json']);
+        expect(fs.readdirSync(path.dirname(skeleton.contextFiles[1] ?? ''))).toEqual(['patches', 'pr-diff.md', 'saved-patch-index.json', 'target.json']);
     });
 
     it('контекст на диске урезан по бюджету билдера', () => {
         const input = writer(12_000).skeletonTask(context());
-        const text = fs.readFileSync(input.contextFiles[1] ?? '', 'utf8');
-
+        const target = JSON.parse(fs.readFileSync(input.contextFiles[1] ?? '', 'utf8')) as { optionalFullDiff: string };
+        const text = fs.readFileSync(target.optionalFullDiff, 'utf8');
         expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(12_000);
         expect(text).toContain('patch omitted');
     });

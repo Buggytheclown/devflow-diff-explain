@@ -15,7 +15,7 @@ import {
     uiChatRetryResponseSchema,
     uiStateSchema,
 } from '@sherpa/protocol';
-import { makeFixtureHost, readableStoryFixture } from '@sherpa/fixtures';
+import { makeFixtureHost, architectureStoryFixture } from '@sherpa/fixtures';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { chatPayloadDirOf, databasePathFor, routePayloadDirOf, sharedPayloadDirOf } from './paths.js';
@@ -318,7 +318,7 @@ describe('вопросы об объяснении и коде', () => {
         await server.route.warmup();
         const skeleton = server.queue.listTasks().find((task) => task.type === 'route.skeleton');
         expect(server.queue.next(WORKER)?.task.id).toBe(skeleton?.id);
-        expect(complete(server, skeleton?.id ?? 0, JSON.stringify(readableStoryFixture().outline)).kind).toBe('accepted');
+        expect(complete(server, skeleton?.id ?? 0, JSON.stringify(architectureStoryFixture().outline)).kind).toBe('accepted');
         expect(server.queue.listTasks().some((task) => task.type === 'route.section' && task.status === 'queued')).toBe(
             true,
         );

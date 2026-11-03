@@ -1,28 +1,19 @@
 import fs from 'node:fs/promises';
 
-import { outline, body, codeReference } from './story-support.js';
+import { outline, body, codeReference, savedStory } from './story-support.js';
 import { test, expect, advanceIteration, sherpaAuth } from './sherpa-fixture.js';
 
 test('рассказ → явный вопрос → ответ; старое ревью скрыто, новый пуш не меняет контекст вопроса', async ({ page, launchSherpa }) => {
-    const server = await launchSherpa('fixture-medium');
+    const server = await launchSherpa('fixture-medium', { savedSnapshot: savedStory() });
     const writes: string[] = [];
     page.on('request', (request) => {
         if (request.method() === 'POST' && /publish|draft|resolved|feedback/.test(request.url())) writes.push(request.url());
     });
     await page.goto(server.url);
     expect((await server.worker.register('codex', 'ru')).code).toBe(0);
-    const plan = await server.worker.next();
-    expect(plan.type).toBe('route.skeleton');
-    const submitted = await server.worker.complete(plan.taskId ?? 0, JSON.stringify(outline));
-    expect(submitted.stdout).not.toContain('rejected');
     await expect(page.locator('.story-document')).toContainText(outline.summary);
-    await expect(page.locator('[role=progressbar]')).toBeVisible();
-    await expect(page.locator('.story-document section')).toHaveCount(1);
-    await page.getByRole('button', { name: 'Показать изменение', exact: true }).click();
+    await page.locator('[data-story-section="intro"]').getByRole('button', { name: 'Показать изменение', exact: true }).click();
     await expect(page.locator('.story-source-line')).not.toHaveCount(0);
-    const compose = await server.worker.next();
-    expect(compose.type).toBe('route.section');
-    expect((await server.worker.complete(compose.taskId ?? 0, JSON.stringify(body))).stdout).not.toContain('rejected');
     await expect(page.getByRole('heading', { name: 'Запись до уведомления' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Проверка ошибок' })).toBeVisible();
     await expect(page.locator('.story-document')).not.toContainText('в других остановках');
@@ -39,7 +30,8 @@ test('рассказ → явный вопрос → ответ; старое р
     await expect(page.locator('.chat-message--you')).toContainText('Почему уведомление');
     const question = await server.worker.next();
     expect(question.type).toBe('chat');
-    const contextLine = question.stdout.split('\n').find((line) => line.endsWith('route-context.md'));
+    const contextEntry = question.stdout.split('\n').find((line) => line.includes('route-context.md'));
+    const contextLine = contextEntry === undefined ? undefined : JSON.parse(contextEntry.slice(contextEntry.indexOf('): ') + 3)) as string;
     expect(contextLine).toBeDefined();
     const context = await fs.readFile(contextLine?.trim() ?? '', 'utf8');
     expect(context).toContain(outline.summary);

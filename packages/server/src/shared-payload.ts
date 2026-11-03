@@ -85,6 +85,11 @@ export class SharedPayloadStore {
         this.write(file, content); return file;
     }
 
+    target(key: string, content: string): string {
+        const file = path.join(this.joinBuildDir(key), 'target.json');
+        this.write(file, content); return file;
+    }
+
     /**
      * Срез между итерациями для перегенерации маршрута. Ключ — пара голов итераций,
      * поэтому он не тот, что у диффа PR: каталог присоединяется к текущей сборке, а не начинает

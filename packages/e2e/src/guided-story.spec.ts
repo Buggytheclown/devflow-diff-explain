@@ -1,7 +1,7 @@
-import { guidedStoryFixture } from '@sherpa/fixtures';
+import { architectureStoryFixture } from '@sherpa/fixtures';
 import fs from 'node:fs/promises';
 import { openBlocks, test, expect, sherpaAuth } from './sherpa-fixture.js';
-const fixture = guidedStoryFixture();
+const fixture = architectureStoryFixture();
 test.setTimeout(90_000);
 
 test('описание → блок → полный дифф → файл/строки в чате; порядок, переходы в обычном окне', async ({ page, launchSherpa }) => {
@@ -110,7 +110,7 @@ test('провал и локальный повтор сохраняют пла�
     await page.getByRole('button', { name: 'Повторить пояснение', exact: true }).first().click();
     const retry = await server.worker.next();
     expect(retry.type).toBe('route.section');
-    expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ contractVersion: 3, stops: [fixture.body.stops[0]] }))).stdout).not.toContain('rejected');
+    expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ contractVersion: 6, stops: [fixture.body.stops[0]] }))).stdout).not.toContain('rejected');
     await expect(page.locator('.story-inline-note')).toHaveCount(1);
     await expect(file.locator('header code')).toHaveText(fixture.first.path);
     expect(await file.locator('.diff-row').allTextContents()).toEqual(before);

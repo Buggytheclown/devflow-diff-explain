@@ -122,16 +122,16 @@ export type RouteStopChange = z.infer<typeof routeStopChangeSchema>;
 /** Объяснение привязано к сохранённому файлу; все его ханки показывает UI. */
 export const guidedAnnotationSchema = z.object({
     side: z.enum(['old', 'new']), start: z.number().int().positive(), end: z.number().int().positive(),
-    text: z.string().trim().min(1).max(840),
-}).strict().refine((note) => note.end >= note.start && note.end - note.start < 40, 'Use an ordered range of at most 40 lines.');
-export const readableExampleSchema = z.object({ text: z.string().trim().min(1).max(260), evidence: storyEvidenceBlockSchema }).strict();
-export const rawReadableExampleSchema = z.object({ text: z.string().trim().min(1).max(260), evidence: rawStoryEvidenceBlockSchema }).strict();
+    text: z.string().trim().min(1),
+}).strict().refine((note) => note.end >= note.start, 'Use an ordered line range.');
+export const readableExampleSchema = z.object({ text: z.string().trim().min(1), evidence: storyEvidenceBlockSchema }).strict();
+export const rawReadableExampleSchema = z.object({ text: z.string().trim().min(1), evidence: rawStoryEvidenceBlockSchema }).strict();
 export type ReadableExample = z.infer<typeof readableExampleSchema>;
 export const guidedFileSchema = z.object({
     fileId: hostIdSchema, path: relativeCodePathSchema,
     explanation: z.string().min(1).nullable(),
     example: readableExampleSchema.nullable().optional(),
-    annotations: z.array(guidedAnnotationSchema).max(12),
+    annotations: z.array(guidedAnnotationSchema),
     status: z.enum(['queued', 'filling', 'ready', 'failed']).optional(),
     failure: z.string().nullable().optional(),
 });
@@ -381,7 +381,7 @@ export const guidedSectionResultSchema = z.object({
         planIndex: z.number().int().positive(), paragraph: z.string().min(1).max(840), evidence: rawStoryEvidenceBlockSchema,
         files: z.array(z.object({
             path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(840),
-            annotations: z.array(guidedAnnotationSchema).max(12),
+            annotations: z.array(guidedAnnotationSchema),
         }).strict()).min(1),
     }).strict()).min(1).max(20),
 }).strict();
@@ -394,7 +394,7 @@ export const readableSkeletonResultSchema = z.object({
 export const readableSectionResultSchema = z.object({ contractVersion: z.literal(4), stops: z.array(z.object({
     planIndex: z.number().int().positive(), paragraph: z.string().trim().min(1).max(400), evidence: rawStoryEvidenceBlockSchema,
     example: rawReadableExampleSchema.nullable(),
-    files: z.array(z.object({ path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(360), example: rawReadableExampleSchema.nullable(), annotations: z.array(guidedAnnotationSchema).max(12) }).strict()
+    files: z.array(z.object({ path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(360), example: rawReadableExampleSchema.nullable(), annotations: z.array(guidedAnnotationSchema) }).strict()
         .refine((file) => file.explanation.length + (file.example?.text.length ?? 0) <= 620, 'Keep the file introduction and example within 620 characters.')).min(1),
 }).strict().refine((stop) => stop.paragraph.length + (stop.example?.text.length ?? 0) <= 620, 'Keep the block introduction and example within 620 characters.')).min(1).max(20) }).strict();
 
@@ -412,7 +412,7 @@ export const progressiveSectionResultSchema = z.object({
         evidence: rawStoryEvidenceBlockSchema.nullable(), example: rawReadableExampleSchema.nullable(),
         files: z.array(z.object({
             path: relativeCodePathSchema, explanation: z.string().trim().min(1).max(360),
-            example: rawReadableExampleSchema.nullable(), annotations: z.array(guidedAnnotationSchema).max(12),
+            example: rawReadableExampleSchema.nullable(), annotations: z.array(guidedAnnotationSchema),
         }).strict().refine((file) => file.explanation.length + (file.example?.text.length ?? 0) <= 620, 'Keep the file introduction and example within 620 characters.')).min(1).max(3),
     }).strict().refine((stop) => (stop.paragraph === null) === (stop.evidence === null) &&
         (stop.paragraph !== null || stop.example === null), 'Introduction and its evidence must be both present or both null.')
@@ -438,11 +438,15 @@ export const architectureOverviewResultSchema = z.object({
 /** Агент сдаёт файлы по путям; приложение распределяет их по принятым блокам. */
 const explainedFileResultSchema = z.object({
     path: relativeCodePathSchema, explanation: z.string().trim().min(1),
-    example: rawReadableExampleSchema.nullable().optional(), annotations: z.array(guidedAnnotationSchema).max(12).default([]),
+    example: rawReadableExampleSchema.nullable().optional(), annotations: z.array(guidedAnnotationSchema).optional(),
 }).strict();
 /** Обновляются предметные поля целиком; связанные блоки и граф проверяются вместе. */
-export const overviewUpdateSchema = architectureOverviewResultSchema.omit({ contractVersion: true }).partial()
-    .refine((value) => Object.keys(value).length > 0, 'Provide at least one overview field.');
+const blockUpdateSchema = architectureOverviewResultSchema.shape.stops.element.partial().required({ id: true });
+export const overviewUpdateSchema = architectureOverviewResultSchema.omit({ contractVersion: true }).partial().extend({
+    blocks: z.array(blockUpdateSchema).min(1).optional(),
+    removeBlocks: z.array(z.string().min(1)).min(1).optional(),
+    blockOrder: z.array(z.string().min(1)).min(1).optional(),
+}).refine((value) => Object.keys(value).length > 0, 'Provide at least one overview field.');
 export const allFilesResultSchema = z.object({
     contractVersion: z.literal(6), overview: architectureOverviewResultSchema.optional(),
     update: overviewUpdateSchema.optional(), files: z.array(explainedFileResultSchema).optional(),
@@ -458,7 +462,11 @@ export const architectureOverviewWorkerResultSchema = architectureOverviewResult
 });
 export const allFilesWorkerResultSchema = z.object({
     contractVersion: z.literal(6), overview: architectureOverviewWorkerResultSchema.optional(),
-    update: architectureOverviewWorkerResultSchema.omit({ contractVersion: true }).partial().optional(),
+    update: architectureOverviewWorkerResultSchema.omit({ contractVersion: true }).partial().extend({
+        blocks: z.array(architectureOverviewWorkerResultSchema.shape.stops.element.partial().required({ id: true })).min(1).optional(),
+        removeBlocks: z.array(z.string().min(1)).min(1).optional(),
+        blockOrder: z.array(z.string().min(1)).min(1).optional(),
+    }).optional(),
     files: z.array(explainedFileResultSchema.extend({
         example: z.object({ text: z.string().trim().min(1), evidence: evidenceSourcesSchema }).strict().nullable().optional(),
     })).optional(),

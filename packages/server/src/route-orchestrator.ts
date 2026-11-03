@@ -1,6 +1,3 @@
-import { rawEvidence } from './story-evidence.js';
-import { stripCodeFence } from './route/raw-result.js';
-import { allFilesResultSchema } from '@sherpa/protocol';
 import { validateArchitectureOverview } from './architecture-story.js';
 import { randomUUID } from 'node:crypto';
 import { FlowCoordinator } from './flow-coordinator.js';
@@ -20,7 +17,7 @@ import type {
     SectionAssignment,
 } from '@sherpa/protocol';
 
-import { validateStorySkeleton, validateStorySection } from './story.js';
+import { validateArchitectureCheckpoint } from './architecture-checkpoint.js';
 import { RpcFailure } from './errors.js';
 import { resolveGenerationLocale } from './generation-locale.js';
 import type { IterationStore } from './iteration-store.js';
@@ -111,7 +108,7 @@ export class RouteOrchestrator {
     private reconcileAgain = false;
 
     constructor(options: RouteOrchestratorOptions) {
-        this.flow = new FlowCoordinator({ store: options.store, queue: options.queue, host: options.host, dir: `${options.payloadDir}-flow`, shared: options.shared, loadDiff: (id) => this.ensureDiff(id) });
+        this.flow = new FlowCoordinator({ store: options.store, queue: options.queue, dir: `${options.payloadDir}-flow`, shared: options.shared, loadDiff: (id) => this.ensureDiff(id) });
         this.store = options.store;
         this.queue = options.queue;
         this.registry = options.registry;
@@ -126,7 +123,7 @@ export class RouteOrchestrator {
     start(): void {
         this.flow.start();
         const state = this.store.read();
-        if (this.store.generationTaskEpoch() !== 5 && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
+        if (this.store.generationTaskEpoch() !== 6 && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
             const binding = [...this.store.bindings().values()].find((entry) => entry.diffId !== null);
             const pinned = state.phase === 'filling' ? state.snapshot?.diffId : binding?.diffId ?? this.store.generationDiffId();
             this.upgradingDiff = pinned ?? null;
@@ -276,7 +273,11 @@ export class RouteOrchestrator {
         }
         // Дозаполняется маршрут своей итерации: активная могла уехать вперёд, но резолвить
         // якоря против её диффа нельзя.
-        await this.ensureDiff(state.snapshot.diffId);
+        const pinned = await this.ensureDiff(state.snapshot.diffId);
+        if (state.snapshot.storyContractVersion !== 6) {
+            this.startSkeleton(pinned, snapshotLocale(state.snapshot));
+            return 'started';
+        }
 
         // Прогресс не чистим: незаполненный стоп нельзя отметить в UI, отметки остальных живут.
         this.store.beginStopFill(planIndex);
@@ -293,11 +294,16 @@ export class RouteOrchestrator {
             : 'Could not display the architecture diagram. The description, blocks and diff remain available.' });
     }
 
-    retryDiagram(snapshotId: string): void {
+    async retryDiagram(snapshotId: string): Promise<void> {
         const snapshot = this.store.current();
         if (snapshot?.snapshotId !== snapshotId) throw new RpcFailure('bad_request', 'Этот разбор уже сменился. Откройте текущий результат.');
         if (this.store.read().phase === 'reading') throw new RpcFailure('bad_request', 'Сейчас готовится новый разбор. Дождитесь описания.');
         if (snapshot.flow?.status !== 'unavailable' && !(snapshot.storyContractVersion === 6 && snapshot.flow?.status === 'ready')) return;
+        if (snapshot.storyContractVersion !== 6) {
+            const diff = await this.ensureDiff(snapshot.diffId);
+            this.startSkeleton(diff, snapshotLocale(snapshot));
+            return;
+        }
         this.store.setGenerationStatus('running');
         this.store.setFlow(snapshotId, { status: 'pending', taskId: null, round: 0, requests: [], contexts: [], missing: [] });
     }
@@ -324,6 +330,10 @@ export class RouteOrchestrator {
      */
     stopsOfTask(taskId: number): number[] | null {
         return this.store.bindings().get(taskId)?.planIndexes ?? null;
+    }
+
+    diffIdForTask(taskId: number): string | null {
+        return this.store.bindings().get(taskId)?.diffId ?? this.flow.diffIdForTask(taskId);
     }
 
     /**
@@ -355,7 +365,7 @@ export class RouteOrchestrator {
         }
 
         const locale = this.skeletonLocale();
-        const validation = validateStorySkeleton(result, diff, locale);
+        const validation = validateArchitectureOverview(result, diff);
         if (!validation.ok) {
             return { kind: 'rejected', errors: validation.errors };
         }
@@ -398,40 +408,14 @@ export class RouteOrchestrator {
             return this.deferUntilDiff();
         }
 
-        let refinement: ReturnType<typeof validateArchitectureOverview> | undefined;
-        if (snapshot.storyContractVersion === 6) {
-            try {
-                const body = allFilesResultSchema.parse(JSON.parse(stripCodeFence(result)));
-                if (body.overview !== undefined || body.update !== undefined) {
-                    const current = { contractVersion: 6, summary: snapshot.summary, evidence: body.update?.summary !== undefined && body.update.evidence === undefined
-                        ? { claims: snapshot.summaryEvidence?.claims.map(({ sources, limitation }) => ({ sources: sources.map(({ fileId: _fileId, ...source }) => source), limitation })) }
-                        : rawEvidence(snapshot.summaryEvidence),
-                        flow: snapshot.flow?.status === 'ready' ? { status: 'ready', diagram: snapshot.flow.diagram } : snapshot.flow,
-                        stops: snapshot.stops.map((block) => ({ id: block.id, title: block.title, paragraph: block.paragraph,
-                            evidence: rawEvidence(block.storyEvidence), nodeIds: block.nodeIds ?? [],
-                            files: block.guidedFiles?.map((file) => file.path) ?? [], relatedFiles: block.relatedFiles?.map((file) => file.path) ?? [] })) };
-                    refinement = validateArchitectureOverview(JSON.stringify(body.overview ?? { ...current, ...body.update }), diff, snapshot.stops);
-                    if (!refinement.ok) return { kind: 'rejected', errors: refinement.errors };
-
-                }
-            } catch { /* Основной валидатор ниже сообщает ошибки JSON и схемы. */ }
-        }
         const locale = snapshotLocale(snapshot);
-        const validation = validateStorySection(result, binding.planIndexes, diff, locale, refinement?.ok ? refinement.value.stops : snapshot.stops, snapshot.storyContractVersion, binding.assignment);
-        if (!validation.ok) {
-            return { kind: 'rejected', errors: validation.errors };
-        }
-
-        const fillings = validation.value;
+        const checked = validateArchitectureCheckpoint(result, snapshot, diff, binding.assignment, this.store.flowBeforeRetry(snapshot.snapshotId));
+        if (!checked.ok) return { kind: 'rejected', errors: checked.errors };
         const provenance = provenanceOf(this.registry.status(), locale);
-        return {
-            kind: 'accepted',
-            onCommitted: () => {
-                if (refinement?.ok) this.store.refineOverview(refinement.value);
-                this.store.applyFillings(fillings, provenance);
-                this.reconcile();
-            },
-        };
+        return { kind: 'accepted', onCommitted: () => {
+            this.store.applyCheckpoint(checked.value.overview, checked.value.files, provenance);
+            this.reconcile();
+        } };
     }
 
     /**
@@ -497,99 +481,13 @@ export class RouteOrchestrator {
         }
 
         const snapshot = state.snapshot;
-        if (snapshot.storyContractVersion === 6) {
-            this.reconcileAllFiles(snapshot);
+        if (snapshot.storyContractVersion !== 6) {
+            const diff = this.diffOf(snapshot.diffId);
+            if (diff === null) this.awaitOrAbandonDiff(snapshot.diffId);
+            else this.startSkeleton(diff, snapshotLocale(snapshot));
             return;
         }
-        if (snapshot.storyContractVersion === 5) {
-            this.reconcileFiles(snapshot);
-            return;
-        }
-        const strings = routeStrings(snapshotLocale(snapshot));
-        const tasks = this.routeTasks();
-        const sectionOf = new Map<number, TaskRecord>();
-        for (const { record, binding } of tasks) {
-            if (binding.kind !== 'section') {
-                continue;
-            }
-            for (const planIndex of binding.planIndexes) {
-                sectionOf.set(planIndex, record);
-            }
-        }
-
-        const updates = new Map<number, RouteStopStatusUpdate>();
-        const pending: number[] = [];
-        for (const stop of snapshot.stops) {
-            if (stop.tier === 'other' || stop.status === 'ready' || stop.status === 'failed') {
-                continue;
-            }
-
-            const task = sectionOf.get(stop.planIndex);
-            if (task === undefined) {
-                pending.push(stop.planIndex);
-                updates.set(stop.planIndex, { status: 'queued' });
-                continue;
-            }
-            updates.set(stop.planIndex, stopStatusOf(task, strings));
-        }
-        this.store.setStopStatuses(updates);
-
-        if (pending.length > 0) {
-            this.enqueueSections(pending);
-            return;
-        }
-        // Незакрытых секционных задач не осталось — снапшот можно замораживать
-        // (провал отдельной секции фазу не роняет, стоп остаётся с `status: 'failed'`).
-        const stops = this.store.read().snapshot?.stops ?? [];
-        if (!stops.some((stop) => stop.status === 'queued' || stop.status === 'filling')) {
-            if (snapshot.presentation === 'story' && stops.some((stop) => stop.status === 'failed')) {
-                this.store.fail('Рассказ не завершён. Повторите построение.', null);
-            } else {
-                this.store.markReady();
-            }
-        }
-    }
-
-    private reconcileFiles(snapshot: RouteSnapshot): void {
-        // Обзор со схемой завершается раньше подробностей. Отказ схемы не блокирует файлы.
-        if (snapshot.flow === undefined || snapshot.flow.status === 'pending') return;
-        const assignments = new Map<string, TaskRecord>();
-        for (const { record, binding } of this.routeTasks()) {
-            for (const file of binding.assignment?.files ?? []) assignments.set(file, record);
-        }
-        const updates = new Map<string, RouteStopStatusUpdate>();
-        const pending = new Map<number, string[]>();
-        const strings = routeStrings(snapshotLocale(snapshot));
-        for (const block of snapshot.stops) {
-            for (const file of block.guidedFiles ?? []) {
-                if (file.explanation !== null) continue;
-                const task = assignments.get(file.path);
-                if (task === undefined) {
-                    const paths = pending.get(block.planIndex) ?? [];
-                    paths.push(file.path); pending.set(block.planIndex, paths);
-                    updates.set(file.fileId, { status: 'queued' });
-                } else updates.set(file.fileId, stopStatusOf(task, strings));
-            }
-        }
-        this.store.setFileStatuses(updates);
-        const diff = this.diffOf(snapshot.diffId);
-        if (diff === null) { this.awaitOrAbandonDiff(snapshot.diffId); return; }
-        for (const block of snapshot.stops) {
-            const paths = pending.get(block.planIndex) ?? [];
-            for (let offset = 0; offset < paths.length; offset += 3) {
-                const assignment = { files: paths.slice(offset, offset + 3), introduction: block.paragraph === null && offset === 0 };
-                const input = this.payload.sectionTask({ diff, meta: this.meta, locale: snapshotLocale(snapshot), version: 5,
-                    introduction: snapshot.summary, introductionEvidence: snapshot.summaryEvidence, assignment },
-                    [block.planIndex], snapshot.stops, this.store.stopIntents());
-                this.enqueueRouteTask('section', snapshot.diffId, [block.planIndex], input, assignment);
-            }
-        }
-        const current = this.store.current();
-        const remaining = current?.stops.flatMap((block) => block.guidedFiles ?? []) ?? [];
-        if (pending.size === 0 && !remaining.some((file) => file.status === 'queued' || file.status === 'filling')) {
-            if (current?.stops.every((block) => block.status === 'ready')) this.store.markReady();
-            else this.store.fail('Часть пояснений не готова. Повторите незавершённый блок.', null);
-        }
+        this.reconcileAllFiles(snapshot);
     }
 
     /** Один проход по всем блокам; неполный результат продолжает тот же список оставшихся файлов. */
@@ -703,34 +601,6 @@ export class RouteOrchestrator {
                 version: 6,
             }),
         );
-    }
-
-    /** Все назначенные блоки пишутся одной задачей в порядке объяснения. */
-    private enqueueSections(planIndexes: readonly number[]): void {
-        const snapshot = this.store.read().snapshot;
-        if (snapshot === null) {
-            return;
-        }
-        const diff = this.diffOf(snapshot.diffId);
-        if (diff === null) {
-            this.awaitOrAbandonDiff(snapshot.diffId);
-            return;
-        }
-
-        const intents = this.store.stopIntents();
-        const context = {
-            diff,
-            meta: this.meta,
-            // Секции продолжают скелет: их язык — язык снапшота, а не текущий выбор вкладки.
-            locale: snapshotLocale(snapshot),
-            introduction: snapshot.summary,
-            introductionEvidence: snapshot.summaryEvidence,
-        };
-        const ordered = [...planIndexes].sort((left, right) => left - right);
-        if (ordered.length > 0) {
-            const input = this.payload.sectionTask(context, ordered, snapshot.stops, intents);
-            this.enqueueRouteTask('section', snapshot.diffId, ordered, input);
-        }
     }
 
     /**

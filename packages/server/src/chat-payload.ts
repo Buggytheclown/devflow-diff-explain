@@ -21,7 +21,7 @@ import { chatGuide, chatInstructions } from './chat-prompts.js';
 import type { PayloadFileSpec } from './payload-budget.js';
 import { byteLength, fitPayloadFiles, fitText, truncateUtf8, unavailableBlock } from './payload-budget.js';
 import type { EnqueueInput } from './queue.js';
-import { CONTEXT_BUDGET_BYTES, prDiffContext } from './route-payload.js';
+import { CONTEXT_BUDGET_BYTES, materializeReviewTarget, prDiffContext } from './route-payload.js';
 import type { PatchLine } from './route/diff-index.js';
 import { walkPatch } from './route/diff-index.js';
 import type { FileSide, SharedPayloadStore } from './shared-payload.js';
@@ -69,7 +69,7 @@ export interface ChatPayloadFile {
 /** Неизменный контекст вопроса: пишется по стабильному пути под `shared/`, а не копией на задачу. */
 export type SharedChatContext =
     | { readonly kind: 'guide'; readonly name: string; readonly content: string }
-    | { readonly kind: 'pr-diff'; readonly diffKey: string; readonly content: string }
+    | { readonly kind: 'pr-target'; readonly diff: PrDiff; readonly meta: PrMeta | null; readonly budgetBytes: number }
     | {
           readonly kind: 'file';
           readonly diffKey: string;
@@ -170,7 +170,7 @@ function contextPurpose(name: string): string {
     if (name.startsWith('attached-file-patch-')) return 'Explicitly attached file patch';
     switch (name) {
         case 'question.md': return 'Full reviewer question and scope';
-        case 'pr-diff.md': return 'Saved PR diff; search by file or symbol as needed';
+        case 'target.json': return 'Pinned PR and changed-file map; read individual patches as needed';
         case 'selection.patch.md': return 'Selected lines with exact old/new line numbers';
         case 'reading-file.patch.md': return 'Saved patch of the referenced file';
         case 'file-context.md': return 'Surrounding code for the selected lines';
@@ -185,8 +185,8 @@ function writeShared(store: SharedPayloadStore, entry: SharedChatContext): strin
     switch (entry.kind) {
         case 'guide':
             return store.guide(entry.name, entry.content);
-        case 'pr-diff':
-            return store.prDiff(entry.diffKey, entry.content);
+        case 'pr-target':
+            return materializeReviewTarget(store, { diff: entry.diff, meta: entry.meta }, entry.budgetBytes).target;
         case 'file':
             return store.fileSide(entry.diffKey, entry.fileId, entry.side, entry.content);
     }
@@ -199,9 +199,7 @@ function sharedPrDiff(context: ChatPayloadContext, budgetBytes: number): SharedC
         return null;
     }
     return {
-        kind: 'pr-diff',
-        diffKey: diffKeyOf(diff),
-        content: prDiffContext({ diff, meta: context.pr }, budgetBytes),
+        kind: 'pr-target', diff, meta: context.pr, budgetBytes,
     };
 }
 

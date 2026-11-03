@@ -57,6 +57,9 @@ importers:
       '@sherpa/fixtures':
         specifier: workspace:*
         version: link:../fixtures
+      '@sherpa/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/fixtures:
     dependencies:

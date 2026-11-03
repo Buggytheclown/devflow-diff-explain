@@ -1,4 +1,4 @@
-import { makeFixtureHost, readableStoryFixture } from '@sherpa/fixtures';
+import { makeFixtureHost, architectureStoryFixture } from '@sherpa/fixtures';
 import { UI_ENDPOINTS } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startServer } from './server.js';
@@ -31,7 +31,7 @@ describe('сервер объяснения подключает только н
     it('ответ по строкам сохраняется в exchange без второй скрытой заметки', async () => {
         server.workerRegistry.register('test', 'codex', 'test');
         await server.route.warmup();
-        const fixture = readableStoryFixture();
+        const fixture = architectureStoryFixture();
         let next = server.queue.next('test'); if (next === null) throw new Error('No plan');
         expect(server.queue.complete('test', next.task.id, JSON.stringify(fixture.outline)).kind).toBe('accepted');
         next = server.queue.next('test'); if (next === null) throw new Error('No body');

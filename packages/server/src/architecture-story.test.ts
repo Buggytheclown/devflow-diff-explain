@@ -79,7 +79,7 @@ it('ошибка отрисовки отражается в прогрессе, 
     const saved = (await read(server)).snapshot; if (saved === null) throw new Error('No snapshot');
     server.route.reportDiagramFailure(saved.snapshotId);
     expect(preparationProgress((await read(server))).status).toBe('partial');
-    server.route.retryDiagram(saved.snapshotId); server.route.retryDiagram(saved.snapshotId);
+    await server.route.retryDiagram(saved.snapshotId); await server.route.retryDiagram(saved.snapshotId);
     await complete(server, { flow: fixture.outline.flow }, 'route.diagram');
     expect((await read(server)).snapshot?.stops).toEqual(saved.stops);
     expect(preparationProgress((await read(server))).percent).toBe(100);
@@ -237,7 +237,7 @@ it('обновление задания отзывает старую аренд
     expect(restarted.queue.getTask(old.id)?.status).toBe('cancelled');
     expect(restarted.queue.complete('old-worker', old.id, 'Late result').kind).toBe('noop');
     const task = await next(restarted);
-    const context = task.contextFiles.find((file) => file.endsWith('pr-diff.md'));
+    const context = task.contextFiles.find((file) => file.endsWith('target.json'));
     const fs = await import('node:fs');
     expect(fs.readFileSync(context ?? '', 'utf8')).toContain(legacy.diff.headCommit);
     expect(restarted.queue.complete('worker', task.id, JSON.stringify(fixture.outline)).kind).toBe('accepted');
@@ -259,4 +259,30 @@ it('новая схема для модели содержит прямые ис
     const result = validateArchitectureOverview(JSON.stringify({ ...fixture.outline, evidence: { sources: [], limitation: 'Synthetic fixture.' },
         stops: fixture.outline.stops.map((block) => ({ ...block, evidence: { sources: [], limitation: 'Synthetic fixture.' } })) }), fixture.diff);
     expect(result.ok).toBe(true);
+});
+
+it('повтор старого готового рассказа строит v6 на прежнем diff и переносит все принятые файлы', async () => {
+    const { server, dir } = await start(); await server.close();
+    const { openDatabase } = await import('./db.js'); const { databasePathFor } = await import('./paths.js');
+    const { RouteStore } = await import('./route-store.js'); const { TaskQueue } = await import('./queue.js');
+    const { validateStorySkeleton } = await import('./story.js'); const { overviewStoryFixture } = await import('@sherpa/fixtures');
+    const legacy = overviewStoryFixture(); const db = openDatabase(databasePathFor(dir, 'fixture-medium'));
+    const store = new RouteStore({ db }); const queue = new TaskQueue({ db });
+    for (const task of queue.listTasks()) queue.cancel(task.id); store.clearBindings();
+    db.prepare("DELETE FROM meta WHERE key IN ('generation_presentation','generation_story_contract_version','preparation_generation')").run();
+    const parsed = validateStorySkeleton(JSON.stringify(legacy.outline), legacy.diff, 'ru'); if (!parsed.ok) throw new Error(parsed.errors.join('\n'));
+    store.acceptSkeleton({ skeleton: { ...parsed.value, stops: legacy.snapshot.stops, flow: { status: 'unavailable' as const, reason: 'Старая схема.' } },
+        diff: legacy.diff, snapshotId: 'legacy-ready', previousSnapshotId: null, presentation: 'story', provenance: { harness: 'test', model: 'old', locale: 'ru' } });
+    store.markReady(); store.close(); db.close();
+    const restarted = (await start(dir)).server;
+    expect((await read(restarted)).snapshot?.snapshotId).toBe('legacy-ready');
+    expect(restarted.queue.listTasks().filter((task) => task.status === 'queued')).toHaveLength(0);
+    await restarted.route.retryDiagram('legacy-ready');
+    await complete(restarted, fixture.outline, 'route.skeleton');
+    const after = (await read(restarted)).snapshot;
+    expect(after?.storyContractVersion).toBe(6); expect(after?.diffId).toBe(legacy.diff.diffId);
+    const normalized = (files: NonNullable<typeof after>['stops'][number]['guidedFiles']) => files?.map(({ status: _status, failure: _failure, ...file }) => file);
+    expect(normalized(after?.stops.flatMap((block) => block.guidedFiles ?? []))).toEqual(normalized(legacy.snapshot.stops.flatMap((block) => block.guidedFiles ?? [])));
+    expect((await read(restarted)).phase).toBe('ready');
+    expect(restarted.queue.listTasks().filter((task) => task.status === 'queued')).toHaveLength(0);
 });

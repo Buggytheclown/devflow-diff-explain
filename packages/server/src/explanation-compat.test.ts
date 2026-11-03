@@ -1,4 +1,4 @@
-import { makeFixtureHost, readableStoryFixture } from '@sherpa/fixtures';
+import { makeFixtureHost, architectureStoryFixture, readableStoryFixture } from '@sherpa/fixtures';
 import { routeSnapshotSchema, explanationSnapshotSchema } from '@sherpa/protocol';
 import type { ReviewSource } from '@sherpa/protocol';
 import { DatabaseSync } from 'node:sqlite';
@@ -28,7 +28,8 @@ it('генерация и хранение не несут поля ревью; 
     expect(contentHashOf(anotherAuthor)).toBe(contentHashOf(fixture.snapshot));
 });
 
-it('источник только для чтения строит v4; после рестарта можно повторить один упавший блок', async () => {
+it('источник только для чтения строит текущий v6; после рестарта можно повторить один упавший блок', async () => {
+    const fixture = architectureStoryFixture();
     const dir = await makeTempSherpaDir();
     const full = makeFixtureHost('medium');
     // Методов комментариев, публикации и тредов здесь нет даже на объекте во время выполнения.

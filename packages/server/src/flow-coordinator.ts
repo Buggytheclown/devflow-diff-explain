@@ -1,31 +1,26 @@
-import { stripCodeFence } from './route/raw-result.js';
-import { z } from 'zod';
-import { architectureOverviewResultSchema } from '@sherpa/protocol';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { FlowState, PrDiff, ReviewSource, RouteSnapshot } from '@sherpa/protocol';
-import { flowDiagramResultSchema, generateJsonSchemas } from '@sherpa/protocol';
+import type { PrDiff, RouteSnapshot } from '@sherpa/protocol';
+import { generateJsonSchemas } from '@sherpa/protocol';
 import type { TaskQueue, TaskRecord, TaskResultAcceptance } from './queue.js';
 import type { RouteStore } from './route-store.js';
-import { diagramSourceErrors } from './diagram-sources.js';
-export { diagramSourceErrors } from './diagram-sources.js';
-import { CONTEXT_BUDGET_BYTES, prDiffPayload } from './route-payload.js';
+import { validateArchitectureCheckpoint } from './architecture-checkpoint.js';
+import { materializeReviewTarget } from './route-payload.js';
 import type { SharedPayloadStore } from './shared-payload.js';
-import { diffKeyOf } from './shared-payload.js';
-import { rawEvidence } from './story-evidence.js';
-import { validateArchitectureOverview } from './architecture-story.js';
+export { diagramSourceErrors } from './diagram-sources.js';
 
 interface Options {
-    store: RouteStore; queue: TaskQueue; host: ReviewSource | null; dir: string; shared: SharedPayloadStore;
+    store: RouteStore; queue: TaskQueue; dir: string; shared: SharedPayloadStore;
     loadDiff: (id: string) => Promise<PrDiff>;
 }
 
-/** Отдельный автомат: ошибка схемы не меняет готовность рассказа и полных патчей. */
+/** Повтор архитектуры использует тот же текущий checkpoint, что и объяснение файлов. */
 export class FlowCoordinator {
     private stopped = false;
     private busy = false;
     private scheduled = false;
+    private dirty = false;
     private unsubscribers: (() => void)[] = [];
     private readonly diffs = new Map<string, PrDiff>();
     constructor(private readonly options: Options) {}
@@ -36,131 +31,86 @@ export class FlowCoordinator {
     }
     close(): void { this.stopped = true; for (const stop of this.unsubscribers) stop(); }
     private schedule(): void {
-        if (this.scheduled || this.stopped) return;
+        if (this.stopped) return;
+        this.dirty = true;
+        if (this.scheduled || this.busy) return;
         this.scheduled = true;
         queueMicrotask(() => { this.scheduled = false; void this.reconcile(); });
     }
     private async reconcile(): Promise<void> {
         if (this.busy || this.stopped) return;
-        this.busy = true;
+        this.busy = true; this.dirty = false;
         const { store, queue } = this.options;
         const snapshot = store.current();
         const replacing = store.read().phase === 'reading';
         try {
-            // Отмена устаревших задач не затрагивает сохранённую схему предыдущего рассказа.
+            const pending = !replacing && snapshot?.storyContractVersion === 6 && snapshot.flow?.status === 'pending' ? snapshot.flow : null;
             for (const task of queue.listTasks()) {
-                if (task.type === 'route.diagram' && (task.status === 'queued' || task.status === 'leased') && task.id !== (!replacing && snapshot?.flow?.status === 'pending' ? snapshot.flow.taskId : null)) queue.cancel(task.id);
+                if (task.type === 'route.diagram' && (task.status === 'queued' || task.status === 'leased') && task.id !== pending?.taskId) queue.cancel(task.id);
             }
-            if (replacing || store.generation()?.status === 'cancelled') return;
-            if (snapshot?.storyContractVersion !== 5 && store.read().phase === 'ready' && snapshot?.flow === undefined) return;
-            if ((snapshot?.storyContractVersion !== 4 && snapshot?.storyContractVersion !== 5 && snapshot?.storyContractVersion !== 6) || (snapshot.flow !== undefined && snapshot.flow.status !== 'pending')) return;
-            const state: Extract<FlowState, {status: 'pending'}> = snapshot.flow ?? { status: 'pending', taskId: null, round: 0, requests: [], contexts: [], missing: [] };
-            if (state.taskId !== null) {
-                const task = queue.listTasks().find((entry) => entry.id === state.taskId);
-                if (task === undefined || task.status === 'failed' || task.status === 'cancelled' || task.status === 'done') store.setFlow(snapshot.snapshotId, { status: 'unavailable', reason: this.message(snapshot, 'Схема недоступна. Рассказ и дифф можно читать.', 'Diagram unavailable. The explanation and diff remain available.') });
+            if (!replacing && snapshot !== null && snapshot.storyContractVersion !== 6 && snapshot.flow?.status === 'pending') {
+                store.setFlow(snapshot.snapshotId, { status: 'unavailable', reason: snapshot.provenance.locale === 'ru'
+                    ? 'Подготовка схемы прежнего формата остановлена. Сохранённый рассказ доступен; схему можно построить заново.'
+                    : 'Legacy diagram preparation stopped. The saved explanation remains available; retry to build the architecture.' });
+                return;
+            }
+            if (replacing || store.generation()?.status === 'cancelled' || snapshot?.storyContractVersion !== 6 || pending === null) return;
+            if (pending.taskId !== null) {
+                const task = queue.getTask(pending.taskId);
+                if (task === null || task.status === 'failed' || task.status === 'cancelled' || task.status === 'done') store.setFlow(snapshot.snapshotId, {
+                    status: 'unavailable', reason: snapshot.provenance.locale === 'ru' ? 'Схема недоступна. Рассказ и дифф можно читать.' : 'Diagram unavailable. The explanation and diff remain available.',
+                });
+                else if (!this.diffs.has(snapshot.diffId)) {
+                    const diff = await this.options.loadDiff(snapshot.diffId);
+                    if (this.current(snapshot.snapshotId, pending.taskId)) this.diffs.set(diff.diffId, diff);
+                }
                 return;
             }
             const diff = await this.options.loadDiff(snapshot.diffId);
-            if (!this.current(snapshot.snapshotId, state.taskId)) return;
+            if (!this.current(snapshot.snapshotId, null)) return;
             this.diffs.clear(); this.diffs.set(diff.diffId, diff);
-            if (state.requests.length > 0) {
-                const contexts = [...state.contexts]; const missing = [...state.missing];
-                const meta = await bounded(this.options.host?.getPr() ?? Promise.resolve(null)).catch(() => null);
-                for (const request of state.requests) {
-                    if (!this.current(snapshot.snapshotId, null)) return;
-                    try {
-                        if (!meta?.capabilities.sourceAtRevision || !this.options.host?.getSourceAtRevision) throw new Error('Source at revision is unavailable');
-                        const text = await bounded(this.options.host.getSourceAtRevision(request.path, diff.headCommit));
-                        if (text === null || text.includes('\0')) throw new Error('Text unavailable');
-                        const lines = text.split('\n');
-                        if (request.end > lines.length) throw new Error('Lines unavailable');
-                        const excerpt = lines.slice(request.start - 1, request.end).join('\n');
-                        if (excerpt.length > 24_000) throw new Error('Excerpt too large');
-                        contexts.push({ ...request, id: `context-${String(contexts.length + 1)}`, revision: diff.headCommit, text: excerpt });
-                    } catch { missing.push(`${request.path}:${String(request.start)}-${String(request.end)} @ ${diff.headCommit}`); }
-                }
-                if (this.current(snapshot.snapshotId, null)) store.setFlow(snapshot.snapshotId, { ...state, requests: [], contexts, missing });
-                return;
-            }
-            const task = queue.enqueue(this.payload(snapshot, state, diff));
-            store.setFlow(snapshot.snapshotId, { ...state, taskId: task.id });
+            const task = queue.enqueue(this.payload(snapshot, diff));
+            store.setFlow(snapshot.snapshotId, { ...pending, taskId: task.id });
         } catch {
-            if (snapshot !== null && this.current(snapshot.snapshotId, null)) store.setFlow(snapshot.snapshotId, { status: 'unavailable', reason: this.message(snapshot, 'Не удалось подготовить схему по сохранённой версии кода.', 'Could not prepare a diagram from the saved code revision.') });
-        } finally { this.busy = false; if (store.current()?.snapshotId !== snapshot?.snapshotId) this.schedule(); }
+            if (snapshot !== null && this.current(snapshot.snapshotId, null)) store.setFlow(snapshot.snapshotId, {
+                status: 'unavailable', reason: snapshot.provenance.locale === 'ru' ? 'Не удалось подготовить схему по сохранённой версии кода.' : 'Could not prepare a diagram from the saved code revision.',
+            });
+        } finally { this.busy = false; this.reschedule(); }
     }
+    private reschedule(): void { if (this.dirty) this.schedule(); }
     private current(id: string, taskId: number | null): boolean {
         const value = this.options.store.current();
-        return !this.stopped && this.options.store.generation()?.status !== 'cancelled' && this.options.store.read().phase !== 'reading' && value?.snapshotId === id && (value.flow === undefined ? taskId === null : value.flow.status === 'pending' && value.flow.taskId === taskId);
+        return !this.stopped && this.options.store.generation()?.status !== 'cancelled' && this.options.store.read().phase !== 'reading' && value?.snapshotId === id && value.flow?.status === 'pending' && value.flow.taskId === taskId;
+    }
+    diffIdForTask(taskId: number): string | null {
+        const snapshot = this.options.store.current();
+        return snapshot?.flow?.status === 'pending' && snapshot.flow.taskId === taskId ? snapshot.diffId : null;
     }
     acceptResult(task: TaskRecord, result: string): TaskResultAcceptance | null {
         if (task.type !== 'route.diagram') return null;
         const snapshot = this.options.store.current();
-        const state = snapshot?.flow;
-        if (this.options.store.read().phase === 'reading' || snapshot === null || state?.status !== 'pending' || state.taskId !== task.id) return { kind: 'rejected', errors: ['This diagram belongs to an obsolete explanation.'] };
+        if (snapshot?.storyContractVersion !== 6 || !this.current(snapshot.snapshotId, task.id)) return { kind: 'rejected', errors: ['This diagram belongs to an obsolete explanation.'] };
         const diff = this.diffs.get(snapshot.diffId);
-        if (diff === undefined) { void this.options.loadDiff(snapshot.diffId).then((value) => { this.diffs.set(value.diffId, value); }).catch(() => undefined); return { kind: 'deferred', errors: ['Saved diff is loading. Retry completion.'] }; }
-        if (snapshot.storyContractVersion === 6) {
-            let raw: unknown;
-            try { raw = JSON.parse(stripCodeFence(result)); } catch { return { kind: 'rejected', errors: ['Return valid JSON.'] }; }
-            const flowOnly = architectureOverviewResultSchema.pick({ flow: true }).safeParse(raw);
-            const overview = { contractVersion: 6, summary: snapshot.summary, evidence: rawEvidence(snapshot.summaryEvidence),
-                stops: snapshot.stops.map((block) => ({ title: block.title, paragraph: block.paragraph,
-                    evidence: rawEvidence(block.storyEvidence), nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path),
-                    relatedFiles: block.relatedFiles?.map((file) => file.path) ?? [] })) };
-            const parsed = validateArchitectureOverview(flowOnly.success ? JSON.stringify({ ...overview, flow: flowOnly.data.flow }) : result, diff);
-            if (!parsed.ok) return { kind: 'rejected', errors: parsed.errors };
-            const checked = parsed.value;
-            const identity = (blocks: readonly { title: string; paragraph: string | null; nodeIds?: string[] | undefined; guidedFiles?: readonly { path: string }[] | undefined }[]) => JSON.stringify(blocks.map((block) => ({ title: block.title, paragraph: block.paragraph, nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path) })));
-            if (checked.summary !== snapshot.summary || identity(checked.stops) !== identity(snapshot.stops)) return { kind: 'rejected', errors: ['A local diagram retry must preserve the accepted description, blocks, node mappings and file order.'] };
-            const flow = checked.flow;
-            if (flow === undefined) return { kind: 'rejected', errors: ['Return the architecture flow.'] };
-            return { kind: 'accepted', onCommitted: () => { if (this.current(snapshot.snapshotId, task.id)) this.options.store.setFlow(snapshot.snapshotId, flow); } };
-        }
-        let raw: unknown;
-        try { raw = JSON.parse(stripCodeFence(result)); } catch { return { kind: 'rejected', errors: ['Return valid JSON.'] }; }
-        const parsed = flowDiagramResultSchema.safeParse(raw);
-        if (!parsed.success) return { kind: 'rejected', errors: parsed.error.issues.map((issue) => issue.message) };
-        const value = parsed.data;
-        if (value.outcome === 'not_applicable' && state.missing.length > 0) return { kind: 'rejected', errors: ['Missing context is unavailability, not evidence that a diagram is inapplicable. Return a partial diagram or outcome unavailable.'] };
-        if (value.contextRequests.length > 0 && state.round >= 2) return { kind: 'rejected', errors: ['Context budget exhausted. Return a partial diagram with local unknowns, or a reason.'] };
-        const errors = value.diagram === null ? [] : diagramSourceErrors(value.diagram, diff, state.contexts);
-        if (errors.length > 0) return { kind: 'rejected', errors };
-        const next: FlowState = value.contextRequests.length > 0 ? { ...state, taskId: null, round: state.round + 1, requests: value.contextRequests }
-            : value.diagram !== null ? { status: 'ready', diagram: value.diagram, contexts: state.contexts }
-                : { status: value.outcome === 'not_applicable' ? 'not_applicable' : 'unavailable', reason: value.reason ?? 'Diagram unavailable.' };
-        return { kind: 'accepted', onCommitted: () => { if (this.current(snapshot.snapshotId, task.id)) this.options.store.setFlow(snapshot.snapshotId, next); } };
+        if (diff === undefined) { this.schedule(); return { kind: 'deferred', errors: ['Saved diff is loading. Retry completion.'] }; }
+        const checked = validateArchitectureCheckpoint(result, snapshot, diff, undefined, this.options.store.flowBeforeRetry(snapshot.snapshotId), true);
+        if (!checked.ok) return { kind: 'rejected', errors: checked.errors };
+        return { kind: 'accepted', onCommitted: () => {
+            if (this.current(snapshot.snapshotId, task.id)) this.options.store.applyCheckpoint(checked.value.overview, checked.value.files, snapshot.provenance);
+        } };
     }
-    private message(snapshot: RouteSnapshot, ru: string, en: string): string { return snapshot.provenance.locale === 'ru' ? ru : en; }
-    private payload(snapshot: RouteSnapshot, state: Extract<FlowState, {status:'pending'}>, diff: PrDiff) {
+    private payload(snapshot: RouteSnapshot, diff: PrDiff) {
         const { shared } = this.options;
         const dir = path.join(this.options.dir, randomUUID());
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
         const schema = path.join(dir, 'result-schema.json');
-        const context = path.join(dir, 'context.json');
-        fs.writeFileSync(schema, JSON.stringify(generateJsonSchemas().flowDiagramResult), { mode: 0o600 });
-        fs.writeFileSync(context, JSON.stringify({ snapshotId: snapshot.snapshotId, revision: diff.headCommit, description: snapshot.summary, blocks: snapshot.stops.map((stop) => ({ title: stop.title, files: stop.guidedFiles?.map((file) => file.path) })), contextRoundsRemaining: 2 - state.round, contexts: state.contexts, unavailable: state.missing }), { mode: 0o600 });
-        const key = diffKeyOf(diff);
-        const prDiff = shared.prDiff(key, prDiffPayload({ diff, meta: null }, CONTEXT_BUDGET_BYTES).content);
-        if (snapshot.storyContractVersion === 6) {
-            const overview = path.join(dir, 'accepted-overview.json');
-            fs.writeFileSync(overview, JSON.stringify({ summary: snapshot.summary, blocks: snapshot.stops.map((block) => ({ title: block.title, paragraph: block.paragraph, nodeIds: block.nodeIds, files: block.guidedFiles?.map((file) => file.path), relatedFiles: block.relatedFiles?.map((file) => file.path) })) }), { mode: 0o600 });
-            fs.writeFileSync(schema, JSON.stringify(z.toJSONSchema(architectureOverviewResultSchema.pick({ flow: true }), { io: 'input' })), { mode: 0o600 });
-            return { type: 'route.diagram' as const, priority: 'background' as const,
-                instructions: 'Repair the architecture diagrams. Return only flow matching the schema. Keep node IDs used by accepted blocks; the description and file explanations are already saved.',
-                contextFiles: [prDiff, overview], resultSchemaFile: schema };
-        }
-        const guide = shared.guide('flow-diagram', `Explain the overall data flow in ${snapshot.provenance.locale === 'ru' ? 'Russian' : 'English'}.
-Draw a small meaningful source -> transformation -> consumer flow. Order edges along that understandable path, keeping related transitions consecutive. Include necessary unchanged/external context so the change makes sense, not the whole architecture. Usually 3–6 nodes are enough; add only context needed to understand this PR. Use plain short node and arrow labels, ideally 2–5 words. Do not repeat the prose or put caveats in labels: keep precise evidence limits in limitation, which the UI shows in expandable diagram sources. Reuse a node id when a path branches or cycles; never duplicate a node to lay out the picture. Nodes are static; no navigation fields.
-Every node AND edge has change: existing, added, modified, or unknown. Mark only what this PR demonstrably changes. Every edge has kind: data or control, and a label saying what passes or what starts. Runtime wiring must be confirmed, not inferred from executors/exports alone. Retry permission is not guaranteed retry.
-Known items need minimal sources: {kind:patch,path,side,start,end} in the saved full diff, or {kind:context,id} from saved context snippets. Changed items need changed patch lines. Unknown items need a local limitation; say what is unknown instead of asserting an unverified connection.
-If the diff omits necessary context, request up to four specific path/start/end ranges (80 lines each). The server reads only the pinned head revision and returns saved snippets. At most two rounds. Do not browse current checkout or remote code yourself. Unavailable context stays unknown. Use the saved patch index for omitted PR patches.
-Return contextRequests with diagram:null to request context; otherwise return contextRequests:[] and diagram. If the accessible change has no useful data/control flow, return diagram:null, outcome:not_applicable and a concise localized reason. Missing necessary context, source errors or technical failures require outcome:unavailable; they never mean not_applicable. For a ready diagram or context request omit outcome. Follow the attached JSON schema. Do not claim examples or code were executed.`);
-        return { type: 'route.diagram' as const, priority: 'background' as const, instructions: 'Read the saved PR context and guide. Explain the general flow and mark the PR changes. Return JSON matching the schema.', contextFiles: [guide, prDiff, context], resultSchemaFile: schema };
+        const overview = path.join(dir, 'accepted-overview.json');
+        fs.writeFileSync(schema, JSON.stringify(generateJsonSchemas().allFilesResult), { mode: 0o600 });
+        fs.writeFileSync(overview, JSON.stringify({ summary: snapshot.summary, flow: this.options.store.flowBeforeRetry(snapshot.snapshotId),
+            blocks: snapshot.stops.map((block) => ({ id: block.id, title: block.title, paragraph: block.paragraph, nodeIds: block.nodeIds,
+                files: block.guidedFiles?.map((file) => file.path), relatedFiles: block.relatedFiles?.map((file) => file.path) })) }), { mode: 0o600 });
+        const target = materializeReviewTarget(shared, { diff, meta: null }).target;
+        return { type: 'route.diagram' as const, priority: 'background' as const,
+            instructions: `Help repair or refine the PR architecture. Choose what to research using ordinary PR/code tools at the pinned revision; context files are optional. Return update.flow and update.blocks by ID when links need to change. Saved file explanations and reading position are preserved. You may also correct accepted files. Write in ${snapshot.provenance.locale === 'ru' ? 'Russian' : 'English'} and follow the attached checkpoint schema.\nPinned target: ${JSON.stringify({ diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit })}`,
+            contextFiles: [target, overview], resultSchemaFile: schema };
     }
-}
-
-
-function bounded<T>(promise: Promise<T>): Promise<T> {
-    let timer: NodeJS.Timeout;
-    return Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => { reject(new Error('Source read timed out')); }, 10_000); timer.unref(); })]).finally(() => { clearTimeout(timer); });
 }

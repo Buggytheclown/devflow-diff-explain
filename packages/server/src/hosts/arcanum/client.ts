@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { RpcFailure, describeFetchError } from '../../errors.js';
 
 import type { TokenSource } from './token.js';
+import { useSystemCertificateAuthorities } from '../../system-ca.js';
 
 /**
  * HTTP-клиент Арканума: обёртка `{data}`/`{errors}`, строгие `fields`-проекции на вызывающей
@@ -14,7 +15,7 @@ import type { TokenSource } from './token.js';
  * (`docs/architecture.md`).
  */
 
-export const ARCANUM_API_BASE = 'https://arcanum.yandex.net/api';
+export const ARCANUM_API_BASE = 'https://agentproxy.yandex.net/arcanum-api/api';
 
 /** Заголовок ответа с логином владельца токена — бесплатный whoami. */
 const USER_HEADER = 'x-arcanum-user';
@@ -70,6 +71,7 @@ export class ArcanumClient {
     private user: string | null = null;
 
     constructor(options: ArcanumClientOptions) {
+        useSystemCertificateAuthorities();
         this.token = options.token;
         this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
         this.baseUrl = (options.baseUrl ?? ARCANUM_API_BASE).replace(/\/+$/, '');

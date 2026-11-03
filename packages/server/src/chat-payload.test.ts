@@ -182,7 +182,7 @@ describe('chat payload с якорем', () => {
         expect(input.instructions).toContain(question.replace('\n', '\\n'));
         expect(input.instructions).toContain(JSON.stringify({ pr: META.url, diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit }));
         expect(input.instructions).toContain('Available context (read selectively');
-        expect(input.instructions).toContain('Saved PR diff; search by file or symbol as needed');
+        expect(input.instructions).toContain('Pinned PR and changed-file map; read individual patches as needed');
         expect(input.instructions).toContain('Recent completed questions and answers');
         expect(input.instructions).not.toContain('Read the guide first, then every context file');
         for (const file of input.contextFiles) {
@@ -359,12 +359,12 @@ describe('chat payload уровня PR', () => {
 
         expect(input.contextFiles.map((file) => path.basename(file))).toEqual([
             expect.stringMatching(/^chat-guide-[0-9a-f]{8}\.md$/),
-            'pr-diff.md',
+            'target.json',
             'question.md',
             'route-context.md',
             'history.md',
         ]);
-        expect(input.contextFiles[1]).toBe(path.join(sharedDir, 'diff', diffKeyOf(diff), 'pr-diff.md'));
+        expect(input.contextFiles[1]).toBe(path.join(sharedDir, 'diff', diffKeyOf(diff), 'target.json'));
 
         const route = fs.readFileSync(input.contextFiles[3] ?? '', 'utf8');
         expect(route).toContain(snapshot.summary);
@@ -375,7 +375,8 @@ describe('chat payload уровня PR', () => {
             }
         }
 
-        const context = fs.readFileSync(input.contextFiles[1] ?? '', 'utf8');
+        const target = JSON.parse(fs.readFileSync(input.contextFiles[1] ?? '', 'utf8')) as { optionalFullDiff: string };
+        const context = fs.readFileSync(target.optionalFullDiff, 'utf8');
         expect(context).toContain('## Patches');
         for (const file of diff.files) {
             expect(context).toContain(`\`${file.path}\``);
@@ -400,7 +401,7 @@ describe('chat payload уровня PR', () => {
         expect(new Set(inputs.map((input) => input.contextFiles[1])).size).toBe(1);
         expect(sixth.contextFiles[1]).toBe(diffPath);
         expect(fs.readFileSync(diffPath, 'utf8')).toBe('подменённый дифф');
-        expect(fs.readdirSync(path.dirname(diffPath))).toEqual(['pr-diff.md']);
+        expect(fs.readdirSync(path.dirname(diffPath))).toEqual(['patches', 'pr-diff.md', 'saved-patch-index.json', 'target.json']);
         // Свой каталог у каждого вопроса всё равно свой.
         expect(new Set(inputs.map((input) => path.dirname(input.contextFiles[2] ?? ''))).size).toBe(5);
     });
@@ -419,7 +420,7 @@ describe('chat payload уровня PR', () => {
         expect(fs.readdirSync(path.join(sharedDir, 'diff'))).toHaveLength(1);
     });
 
-    it('общий дифф урезается по своему бюджету, не по бюджету файлов вопроса', () => {
+    it('общий дифф урезается по своему бюджету, не по бюджету файлов вопроса', async () => {
         const fixture = mediumDiff();
         const small = fixture.files.find((file) => file.patch !== null && !file.generated);
         if (small === undefined) {
@@ -455,7 +456,9 @@ describe('chat payload уровня PR', () => {
             },
             { sharedBudgetBytes },
         );
-        const context = payload.shared.find((entry) => entry.kind === 'pr-diff')?.content ?? '';
+        const input = await materializeChatPayload(questionDirIn(payloadDir), shared, payload);
+        const target = JSON.parse(fs.readFileSync(input.contextFiles[1] ?? '', 'utf8')) as { optionalFullDiff: string };
+        const context = fs.readFileSync(target.optionalFullDiff, 'utf8');
         const smallChangedLine = [...walkPatch(small.patch ?? '')].find((line) => line.changed);
 
         expect(Buffer.byteLength(context, 'utf8')).toBeLessThanOrEqual(sharedBudgetBytes);

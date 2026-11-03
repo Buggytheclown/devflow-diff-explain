@@ -74,6 +74,6 @@ export function generateJsonSchemas(): Record<string, unknown> {
 
     // io: 'input' — схемы описывают, что отправитель обязан прислать.
     return Object.fromEntries(
-        Object.entries(sources).map(([name, schema]) => [name, z.toJSONSchema(schema, { io: 'input' })]),
+        Object.entries(sources).map(([name, schema]) => [name, z.toJSONSchema(schema, { io: 'input', reused: 'ref' })]),
     );
 }

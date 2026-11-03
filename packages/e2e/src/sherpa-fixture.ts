@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test as base } from '@playwright/test';
 import { FakeWorker } from '@sherpa/cli/fake-worker';
+import type { RouteSnapshot } from '@sherpa/protocol';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const SERVER_DIR = path.join(REPO_ROOT, 'packages/server');
@@ -29,6 +30,8 @@ export interface SherpaServerHandle {
 }
 
 export interface LaunchOptions {
+    /** Уже сохранённый рассказ: проверка чтения старого формата без старого генератора. */
+    readonly savedSnapshot?: RouteSnapshot;
     /**
      * Общий корень стейта для нескольких серверов: им проверяется, что глобальные настройки
      * одни на все PR. Каталог создаёт и удаляет тест — фикстура его не трогает.
@@ -195,6 +198,19 @@ export async function seenRangeKeys(
 async function startSherpaServer(prKey: FixturePrKey, options?: LaunchOptions): Promise<SherpaServerHandle> {
     const ownsSherpaDir = options?.sherpaDir === undefined;
     const sherpaDir = options?.sherpaDir ?? (await mkdtemp(path.join(tmpdir(), 'sherpa-e2e-')));
+    if (options?.savedSnapshot !== undefined) {
+        const { openDatabase } = await import('../../server/src/db.js');
+        const { storedSnapshot } = await import('../../server/src/explanation-compat.js');
+        const target = path.join(sherpaDir, 'prs', prKey); await mkdir(target, { recursive: true });
+        const db = openDatabase(path.join(target, 'sherpa.db'));
+        try {
+            const snapshot = options.savedSnapshot;
+            db.prepare('INSERT INTO route_snapshots(snapshot_id,diff_id,created_at,previous_snapshot_id,snapshot_json,content_hash) VALUES(?,?,?,?,?,?)')
+                .run(snapshot.snapshotId, snapshot.diffId, snapshot.createdAt, snapshot.previousSnapshotId, JSON.stringify(storedSnapshot(snapshot)), snapshot.contentHash);
+            db.prepare("INSERT INTO route_state(id,phase,small_pr,current_snapshot_id,intents,updated_at) VALUES(1,'ready',0,?,'[]',?)")
+                .run(snapshot.snapshotId, snapshot.createdAt);
+        } finally { db.close(); }
+    }
     if (options?.onboarding !== 'pending') {
         await seedOnboardingDone(sherpaDir);
     }

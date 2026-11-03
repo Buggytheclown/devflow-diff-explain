@@ -1,7 +1,7 @@
-import { overviewStoryFixture } from '@sherpa/fixtures';
+import { architectureStoryFixture } from '@sherpa/fixtures';
 import { openBlocks, test, expect } from './sherpa-fixture.js';
 
-const fixture = overviewStoryFixture();
+const fixture = architectureStoryFixture();
 test('обзор первым → непрерывный дифф → локальный повтор схемы → перезагрузка и новая подготовка', async ({ page, launchSherpa }) => {
     const file = page.locator(`[data-reading-file="${fixture.first.fileId}"]`);
     const server = await launchSherpa('fixture-medium'); await page.goto(server.url);
@@ -12,15 +12,21 @@ test('обзор первым → непрерывный дифф → локал
     const summary = fixture.outline.summary;
     const outline = { ...fixture.outline, evidence: { claims: [{ quote: summary, sources: [{ kind: 'lines', path: fixture.anchor.path, side: fixture.anchor.side, start: fixture.anchor.start, end: fixture.anchor.start }], limitation: null }] } };
     expect((await server.worker.complete(plan.taskId ?? 0, JSON.stringify(outline))).stdout).not.toContain('rejected');
-    await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', String(Math.floor(100 / (4 + fixture.diff.files.length))));
+    await expect(page.locator('[role=progressbar]')).not.toHaveAttribute('aria-valuenow', '100');
     await expect(page.locator('.story-source-links,.story-source-hint,.story-flow-sources,.story-guide-pager')).toHaveCount(0);
-    const diagram = await server.worker.next(); expect(diagram.type).toBe('route.diagram');
-    await server.worker.fail(diagram.taskId ?? 0, 'Synthetic diagram failure');
-    for (const part of fixture.parts) { const task = await server.worker.next(); expect(task.type).toBe('route.section'); expect((await server.worker.complete(task.taskId ?? 0, JSON.stringify(part))).stdout).not.toContain('rejected'); }
+    const files = await server.worker.next(); expect(files.type).toBe('route.section');
+    const subset = fixture.body.stops.flatMap((block) => block.files);
+    expect((await server.worker.complete(files.taskId ?? 0, JSON.stringify({ contractVersion: 6, files: subset }))).stdout).not.toContain('rejected');
+    await page.evaluate(async () => {
+        const token = new URLSearchParams(location.hash.slice(1)).get('t') ?? '';
+        const response = await fetch('/api/ui/review/route', { headers: { authorization: `Bearer ${token}` } });
+        const { route } = await response.json() as { route: { snapshot: { snapshotId: string } } };
+        await fetch('/api/ui/review/route/retry-diagram', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ snapshotId: route.snapshot.snapshotId, renderFailure: true }) });
+    });
     await expect(page.locator('.story-preparation')).toContainText('Разбор подготовлен частично');
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();
     const retry = await server.worker.next(); expect(retry.type).toBe('route.diagram');
-    await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ contextRequests: [], diagram: fixture.diagram, reason: null }));
+    await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ contractVersion: 6, update: { flow: fixture.outline.flow } }));
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
     await page.screenshot({ path: test.info().outputPath('overview-ready.png'), fullPage: true });
     await openBlocks(page);

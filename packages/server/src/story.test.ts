@@ -1,3 +1,4 @@
+import { architectureStoryFixture } from '@sherpa/fixtures';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -18,14 +19,20 @@ import { get, postRaw, makeTempSherpaDir, removeTempSherpaDir } from './test-sup
 
 function limited(quote: string) { return { claims: [{ quote, sources: [], limitation: 'Synthetic fixture for lifecycle checks; semantic quality is tested separately.' }] }; }
 
-const outline = { contractVersion: 2, evidence: limited('Запись завершается до сброса кэша.'), summary: 'Запись завершается до сброса кэша.', stops: [
+const legacyOutline = { contractVersion: 2, evidence: limited('Запись завершается до сброса кэша.'), summary: 'Запись завершается до сброса кэша.', stops: [
     { title: 'Порядок записи', intent: 'Объяснить изменение порядка операций.' },
     { title: 'Проверки', intent: 'Кратко объяснить проверяемый контракт.' },
 ] };
-const body = { contractVersion: 2, stops: [
+const legacyBody = { contractVersion: 2, stops: [
     { planIndex: 1, paragraph: 'Сначала сохраняется запись. После успешного завершения обновляется кэш.', evidence: limited('Сначала сохраняется запись.') },
     { planIndex: 2, paragraph: 'Тесты проверяют успешную запись и обработку ошибки.', evidence: limited('Тесты проверяют успешную запись и обработку ошибки.') },
 ] };
+
+const native = architectureStoryFixture();
+const outline = { ...native.outline, summary: legacyOutline.summary, evidence: legacyOutline.evidence,
+    stops: native.outline.stops.map((block, index) => ({ ...block, title: legacyOutline.stops[index]?.title ?? block.title,
+        paragraph: legacyBody.stops[index]?.paragraph ?? block.paragraph, evidence: legacyBody.stops[index]?.evidence ?? block.evidence })) };
+const body = native.body;
 
 describe('короткий рассказ', () => {
     let dir: string;
@@ -54,8 +61,8 @@ describe('короткий рассказ', () => {
         return task;
     }
 
-    it('малый ПР получает введение и одну задачу на весь рассказ без обязательных якорей', async () => {
-        const server = await start('fixture-small');
+    it('ПР получает архитектуру и введение и одну задачу на весь рассказ без обязательных якорей', async () => {
+        const server = await start();
         complete(server, outline);
         const partial = await read(server);
         expect(partial.smallPr).toBe(false);
@@ -177,7 +184,7 @@ describe('короткий рассказ', () => {
         expect(context).toBeDefined();
         const text = fs.readFileSync(context ?? '', 'utf8');
         expect(text).toContain(outline.summary);
-        expect(text).not.toContain(body.stops[0]?.paragraph);
+        expect(text).not.toContain(body.stops[0]?.files[0]?.explanation);
         expect(text).toContain(snapshot.commit);
     });
 
@@ -200,8 +207,7 @@ describe('короткий рассказ', () => {
         const first = sources[0]; const other = files[1];
         if (first === undefined || other === undefined) throw new Error('No sources');
         complete(server, { ...outline, evidence: { claims: [{ quote: outline.summary, sources, limitation: null }] } });
-        complete(server, { ...body, stops: body.stops.map((stop) => ({ ...stop,
-            evidence: { claims: [{ quote: stop.paragraph, sources, limitation: null }] } })) });
+        complete(server, body);
         const snapshot = (await read(server)).snapshot;
         if (snapshot === null) throw new Error('No snapshot');
         const question = await server.chat.ask('Как связаны эти файлы?', { ...first, fileId: files[0]?.fileId ?? '', diffId: snapshot.diffId }, 'ru', {
@@ -224,7 +230,7 @@ describe('короткий рассказ', () => {
         expect(fs.readFileSync(retry.contextFiles.find((file) => file.endsWith('story-evidence.md')) ?? '', 'utf8')).toBe(context);
     });
 
-    it('перевыдаёт незавершённый старый формат на том же снимке и сохраняет показанное введение', async () => {
+    it('обновление эпохи v6 сохраняет обзор и перевыдаёт файлы на том же снимке', async () => {
         const server = await start();
         complete(server, outline);
         const leased = next(server);
@@ -234,11 +240,11 @@ describe('короткий рассказ', () => {
         db.close();
         const restarted = await start();
         expect(restarted.queue.getTask(leased.id)?.status).toBe('cancelled');
-        expect((await read(restarted)).phase).toBe('reading');
+        expect((await read(restarted)).phase).toBe('filling');
         expect((await read(restarted)).snapshot?.summary).toBe(outline.summary);
         const pending = restarted.queue.listTasks().filter((task) => task.status === 'queued');
         expect(pending).toHaveLength(1);
-        expect(pending[0]?.type).toBe('route.skeleton');
+        expect(pending[0]?.type).toBe('route.section');
     });
 });
 
@@ -249,7 +255,7 @@ it('ссылки рассказа допускают повторение и н�
     const line = [...walkPatch(file.patch)].find((entry) => !entry.changed && entry.new !== null)?.new;
     if (line == null) throw new Error('No context line');
     const anchor = { kind: 'lines' as const, path: file.path, side: 'new' as const, start: line, end: line };
-    const valid = { contractVersion: 2, stops: body.stops.map((stop) => ({ ...stop, evidence: { claims: [{ quote: stop.paragraph, sources: [anchor], limitation: null }] } })) };
+    const valid = { contractVersion: 2, stops: legacyBody.stops.map((stop) => ({ ...stop, evidence: { claims: [{ quote: stop.paragraph, sources: [anchor], limitation: null }] } })) };
     expect(validateStorySection(JSON.stringify(valid), [1, 2], diff, 'ru').ok).toBe(true);
     valid.stops[0]?.evidence.claims[0]?.sources.push({ ...anchor, start: 999999, end: 999999 });
     expect(validateStorySection(JSON.stringify(valid), [1, 2], diff, 'ru').ok).toBe(false);
@@ -260,7 +266,7 @@ it('принимает сохранённый источник длиннее 20
     const anchor = mediumRawResults().sections[0]?.stops[0]?.anchors[0];
     if (anchor === undefined) throw new Error('No code fixture');
     const example = { kind: 'lines', ...anchor, end: anchor.start + 20 };
-    const long = { contractVersion: 2, stops: [{ ...body.stops[0], evidence: { claims: [{ quote: body.stops[0]?.paragraph, sources: [example], limitation: null }] } }] };
+    const long = { contractVersion: 2, stops: [{ ...legacyBody.stops[0], evidence: { claims: [{ quote: legacyBody.stops[0]?.paragraph, sources: [example], limitation: null }] } }] };
     expect(validateStorySection(JSON.stringify(long), [1], diff, 'ru').ok).toBe(true);
     example.end = 999999;
     expect(validateStorySection(JSON.stringify(long), [1], diff, 'ru').ok).toBe(false);

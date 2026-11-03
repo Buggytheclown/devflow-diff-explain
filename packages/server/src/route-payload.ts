@@ -101,7 +101,7 @@ export class RoutePayloadWriter {
             // Своего у скелета нет: и методичка, и дифф — общие пути.
             contextFiles: [
                 this.shared.guide('skeleton-guide', architectureGuide('overview', locale)),
-                prDiff.file,
+                prDiff.target,
             ],
             resultSchemaFile: this.writeSchema('architectureOverview'),
         };
@@ -139,7 +139,7 @@ export class RoutePayloadWriter {
             instructions: 'Explain the remaining assigned files. Choose your research and publish useful checkpoints; context paths are available selectively. Follow the result schema.\n' + pinnedTarget(context),
             contextFiles: [
                 this.shared.guide('section-guide', architectureGuide('files', locale)),
-                prDiff.file,
+                prDiff.target,
                 plan,
             ],
             resultSchemaFile: this.writeSchema('allFiles'),
@@ -147,12 +147,8 @@ export class RoutePayloadWriter {
     }
 
     /** Общий дифф PR по ключу пары коммитов: у скелета, секций и вопроса чата он один и тот же. */
-    private prDiff(context: RoutePayloadContext): { file: string; cap: UiGenerationCap } {
-        const built = prDiffPayload(context, this.budgetBytes);
-        this.shared.prDiff(diffKeyOf(context.diff), built.content);
-        const index = context.diff.files.map((entry, i) => ({ path: entry.path, file: this.shared.savedPatch(diffKeyOf(context.diff), i, patchBlock(entry, i, false)) }));
-        this.shared.savedPatchIndex(diffKeyOf(context.diff), JSON.stringify({ diffId: context.diff.diffId, headCommit: context.diff.headCommit, files: index }, null, 2));
-        return { file: this.shared.prDiff(diffKeyOf(context.diff), built.content), cap: built.cap };
+    private prDiff(context: RoutePayloadContext): { file: string; target: string; cap: UiGenerationCap } {
+        return materializeReviewTarget(this.shared, context, this.budgetBytes);
     }
 
     /** Свежий подкаталог генерации; всё прежнее вычищается — его задачи только что отменены. */
@@ -230,8 +226,23 @@ export class RoutePayloadWriter {
     private writeSchema(kind: 'architectureOverview' | 'allFiles'): string {
         const key = `${kind}Result`;
         const schema = generateJsonSchemas()[key];
-        return this.writeFile(`route-${kind}-result.schema.json`, `${JSON.stringify(schema, null, 2)}\n`);
+        return this.writeFile(`route-${kind}-result.schema.json`, `${JSON.stringify(schema)}\n`);
     }
+}
+
+/** Краткий target ведёт к выбранным патчам; полный дифф остаётся необязательным источником. */
+export function materializeReviewTarget(shared: SharedPayloadStore, context: RoutePayloadContext, budgetBytes = CONTEXT_BUDGET_BYTES): { file: string; target: string; cap: UiGenerationCap } {
+        const built = prDiffPayload(context, budgetBytes);
+        shared.prDiff(diffKeyOf(context.diff), built.content);
+        const index = context.diff.files.map((entry, i) => ({ path: entry.path, file: shared.savedPatch(diffKeyOf(context.diff), i, patchBlock(entry, i, false)) }));
+        const savedPatchIndex = shared.savedPatchIndex(diffKeyOf(context.diff), JSON.stringify({ diffId: context.diff.diffId, headCommit: context.diff.headCommit, files: index }));
+        const file = shared.prDiff(diffKeyOf(context.diff), built.content);
+        const target = shared.target(diffKeyOf(context.diff), JSON.stringify({ pr: context.meta?.url ?? null, title: context.meta?.title ?? null,
+            diffId: context.diff.diffId, baseCommit: context.diff.baseCommit, headCommit: context.diff.headCommit,
+            files: context.diff.files.map((entry, i) => ({ path: entry.path, change: entry.changeType, oldPath: entry.oldPath,
+                binary: entry.binary, additions: entry.additions, deletions: entry.deletions, savedPatch: index[i]?.file })),
+            savedPatchIndex, optionalFullDiff: file }));
+        return { file, target, cap: built.cap };
 }
 
 /**

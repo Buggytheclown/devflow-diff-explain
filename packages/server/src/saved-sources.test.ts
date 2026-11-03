@@ -72,3 +72,31 @@ it('HTTP complete сохраняет источник вне патча, пер�
         expect(await stored.json()).toMatchObject({ text: 'caller();', path: 'outside.ts' });
     } finally { await server.close(); await removeTempSherpaDir(dir); }
 });
+
+it('повтор архитектуры сохраняет внешние источники по diffId задания схемы', async () => {
+    const dir = await makeTempSherpaDir(); const host = makeFixtureHost('medium');
+    const read = vi.fn(() => Promise.resolve('caller();\n')); Object.assign(host, { getSourceAtRevision: read });
+    const server = await startServer({ sherpaDir: dir, prKey: 'fixture-medium', reviewSourceFactory: () => ({ name: 'fixture', host }) });
+    try {
+        const fixture = architectureStoryFixture(); server.workerRegistry.register('worker', 'test'); await server.route.warmup();
+        for (const body of [fixture.outline, fixture.body]) {
+            const task = server.queue.next('worker')?.task; if (task === undefined) throw new Error('No task');
+            expect(server.queue.complete('worker', task.id, JSON.stringify(body)).kind).toBe('accepted');
+        }
+        const readRoute = async () => uiReviewRouteResponseSchema.parse(await (await get(server.port, UI_ENDPOINTS.reviewRoute, server.token)).json()).route;
+        const saved = (await readRoute()).snapshot; if (saved === null) throw new Error('No snapshot');
+        await server.route.retryDiagram(saved.snapshotId);
+        await vi.waitFor(() => { expect(server.queue.listTasks().some((task) => task.type === 'route.diagram' && task.status === 'queued')).toBe(true); });
+        const task = server.queue.next('worker')?.task; if (task === undefined) throw new Error('No task');
+        const diagram = structuredClone(fixture.diagram); const node = diagram.nodes[0]; if (node === undefined) throw new Error('No node');
+        node.sources = [{ kind: 'patch', path: 'outside.ts', side: 'new', start: 1, end: 1 }];
+        const response = await postJson(server.port, WORKER_ENDPOINTS.complete, { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.29.0', workerId: 'worker', taskId: task.id,
+            result: JSON.stringify({ contractVersion: 6, update: { flow: { status: 'ready', diagram } } }) }, server.token);
+        expect(await response.json()).toMatchObject({ kind: 'accepted' });
+        expect(read).toHaveBeenCalledWith('outside.ts', fixture.diff.headCommit);
+        const flow = (await readRoute()).snapshot?.flow;
+        const savedSource = flow?.status === 'ready' ? flow.diagram.nodes[0]?.sources[0] : undefined;
+        if (savedSource?.kind !== 'patch') throw new Error('Missing source');
+        expect(savedSource.path).toBe('outside.ts'); expect(savedSource.sourceId).toMatch(/^[a-f0-9]{64}$/);
+    } finally { await server.close(); await removeTempSherpaDir(dir); }
+});

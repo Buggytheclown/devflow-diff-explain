@@ -17,7 +17,7 @@ import type {
     UiGenerationCap,
     UiRouteState,
 } from '@sherpa/protocol';
-import { generationSchema, sectionAssignmentSchema, localeSchema, routeSnapshotSchema, uiGenerationCapSchema, uiRouteStateSchema } from '@sherpa/protocol';
+import { generationSchema, sectionAssignmentSchema, localeSchema, routeSnapshotSchema, uiGenerationCapSchema, uiRouteStateSchema, flowStateSchema } from '@sherpa/protocol';
 
 import type { AcceptedExplanation, ExplanationFilling } from './story.js';
 import { reviewProjection, storedSnapshot, restoreSnapshot } from './explanation-compat.js';
@@ -252,7 +252,7 @@ export class RouteStore {
             this.setGenerationPresentation(generation.presentation);
             if (generation.diffId !== undefined) this.pinGenerationDiff(generation.diffId);
             this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                .run(generation.version === 6 ? '5' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
+                .run(generation.version === 6 ? '6' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
             if ((generation.version ?? 0) >= 5) this.writeGeneration({ id: randomUUID(), commit: generation.commit ?? null,
                 snapshotId: null, previousSnapshotId: this.state.snapshot?.snapshotId ?? null, status: 'running' });
             else this.db.prepare("DELETE FROM meta WHERE key='preparation_generation'").run();
@@ -273,7 +273,7 @@ export class RouteStore {
         this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_diff_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(diffId);
     }
     upgradeTaskEpoch(): void {
-        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
+        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
     }
 
     /**
@@ -339,21 +339,41 @@ export class RouteStore {
 
     /** Группировка меняется целиком; готовые файлы переносятся по fileId валидатором. */
     refineOverview(overview: AcceptedExplanation): void {
+        this.applyCheckpoint(overview, [], this.state.snapshot?.provenance ?? { harness: null, model: null, locale: 'ru' });
+    }
+
+    /** Обзор, связи и пояснения одного результата публикуются одной записью. */
+    applyCheckpoint(overview: AcceptedExplanation | undefined, fillings: readonly ExplanationFilling[], provenance: RouteProvenance): void {
         const snapshot = this.state.snapshot;
         if (snapshot === null) return;
-        const stops = overview.stops.map((block) => reviewProjection({ ...block,
-            status: block.guidedFiles?.every((file) => file.explanation !== null) ? 'ready' : 'queued',
-        }));
-        const updated = { ...snapshot, summary: overview.summary, summaryEvidence: overview.summaryEvidence,
-            flow: overview.flow, stops, tourOrder: overview.tourOrder };
+        const byIndex = new Map(fillings.map((file) => [file.planIndex, file]));
+        const stops = (overview?.stops.map(reviewProjection) ?? snapshot.stops).map((block) => {
+            const filling = byIndex.get(block.planIndex);
+            const updated = filling === undefined ? block : { ...applyFilling(block, filling),
+                provenance: sameProvenance(provenance, snapshot.provenance) ? null : provenance };
+            return { ...updated, status: updated.paragraph !== null && updated.guidedFiles?.every((file) => file.explanation !== null)
+                ? 'ready' as const : updated.status };
+        });
+        const updated = { ...snapshot, ...(overview === undefined ? {} : { summary: overview.summary, summaryEvidence: overview.summaryEvidence,
+            flow: overview.flow, tourOrder: overview.tourOrder }), stops };
         if (updated.contentHash !== null) updated.contentHash = contentHashOf(updated);
-        this.commit({ ...this.state, snapshot: updated }, overview.intents);
+        this.commit({ ...this.state, snapshot: updated }, overview?.intents ?? this.intents);
+    }
+
+    flowBeforeRetry(snapshotId: string): FlowState | null {
+        const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`flow_before_retry:${snapshotId}`);
+        if (typeof row?.value !== 'string') return null;
+        try { const value = flowStateSchema.safeParse(JSON.parse(row.value)); return value.success ? value.data : null; } catch { return null; }
     }
 
     /** Схема не участвует в готовности файлов и не блокирует основной маршрут. */
     setFlow(snapshotId: string, flow: FlowState): void {
         const snapshot = this.state.snapshot;
         if (snapshot?.snapshotId !== snapshotId) return;
+        if (flow.status === 'pending' && snapshot.flow !== undefined && snapshot.flow.status !== 'pending') {
+            this.db.prepare('INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+                .run(`flow_before_retry:${snapshotId}`, JSON.stringify(snapshot.flow));
+        }
         const updated = { ...snapshot, flow };
         if (updated.contentHash !== null) updated.contentHash = contentHashOf(updated);
         this.commit({ ...this.state, snapshot: updated });

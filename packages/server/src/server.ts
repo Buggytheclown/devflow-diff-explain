@@ -240,6 +240,8 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         // Без источника диффа объяснение остаётся в фазе `none`.
         const routeStore = new RouteStore(options.now === undefined ? { db } : { db, now: options.now });
         {
+            // У сохранённого рассказа формат достовернее отсутствующей старой метки meta.
+            if (routeStore.read().snapshot?.presentation === 'story') routeStore.setGenerationPresentation('story');
             for (const task of queue.listTasks()) {
                 const open = task.status === 'queued' || task.status === 'leased';
                 if (open && (task.type === 'review.feedback' ||
@@ -309,7 +311,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                     const task = queue.getTask(taskId);
                     if (task?.status !== 'leased' || Buffer.byteLength(result, 'utf8') > 256 * 1024) return result;
                     const exchange = chatStore.exchangeForTask(taskId)?.exchange;
-                    const diffId = routeStore.bindings().get(taskId)?.diffId ?? exchange?.explanation?.diffId ?? exchange?.anchor?.diffId;
+                    const diffId = routeOrchestrator.diffIdForTask(taskId) ?? exchange?.explanation?.diffId ?? exchange?.anchor?.diffId;
                     const diff = diffId == null ? null : iterationStore.get(diffId)?.diff;
                     if (diff == null) return result;
                     try { return await savedSources.prepare(diff, result, task.type === 'chat'); }

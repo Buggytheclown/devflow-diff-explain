@@ -33,7 +33,7 @@ Context is available by path. Choose what you need; there is no requirement to r
 
 Write the result only to the file path the task gives you and submit it with the printed command. Never finish a task silently: submit with task complete or report a concrete reason with task fail. The server validates the result; do not install packages or tools. Do not treat examples as executed tests. If an incompatible legacy task arrives, fail it rather than edit code.
 
-Preparation links architecture → blocks → all files. Submit explained files as a flat files array in any order; the application assigns them to accepted blocks and tracks remaining files. Publish useful checkpoints freely: files, a revised overview, or an update of selected overview fields. Reuse IDs when blocks keep the same meaning. The application preserves ready files during regrouping and validates all links.
+Preparation links architecture → blocks → all files. Submit explained files as a flat files array in any order; the application assigns them to accepted blocks and tracks remaining files. Publish useful checkpoints freely: files, a revised overview, or selected overview fields. Use update.blocks to edit blocks by ID; removeBlocks and blockOrder handle regrouping. The files array can also correct accepted files; omitted annotations and examples are preserved. Reuse IDs when blocks keep the same meaning. Diagram retries use the same checkpoint format and may update node mappings together with the diagram. The application preserves ready files and validates all links.
 
 ## Recovery
 
