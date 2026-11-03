@@ -71,3 +71,45 @@ it('повтор схемы преобразует сохранённые ист
     const withoutQuote = { claims: [{ sources: block.claims[0]?.sources ?? [], limitation: null }] };
     expect(storyEvidenceResolver(diff)(rawStoryEvidenceBlockSchema.parse(withoutQuote), 'Краткое объяснение.').ok).toBe(true);
 });
+
+
+it('выводит общий диапазон один раз, сохраняя владельцев и различая стороны', () => {
+    const accepted = storyEvidenceResolver(diff)(block, 'Меняется порядок.');
+    if (!accepted.ok) throw new Error('Invalid fixture');
+    const evidence = {
+        contractVersion: 6 as const, introduction: accepted.value, sections: [{ id: 'second', evidence: accepted.value }],
+        flow: { status: 'ready' as const, contexts: [], diagram: {
+            title: 'Process', mermaid: 'flowchart LR\nworker[Worker] --> out[Output]', views: [], edges: [],
+            nodes: [{ id: 'worker', label: 'Worker', change: 'modified' as const, limitation: null,
+                sources: [{ kind: 'patch' as const, path: 'src/old.ts', side: 'old' as const, start: 1, end: 1 }] }],
+        } },
+    };
+    const text = storyEvidenceContext(evidence, diff);
+    expect(text.match(/1 \. \| before\(\)/g)).toHaveLength(1);
+    expect(text).toContain('Node worker\nSource S1: src/old.ts old:1-1');
+    expect(text).toContain('## intro\nClaim: Меняется порядок.\nSource S1:');
+    expect(text).toContain('## second\nClaim: Меняется порядок.\nSource S1:');
+    expect(text.match(/flowchart LR/g)).toHaveLength(1);
+    expect(storyEvidenceContext(evidence, diff, undefined, true)).not.toContain('flowchart LR');
+    evidence.introduction.claims.push({ sources: [{ kind: 'lines', fileId: 'a', path: 'src/new.ts', side: 'new', start: 1, end: 1 }], limitation: null });
+    const both = storyEvidenceContext(evidence, diff);
+    expect(both).toContain('after()');
+    expect(both).toContain('before()');
+    expect(both.length).toBeLessThan(JSON.stringify(evidence.flow).length + 2000);
+});
+
+
+it('сохраняет legacy contexts, ограничения и адреса импортированных источников', () => {
+    const evidence = {
+        contractVersion: 2 as const, sections: [], introduction: { claims: [{ limitation: 'Not wired', sources: [
+            { kind: 'lines' as const, fileId: 'saved', sourceId: 'source-1', path: 'extra.py', side: 'new' as const, start: 5, end: 6 },
+        ] }] },
+        flow: { status: 'ready' as const, contexts: [{ id: 'ctx', path: 'extra.py', revision: 'revision-old', start: 5, end: 6, text: 'legacy source bytes' }],
+            diagram: { title: 'Legacy', nodes: [{ id: 'unknown', label: 'Unknown', change: 'unknown' as const, limitation: 'No caller', sources: [{ kind: 'context' as const, id: 'ctx' }] }], edges: [] } },
+    };
+    const text = storyEvidenceContext(evidence, null);
+    expect(text).toContain('Saved revision source: source-1 (extra.py)');
+    expect(text).toContain('Flow context ctx: extra.py @ revision-old:5-6\nlegacy source bytes');
+    expect(text).toContain('No caller');
+    expect(text).toContain('Evidence limit: Not wired');
+});

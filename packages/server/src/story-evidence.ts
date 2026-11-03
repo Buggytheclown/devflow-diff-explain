@@ -1,5 +1,7 @@
 import type { FileDiff, PrDiff, RawStoryEvidenceBlock, StoryEvidenceBlock, StoryExplanationEvidence, RouteSnapshot } from '@sherpa/protocol';
 
+import { flowText } from '@sherpa/protocol';
+
 import { sourceEvidence } from './saved-sources.js';
 import { savedPatchIndex } from './saved-patch.js';
 import type { RouteValidation } from './route/types.js';
@@ -46,32 +48,51 @@ export function explanationEvidence(snapshot: RouteSnapshot, focus?: string): St
 }
 
 /** Код извлекается из закреплённого патча, а не из текущего чекаута или текста модели. */
-export function storyEvidenceContext(evidence: StoryExplanationEvidence, diff: PrDiff | null, focus?: string): string {
+export function storyEvidenceContext(evidence: StoryExplanationEvidence, diff: PrDiff | null, focus?: string, diagramAlreadyShown = false): string {
     const index = savedPatchIndex(diff);
     const sections = [...evidence.sections].sort((a, b) => Number(b.id === focus) - Number(a.id === focus));
     const blocks = focus === undefined || focus === 'intro'
         ? [{ id: 'intro', evidence: evidence.introduction }, ...sections]
         : [...sections.filter((entry) => entry.id === focus), { id: 'intro', evidence: evidence.introduction }, ...sections.filter((entry) => entry.id !== focus)];
-    const seen = new Set<string>();
-    return [...(evidence.flow === undefined ? [] : ['# Saved data-flow context', JSON.stringify(evidence.flow), ...[...evidence.flow.diagram.nodes, ...evidence.flow.diagram.edges].flatMap((item) => item.sources.flatMap((source) => {
-        if (source.kind !== 'patch') return [];
-        const key = JSON.stringify(source); if (seen.has(key)) return []; seen.add(key);
-        const lines = index.range(index.file(source.path, source.side), source);
-        return lines === null ? [`[UNAVAILABLE: saved flow range ${source.path}]`] : [`Flow source: ${source.path} ${source.side}:${String(source.start)}-${String(source.end)}`, ...lines.map((line) => line.raw)];
-    }))]), '# Saved explanation evidence', '', ...blocks.flatMap((block) => [`## ${block.id}`, '', ...block.evidence.claims.flatMap((claim) => [
-        ...(claim.quote === undefined ? [] : [`Claim: ${claim.quote}`]), ...(claim.limitation === null ? [] : [`Evidence limit: ${claim.limitation}`]),
-        ...claim.sources.flatMap((source) => {
-            const key = JSON.stringify(source); if (seen.has(key)) return []; seen.add(key);
-            if (source.sourceId !== undefined) return [`Saved revision source: ${source.sourceId} (${source.path})`];
-            const file = index.byId(source.fileId);
-            if (file === null) return [`[UNAVAILABLE: saved source ${source.path}]`];
-            if (source.kind === 'file') return [fileMetadata(file)];
-            const lines = index.range(file, source);
-            if (lines === null) return [`[UNAVAILABLE: saved range ${source.path}]`];
-            return [`File: ${source.path}; side: ${source.side}; lines ${String(source.start)}-${String(source.end)}`,
-                ...lines.map((line) => `${String(line.old ?? '.')} ${String(line.new ?? '.')} | ${line.raw.slice(1)}`)];
-        }), '',
-    ])])].join('\n');
+    // Реестр локален вопросу: snapshot/revision не смешиваются между задачами.
+    const seen = new Map<string, string>();
+    const emit = (key: string, description: string, body: readonly string[]): string[] => {
+        const previous = seen.get(key);
+        if (previous !== undefined) return [`Source ${previous}: ${description}`];
+        const id = `S${String(seen.size + 1)}`;
+        seen.set(key, id);
+        return [`Source ${id}: ${description}`, ...body];
+    };
+    const range = (source: { path: string; side: 'old' | 'new'; start: number; end: number; sourceId?: string | undefined }) => {
+        const file = index.file(source.path, source.side, true);
+        const saved = source.sourceId === undefined ? null : sourceEvidence(diff, source);
+        const lines = index.range(file, source);
+        const canonicalPath = file === null ? source.path : source.side === 'old' ? file.oldPath ?? file.path : file.path;
+        const description = `${canonicalPath} ${source.side}:${String(source.start)}-${String(source.end)}`;
+        // Неразрешённый sourceId не становится доказательством по совпадению пути.
+        if (source.sourceId !== undefined && saved === null) return emit(JSON.stringify(['saved', source.sourceId, source.side, source.start, source.end]), description, [`Saved revision source: ${source.sourceId} (${source.path}); resolve using the pinned source index.`]);
+        const key = JSON.stringify([canonicalPath, source.side, source.start, source.end]);
+        if (saved !== null) return emit(key, description, [`Saved revision source: ${saved.id} (${saved.path})`, ...saved.text.split('\n').slice(source.start - saved.start, source.end - saved.start + 1)]);
+        return lines === null ? [`[UNAVAILABLE: saved range ${description}]`] : emit(key, description,
+            lines.map((line) => `${String(line.old ?? '.')} ${String(line.new ?? '.')} | ${line.raw.slice(1)}`));
+    };
+    const flow = evidence.flow;
+    const flowContext = flow === undefined ? [] : ['# Saved architecture evidence', ...(diagramAlreadyShown ? [] : [flowText(flow)]),
+        ...[...flow.diagram.nodes.map((node) => ({ ...node, owner: `Node ${node.id}` })),
+            ...flow.diagram.edges.map((edge) => ({ ...edge, owner: `Edge ${edge.from} -> ${edge.to}: ${edge.label}` }))].flatMap((item) => [item.owner,
+            ...item.sources.flatMap((source) => source.kind === 'patch' ? range(source) : [`Saved flow context: ${source.id}`])]),
+        ...flow.contexts.flatMap((context) => [`Flow context ${context.id}: ${context.path} @ ${context.revision}:${String(context.start)}-${String(context.end)}`, context.text])];
+    return [...flowContext, '# Saved explanation evidence', ...blocks.flatMap((block) => [`## ${block.id}`,
+        ...block.evidence.claims.flatMap((claim) => [
+            ...(claim.quote === undefined ? [] : [`Claim: ${claim.quote}`]),
+            ...(claim.limitation === null ? [] : [`Evidence limit: ${claim.limitation}`]),
+            ...claim.sources.flatMap((source) => {
+                if (source.kind === 'lines') return range(source);
+                const file = index.byId(source.fileId);
+                return file === null ? [`[UNAVAILABLE: saved source ${source.path}]`] : emit(`file:${file.fileId}`, source.path, [fileMetadata(file)]);
+            }),
+        ]),
+    ])].join('\n');
 }
 
 function fileMetadata(file: FileDiff): string {

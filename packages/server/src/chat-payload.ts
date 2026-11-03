@@ -1,3 +1,4 @@
+import { flowText } from '@sherpa/protocol';
 import { storyEvidenceContext } from './story-evidence.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -287,7 +288,7 @@ function prPayloadSpecs(context: ChatPayloadContext): PayloadFileSpec[] {
 function evidenceSpecs(context: ChatPayloadContext): PayloadFileSpec[] {
     const evidence = context.explanation?.evidence;
     return evidence === undefined ? [] : [flexibleSpec('story-evidence.md', 5,
-        storyEvidenceContext(evidence, context.diff, context.explanation?.sectionId))];
+        storyEvidenceContext(evidence, context.diff, context.explanation?.sectionId, evidence.flow !== undefined && context.explanation?.text.includes(flowText(evidence.flow)) === true))];
 }
 
 function fixedSpec(name: string, order: number, content: string): PayloadFileSpec {
