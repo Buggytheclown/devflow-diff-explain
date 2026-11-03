@@ -10,7 +10,7 @@ test('пояснение и пример → полный дифф; источн
     expect((await server.worker.complete(plan.taskId ?? 0, JSON.stringify(fixture.outline))).stdout).not.toContain('rejected');
     await expect(page.locator('.story-overview h2').first()).toHaveText('Описание ПРа');
     await expect(page.locator('[data-architecture-node]')).not.toHaveCount(0);
-    const section = await server.worker.next(); expect(section.type).toBe('route.section');
+    const section = await server.worker.next(); expect(section.type).toBe('route.prepare');
     expect((await server.worker.complete(section.taskId ?? 0, JSON.stringify(fixture.body))).stdout).not.toContain('rejected');
     await openBlocks(page);
     await page.locator('.story-nav').getByRole('button', { name: fixture.first.path, exact: true }).click();

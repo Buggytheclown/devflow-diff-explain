@@ -124,3 +124,23 @@ it('повтор архитектуры сохраняет внешние ист
         expect(savedSource.path).toBe('outside.ts'); expect(savedSource.sourceId).toMatch(/^[a-f0-9]{64}$/);
     } finally { await server.close(); await removeTempSherpaDir(dir); }
 });
+
+it('ошибка источника одного файла не прерывает подготовку независимых соседей', async () => {
+    const { source, diff } = setup();
+    const prepared = JSON.parse(await source.prepare(diff, JSON.stringify({ contractVersion: 6, files: [
+        { path: 'one.ts', explanation: 'First', example: { text: 'Example', evidence: { sources: [{ kind: 'lines', path: 'outside.ts', side: 'new', start: 50, end: 51 }] } } },
+        { path: 'two.ts', explanation: 'Second' },
+    ] }), false)) as { files: { path: string; __sourceError?: string }[] };
+    expect(prepared.files[0]?.__sourceError).toContain('Source unavailable');
+    expect(prepared.files[1]).toEqual({ path: 'two.ts', explanation: 'Second' });
+});
+
+it('сохраняет большой однострочный источник независимо от лимита ответа модели', async () => {
+    const { source, read, diff, db } = setup();
+    const text = 'x'.repeat(300_000);
+    read.mockResolvedValue(text);
+    const saved = await source.capture(diff, { path: 'outside/large.json', side: 'new', start: 1, end: 1 });
+    expect(new SavedSources(db, null).get(saved.id)?.text).toBe(text);
+    read.mockResolvedValue('x'.repeat(2_000_001));
+    await expect(source.capture(diff, { path: 'outside/too-large.json', side: 'new', start: 1, end: 1 })).rejects.toThrow('Source excerpt too large: outside/too-large.json:1-1');
+});

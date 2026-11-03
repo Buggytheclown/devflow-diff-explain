@@ -95,15 +95,15 @@ export class RoutePayloadWriter {
         const prDiff = this.prDiff(context);
         const locale = context.locale;
         return {
-            type: 'route.skeleton',
+            type: 'route.prepare',
             priority: 'background',
-            instructions: 'Help explain this pinned PR: draw its affected architecture, connect blocks and assign all files. Choose your research; context paths are available selectively. Follow the result schema.\n' + pinnedTarget(context),
+            instructions: 'Help explain this pinned PR: draw its affected architecture, connect blocks and assign all files. Publish overview together with any ready file explanations; continue with useful checkpoints. Choose your research; context paths are available selectively. Follow the result schema.\n' + pinnedTarget(context),
             // Своего у скелета нет: и методичка, и дифф — общие пути.
             contextFiles: [
                 this.shared.guide('skeleton-guide', architectureGuide('overview', locale)),
                 prDiff.target,
             ],
-            resultSchemaFile: this.writeSchema('architectureOverview'),
+            resultSchemaFile: this.writeSchema('allFiles'),
         };
     }
 
@@ -125,7 +125,7 @@ export class RoutePayloadWriter {
         const plan = this.writeFile(name, explanationPlanContext(planIndexes, stops, intents, context) + `\nAccepted overview and files (read when useful): ${known}\n`);
         const prDiff = this.prDiff(context);
         return {
-            type: 'route.section',
+            type: 'route.prepare',
             priority: 'background',
             instructions: 'Explain the remaining assigned files. Choose your research and publish useful checkpoints; context paths are available selectively. Follow the result schema.\n' + pinnedTarget(context),
             contextFiles: [

@@ -54,7 +54,7 @@ test('весь PR по умолчанию; явный файл → строки 
     await expect(page.locator('.chat-message--agent').last()).toContainText('Ответ остаётся доступным');
     await page.locator('.chat-panel__feed').evaluate((element) => { element.scrollTop = 0; });
 
-    const overview = await server.worker.next(); expect(overview.type).toBe('route.skeleton');
+    const overview = await server.worker.next(); expect(overview.type).toBe('route.prepare');
     await server.worker.complete(overview.taskId ?? 0, JSON.stringify(fixture.outline));
     const files = await server.worker.next(); await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('.story-preparation--ready summary')).toHaveText('✓ Разбор готов');

@@ -48,26 +48,35 @@ export function openDatabase(file: string, migrations: readonly Migration[] = MI
  * на этом стоит паттерн `Outcome` в очереди и регистре воркера: доменная ошибка едет значением
  * (и остаётся в хранилище), исключение отменяет всё.
  *
- * Вложенные вызовы не поддерживаются (savepoint'ов нет) — второй `BEGIN` упадёт.
+ * Вложенный вызов участвует в общей транзакции; исключение откатывает внешнюю операцию.
  */
+const activeTransactions = new WeakMap<SherpaDatabase, (() => void)[]>();
+
+/** Публикация памяти и событий только после внешнего commit. */
+export function afterDatabaseCommit(db: SherpaDatabase, effect: () => void): void {
+    const pending = activeTransactions.get(db);
+    if (pending === undefined) effect();
+    else pending.push(effect);
+}
+
 export function transaction<A extends unknown[], R>(db: SherpaDatabase, body: (...args: A) => R): (...args: A) => R {
     return (...args: A): R => {
+        if (activeTransactions.has(db)) return body(...args);
         db.exec('BEGIN IMMEDIATE;');
-
+        const effects: (() => void)[] = [];
+        activeTransactions.set(db, effects);
+        let result: R;
         try {
-            const result = body(...args);
-            // Коммит внутри try: упавший COMMIT (I/O, кончилось место) обязан оставить соединение
-            // вне транзакции, иначе каждая следующая операция сервера падает «transaction within a transaction».
+            result = body(...args);
             db.exec('COMMIT;');
-            return result;
         } catch (error) {
-            try {
-                db.exec('ROLLBACK;');
-            } catch {
-                // SQLite мог откатить транзакцию сам — тогда откатывать уже нечего.
-            }
+            try { db.exec('ROLLBACK;'); } catch { /* SQLite мог откатить сам. */ }
+            activeTransactions.delete(db);
             throw error;
         }
+        activeTransactions.delete(db);
+        for (const effect of effects) effect();
+        return result;
     };
 }
 

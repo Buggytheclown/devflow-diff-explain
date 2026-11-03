@@ -148,7 +148,8 @@ test('ошибка источника повторяется локально б
         await expect(offline.getByText(/Этот рассказ создан без связей/)).toHaveCount(1);
         await expect(offline.locator('.story-source-line')).toHaveCount(0);
         await expect(offline.getByText('Агент не подключён. Сохранённый рассказ и дифф доступны для чтения.')).toBeVisible();
-        await offline.getByRole('button', { name: 'Фрагменты кода', exact: true }).first().click();
+        await offline.getByRole('button', { name: 'Фрагменты кода', exact: true }).first().focus();
+        await offline.keyboard.press('Enter');
         await expect(offline.locator('.story-source-line')).not.toHaveCount(0);
     } finally { await offline.close(); }
 });

@@ -8,7 +8,7 @@ import type {
     TaskStatus,
     TaskType,
 } from '@sherpa/protocol';
-import { LEASE_TTL_SECONDS, MAX_TASK_ATTEMPTS, RESULT_MAX_BYTES, taskSchema } from '@sherpa/protocol';
+import { taskCompleteResponseSchema, LEASE_TTL_SECONDS, MAX_TASK_ATTEMPTS, RESULT_MAX_BYTES, taskSchema } from '@sherpa/protocol';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
 import { transaction } from './db.js';
@@ -62,20 +62,20 @@ export type CancelOutcome = 'cancelled' | 'noop';
 
 /**
  * Итог fail-closed приёмки результата (docs/protocol.md §3). `onCommitted` очередь зовёт уже после
- * коммита своей транзакции: применение принятого результата пишет в собственные таблицы,
- * а вложенных транзакций у `node:sqlite` нет.
+ * коммита своей транзакции. persist пишет принятый снимок внутри общей транзакции;
+ * onCommitted выполняет только последующие действия и уведомления.
  *
  * `deferred` — «проверить сейчас нечем» (сервер ещё не поднял контекст задачи): модель получает
  * тот же отказ, но виновата в нём не она, поэтому бюджет отклонений не тратится.
  */
 export type TaskResultAcceptance =
-    | { readonly kind: 'accepted'; readonly onCommitted?: () => void }
+    | { readonly kind: 'accepted'; readonly receipt?: TaskCompleteResponse; readonly persist?: () => void; readonly onCommitted?: () => void }
     | { readonly kind: 'rejected'; readonly errors: readonly string[] }
     | { readonly kind: 'deferred'; readonly errors: readonly string[] };
 
 /**
  * Приёмщик результата типизированной задачи. Зовётся синхронно внутри транзакции `complete`,
- * поэтому обязан быть чистой проверкой: читать хранилище можно, писать — нет.
+ * поэтому выполняет проверку и возвращает persist для атомарной записи; уведомления идут после commit.
  * `null` — задача не его типа: её очередь закрывает по своим прежним правилам.
  */
 export type TaskResultAcceptor = (task: TaskRecord, result: string) => TaskResultAcceptance | null;
@@ -386,6 +386,8 @@ export class TaskQueue {
             return owned;
         }
         if (owned.value === null) {
+            const receipt = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`task_receipt:${String(taskId)}`);
+            if (typeof receipt?.value === 'string') return ok(taskCompleteResponseSchema.parse(JSON.parse(receipt.value)));
             return ok(closedNoop(this.requireRow(taskId)));
         }
 
@@ -421,11 +423,14 @@ export class TaskQueue {
             return ok(this.rejectResult(owned.value, result, acceptance.errors));
         }
 
+        acceptance?.persist?.();
         this.closeTask(taskId, 'done', { result });
         if (acceptance?.onCommitted !== undefined) {
             this.commitEffects.push(acceptance.onCommitted);
         }
-        return ok({ kind: 'accepted', message: acceptedMessage(taskId) });
+        const receipt = acceptance?.receipt ?? { kind: 'accepted' as const, message: acceptedMessage(taskId) };
+        if (owned.value.type === 'route.prepare') this.db.prepare('INSERT OR REPLACE INTO meta(key,value) VALUES (?,?)').run(`task_receipt:${String(taskId)}`, JSON.stringify(receipt));
+        return ok(receipt);
     }
 
     /**

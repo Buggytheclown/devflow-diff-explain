@@ -54,6 +54,7 @@ export class SavedSources {
         const lines = text?.split('\n');
         if (text === null || text.includes('\0') || lines === undefined || location.end > lines.length) throw new Error(`Source unavailable: ${location.path}:${String(location.start)}-${String(location.end)} @ ${revision}.`);
         const excerpt = lines.slice(location.start - 1, location.end).join('\n');
+        if (excerpt.length > 2_000_000) throw new Error(`Source excerpt too large: ${location.path}:${String(location.start)}-${String(location.end)}. Select a smaller supporting range or state the unavailable evidence.`);
         const saved = savedSourceSchema.parse({ ...location, id, diffId: diff.diffId, revision, text: excerpt, hash: digest(excerpt) });
         this.db.prepare('INSERT OR IGNORE INTO saved_sources (id, data) VALUES (?, ?)').run(id, JSON.stringify(saved));
         return saved;
@@ -89,6 +90,15 @@ export class SavedSources {
             }
             for (const child of Object.values(record)) await visit(child);
         };
+        if (value !== null && typeof value === 'object' && 'files' in value && Array.isArray(value.files)) {
+            const { files, ...structure } = value;
+            await visit(structure);
+            for (const file of files) {
+                try { await visit(file); }
+                catch (error) { if (file !== null && typeof file === 'object') Object.assign(file, { __sourceError: error instanceof Error ? error.message : 'Pinned source unavailable.' }); }
+            }
+            return JSON.stringify({ ...structure, files });
+        }
         await visit(value);
         return JSON.stringify(value);
     }

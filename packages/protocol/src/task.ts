@@ -8,6 +8,7 @@ import { z } from 'zod';
  */
 export const taskTypeSchema = z.enum([
     'echo',
+    'route.prepare',
     'route.skeleton',
     'route.section',
     'route.diagram',

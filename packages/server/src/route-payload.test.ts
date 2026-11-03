@@ -302,7 +302,7 @@ describe('запись payload на диск', () => {
     it('задача скелета: методичка и дифф — общие пути, схема — своя', () => {
         const input = writer().skeletonTask(context());
 
-        expect(input.type).toBe('route.skeleton');
+        expect(input.type).toBe('route.prepare');
         expect(input.priority).toBe('background');
         expect(input.contextFiles).toHaveLength(2);
         for (const file of input.contextFiles) {
@@ -325,7 +325,7 @@ describe('запись payload на диск', () => {
         expect(input.instructions).toContain(context().diff.baseCommit);
         // Своего у скелета нет: каталог генерации держит только схему результата.
         expect(fs.readdirSync(path.dirname(input.resultSchemaFile ?? ''))).toEqual([
-            'route-architectureOverview-result.schema.json',
+            'route-allFiles-result.schema.json',
         ]);
     });
 
@@ -336,14 +336,14 @@ describe('запись payload на диск', () => {
 
         const schemas = generateJsonSchemas();
         const readSchema = (file: string | undefined): unknown => JSON.parse(fs.readFileSync(file ?? '', 'utf8'));
-        expect(readSchema(skeleton.resultSchemaFile)).toEqual(schemas.architectureOverviewResult);
+        expect(readSchema(skeleton.resultSchemaFile)).toEqual(schemas.allFilesResult);
         expect(readSchema(sections.resultSchemaFile)).toEqual(schemas.allFilesResult);
     });
 
     it('задача секции: целевые номера в инструкции, план — свой файл без патчей', () => {
         const input = writer().sectionTask(context(), [3, 4], mediumReadySnapshot().stops, intents());
 
-        expect(input.type).toBe('route.section');
+        expect(input.type).toBe('route.prepare');
         expect(input.instructions).toContain('remaining assigned files');
         expect(input.contextFiles).toHaveLength(3);
         const plan = input.contextFiles[2] ?? '';

@@ -23,7 +23,7 @@ import type { AcceptedExplanation, ExplanationFilling } from './story.js';
 import { reviewProjection, storedSnapshot, restoreSnapshot } from './explanation-compat.js';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
-import { transaction } from './db.js';
+import { transaction, afterDatabaseCommit } from './db.js';
 import type { AcceptedSkeleton, RouteStopFilling } from './route/index.js';
 import { applyFilling } from './route/index.js';
 
@@ -252,7 +252,7 @@ export class RouteStore {
             this.setGenerationPresentation(generation.presentation);
             if (generation.diffId !== undefined) this.pinGenerationDiff(generation.diffId);
             this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                .run(generation.version === 6 ? '6' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
+                .run(generation.version === 6 ? '7' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
             if ((generation.version ?? 0) >= 5) this.writeGeneration({ id: randomUUID(), commit: generation.commit ?? null,
                 snapshotId: null, previousSnapshotId: this.state.snapshot?.snapshotId ?? null, status: 'running' });
             else this.db.prepare("DELETE FROM meta WHERE key='preparation_generation'").run();
@@ -273,7 +273,7 @@ export class RouteStore {
         this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_diff_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(diffId);
     }
     upgradeTaskEpoch(): void {
-        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
+        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version','7') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
     }
 
     /**
@@ -360,6 +360,22 @@ export class RouteStore {
         this.commit({ ...this.state, snapshot: updated }, overview?.intents ?? this.intents);
     }
 
+    recordFileOutcome(taskId: number, outcome: { accepted: string[]; errors: { path: string; errors: string[] }[] }): void {
+        this.db.prepare('INSERT OR REPLACE INTO meta(key,value) VALUES (?,?)').run(`file_outcome:${String(taskId)}`, JSON.stringify(outcome));
+    }
+
+    fileCorrections(): { path: string; attempts: number; errors: string[] }[] {
+        const pending = new Map<string, { path: string; attempts: number; errors: string[] }>();
+        for (const taskId of [...this.bindings().keys()].sort((a, b) => a - b)) {
+            const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`file_outcome:${String(taskId)}`);
+            if (typeof row?.value !== 'string') continue;
+            const outcome = JSON.parse(row.value) as { accepted: string[]; errors: { path: string; errors: string[] }[] };
+            for (const path of outcome.accepted) pending.delete(path);
+            for (const error of outcome.errors) pending.set(error.path, { ...error, attempts: (pending.get(error.path)?.attempts ?? 0) + 1 });
+        }
+        return [...pending.values()];
+    }
+
     flowBeforeRetry(snapshotId: string): FlowState | null {
         const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`flow_before_retry:${snapshotId}`);
         if (typeof row?.value !== 'string') return null;
@@ -400,9 +416,12 @@ export class RouteStore {
     setFileStatuses(updates: ReadonlyMap<string, RouteStopStatusUpdate>): void {
         const snapshot = this.state.snapshot;
         if (snapshot === null) return;
+        const corrections = this.fileCorrections();
         const stops = snapshot.stops.map((stop) => {
             const files = stop.guidedFiles?.map((file) => {
                 const update = updates.get(file.fileId);
+                const correction = corrections.find((entry) => entry.path === file.path);
+                if (correction !== undefined) return { ...file, failure: 'Пояснение требует исправления: ' + correction.errors.join('; '), status: file.explanation === null ? (update?.status ?? file.status) : 'ready' as const };
                 return file.explanation !== null ? { ...file, status: 'ready' as const, failure: null }
                     : update === undefined ? file : { ...file, status: update.status, failure: update.note ?? null };
             });
@@ -654,15 +673,17 @@ export class RouteStore {
         }
 
         const { state, afterCommit } = this.txWrite(parsed, intents, inTransaction);
-        this.state = state;
-        this.intents = intents;
-        this.revisionValue += 1;
-        if (!this.closed) {
-            for (const listener of [...this.listeners]) {
-                listener(this.revisionValue);
+        afterDatabaseCommit(this.db, () => {
+            this.state = state;
+            this.intents = intents;
+            this.revisionValue += 1;
+            if (!this.closed) {
+                for (const listener of [...this.listeners]) {
+                    listener(this.revisionValue);
+                }
             }
-        }
-        afterCommit?.();
+            afterCommit?.();
+        });
     }
 
     /**

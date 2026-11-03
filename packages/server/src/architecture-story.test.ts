@@ -30,27 +30,27 @@ async function complete(server: SherpaServer, result: unknown, type: string) {
 
 it('две задачи: целостный обзор с готовыми блоками, затем все файлы одним результатом', async () => {
     const { server } = await start();
-    await complete(server, fixture.outline, 'route.skeleton');
+    await complete(server, fixture.outline, 'route.prepare');
     const snapshot = (await read(server)).snapshot;
     expect(snapshot?.stops.every((block) => block.paragraph !== null)).toBe(true);
     expect(snapshot?.flow?.status).toBe('ready');
     expect(server.queue.listTasks().some((task) => task.type === 'route.diagram')).toBe(false);
-    await complete(server, fixture.body, 'route.section');
+    await complete(server, fixture.body, 'route.prepare');
     await vi.waitFor(async () => { expect((await read(server)).phase).toBe('ready'); });
     expect(preparationProgress((await read(server))).percent).toBe(100);
     expect(server.queue.listTasks()).toHaveLength(2);
 });
 
 it('продолжение после лимита и рестарта сохраняет обзор и готовые файлы', async () => {
-    const { server, dir } = await start(); await complete(server, fixture.outline, 'route.skeleton');
+    const { server, dir } = await start(); await complete(server, fixture.outline, 'route.prepare');
     const before = (await read(server)).snapshot;
     const first = fixture.body.stops[0]; if (first === undefined) throw new Error('Missing files');
-    await complete(server, { contractVersion: 6, stops: [{ ...first, files: first.files.slice(0, 1) }] }, 'route.section');
+    await complete(server, { contractVersion: 6, stops: [{ ...first, files: first.files.slice(0, 1) }] }, 'route.prepare');
     const progress = preparationProgress((await read(server)));
     expect(progress.files.ready).toBe(1); expect(progress.blocks.ready).toBe(2);
     await server.close(); const restarted = (await start(dir)).server;
     const remaining = { contractVersion: 6, stops: [{ ...first, files: first.files.slice(1) }, ...fixture.body.stops.slice(1)] };
-    await complete(restarted, remaining, 'route.section');
+    await complete(restarted, remaining, 'route.prepare');
     await vi.waitFor(async () => { expect(preparationProgress((await read(restarted))).percent).toBe(100); });
     expect((await read(restarted)).snapshot?.flow).toEqual(before?.flow);
     expect((await read(restarted)).snapshot?.stops.map((block) => block.paragraph)).toEqual(before?.stops.map((block) => block.paragraph));
@@ -75,7 +75,7 @@ it('не принимает потерянные файлы, подменённ�
 });
 
 it('ошибка отрисовки отражается в прогрессе, локальный повтор не меняет описание и файлы', async () => {
-    const { server } = await start(); await complete(server, fixture.outline, 'route.skeleton'); await complete(server, fixture.body, 'route.section');
+    const { server } = await start(); await complete(server, fixture.outline, 'route.prepare'); await complete(server, fixture.body, 'route.prepare');
     const saved = (await read(server)).snapshot; if (saved === null) throw new Error('No snapshot');
     server.route.reportDiagramFailure(saved.snapshotId);
     expect(preparationProgress((await read(server))).status).toBe('partial');
@@ -87,24 +87,24 @@ it('ошибка отрисовки отражается в прогрессе, 
 });
 
 it('повтор одного блока после общей ошибки не запускает остальные проваленные блоки', async () => {
-    const { server } = await start(); await complete(server, fixture.outline, 'route.skeleton');
+    const { server } = await start(); await complete(server, fixture.outline, 'route.prepare');
     const task = await next(server); server.queue.fail('worker', task.id, 'Synthetic failure');
     await vi.waitFor(async () => { expect((await read(server)).phase).toBe('failed'); });
     const snapshot = (await read(server)).snapshot; if (snapshot === null) throw new Error('Missing snapshot');
     await server.route.fillStop(snapshot.snapshotId, 1);
-    await complete(server, { ...fixture.body, stops: fixture.body.stops.slice(0, 1) }, 'route.section');
+    await complete(server, { ...fixture.body, stops: fixture.body.stops.slice(0, 1) }, 'route.prepare');
     await vi.waitFor(async () => { expect((await read(server)).phase).toBe('failed'); });
     expect((await read(server)).snapshot?.stops.map((block) => block.status)).toEqual(['ready', 'failed']);
 });
 
 it('уточнение обзора сохраняет принятые файлы и переживает рестарт', async () => {
     const { server, dir } = await start();
-    await complete(server, fixture.outline, 'route.skeleton');
+    await complete(server, fixture.outline, 'route.prepare');
     const first = fixture.body.stops[0]; if (first === undefined) throw new Error('No files');
-    await complete(server, { contractVersion: 6, stops: [{ ...first, files: first.files.slice(0, 1) }] }, 'route.section');
+    await complete(server, { contractVersion: 6, stops: [{ ...first, files: first.files.slice(0, 1) }] }, 'route.prepare');
     const before = (await read(server)).snapshot;
     const overview = { ...fixture.outline, summary: 'Уточнённая архитектура.', evidence: { claims: [{ sources: [], limitation: 'Synthetic test.' }] } };
-    await complete(server, { contractVersion: 6, overview, stops: [{ ...first, files: first.files.slice(1) }, ...fixture.body.stops.slice(1)] }, 'route.section');
+    await complete(server, { contractVersion: 6, overview, stops: [{ ...first, files: first.files.slice(1) }, ...fixture.body.stops.slice(1)] }, 'route.prepare');
     const refined = (await read(server)).snapshot;
     expect(refined?.summary).toBe(overview.summary);
     expect(refined?.stops.map((block) => block.id)).toEqual(before?.stops.map((block) => block.id));
@@ -173,25 +173,25 @@ it('окружение не требует пустых оговорок, а з�
 
 it('произвольная часть файлов после рестарта продолжается без потери и повторной сдачи', async () => {
     const { server, dir } = await start();
-    await complete(server, fixture.outline, 'route.skeleton');
+    await complete(server, fixture.outline, 'route.prepare');
     const files = fixture.body.stops.flatMap((stop) => stop.files).reverse();
     const first = files[0]; if (first === undefined) throw new Error('No files');
-    await complete(server, { contractVersion: 6, files: [first] }, 'route.section');
+    await complete(server, { contractVersion: 6, files: [first] }, 'route.prepare');
     expect(preparationProgress(await read(server)).files.ready).toBe(1);
     await server.close();
     const restarted = (await start(dir)).server;
-    await complete(restarted, { contractVersion: 6, files: files.slice(1) }, 'route.section');
+    await complete(restarted, { contractVersion: 6, files: files.slice(1) }, 'route.prepare');
     await vi.waitFor(async () => { expect(preparationProgress(await read(restarted)).percent).toBe(100); });
 });
 
 it('checkpoint обновляет только summary; перегруппировка переносит готовый файл и его ID', async () => {
     const { server, dir } = await start();
-    await complete(server, fixture.outline, 'route.skeleton');
+    await complete(server, fixture.outline, 'route.prepare');
     const files = fixture.body.stops.flatMap((block) => block.files);
     const first = files[0]; if (first === undefined) throw new Error('Missing file');
-    await complete(server, { contractVersion: 6, files: [first] }, 'route.section');
+    await complete(server, { contractVersion: 6, files: [first] }, 'route.prepare');
     const before = (await read(server)).snapshot; if (before === null) throw new Error('Missing snapshot');
-    await complete(server, { contractVersion: 6, update: { summary: 'Уточнён только смысл изменения.' } }, 'route.section');
+    await complete(server, { contractVersion: 6, update: { summary: 'Уточнён только смысл изменения.' } }, 'route.prepare');
     const summaryOnly = (await read(server)).snapshot;
     expect(summaryOnly?.summary).toBe('Уточнён только смысл изменения.');
     expect(summaryOnly?.flow).toEqual(before.flow);
@@ -200,19 +200,19 @@ it('checkpoint обновляет только summary; перегруппиро
     const [one, two] = blocks; if (one === undefined || two === undefined) throw new Error('Missing block');
     one.files = one.files.filter((path) => path !== first.path); two.files = [first.path, ...two.files];
     const ready = before.stops.flatMap((block) => block.guidedFiles ?? []).find((file) => file.path === first.path);
-    await complete(server, { contractVersion: 6, update: { stops: [two, one] } }, 'route.section');
+    await complete(server, { contractVersion: 6, update: { stops: [two, one] } }, 'route.prepare');
     const regrouped = (await read(server)).snapshot;
     expect(regrouped?.stops.map((block) => block.id)).toEqual([before.stops[1]?.id, before.stops[0]?.id]);
     expect(regrouped?.stops[0]?.guidedFiles?.[0]).toEqual(ready);
     expect(regrouped?.tourOrder).toEqual(regrouped?.stops.map((block) => block.id));
     await server.close(); const restarted = (await start(dir)).server;
-    await complete(restarted, { contractVersion: 6, files: files.slice(1) }, 'route.section');
+    await complete(restarted, { contractVersion: 6, files: files.slice(1) }, 'route.prepare');
     expect((await read(restarted)).phase).toBe('ready');
     expect(preparationProgress(await read(restarted)).percent).toBe(100);
 });
 
 it('незамкнутое обновление графа/владельцев отклоняется без изменения принятого обзора', async () => {
-    const { server } = await start(); await complete(server, fixture.outline, 'route.skeleton');
+    const { server } = await start(); await complete(server, fixture.outline, 'route.prepare');
     const task = await next(server);
     const before = (await read(server)).snapshot;
     const broken = { contractVersion: 6, update: { stops: fixture.outline.stops.slice(1) } };
@@ -248,7 +248,7 @@ it('обновление задания отзывает старую аренд
     store.beginSkeleton({ locale: 'ru', presentation: 'story', version: 5, diffId: legacy.diff.diffId });
     store.acceptSkeleton({ skeleton: parsed.value, diff: legacy.diff, snapshotId: 'legacy-v5', previousSnapshotId: null,
         presentation: 'story', provenance: { harness: 'codex', model: 'test', locale: 'ru' } });
-    const old = queue.enqueue({ type: 'route.section', priority: 'background', instructions: 'Old task', contextFiles: [] });
+    const old = queue.enqueue({ type: 'route.prepare', priority: 'background', instructions: 'Old task', contextFiles: [] });
     store.bindTask(old.id, 'section', legacy.diff.diffId, [1]); queue.next('old-worker');
     store.close(); db.close();
     const pushed = makeFixtureHost('medium'); pushed.advanceIteration();
@@ -298,11 +298,67 @@ it('повтор старого готового рассказа строит v
     expect((await read(restarted)).snapshot?.snapshotId).toBe('legacy-ready');
     expect(restarted.queue.listTasks().filter((task) => task.status === 'queued')).toHaveLength(0);
     await restarted.route.retryDiagram('legacy-ready');
-    await complete(restarted, fixture.outline, 'route.skeleton');
+    await complete(restarted, fixture.outline, 'route.prepare');
     const after = (await read(restarted)).snapshot;
     expect(after?.storyContractVersion).toBe(6); expect(after?.diffId).toBe(legacy.diff.diffId);
     const normalized = (files: NonNullable<typeof after>['stops'][number]['guidedFiles']) => files?.map(({ status: _status, failure: _failure, ...file }) => file);
     expect(normalized(after?.stops.flatMap((block) => block.guidedFiles ?? []))).toEqual(normalized(legacy.snapshot.stops.flatMap((block) => block.guidedFiles ?? [])));
     expect((await read(restarted)).phase).toBe('ready');
     expect(restarted.queue.listTasks().filter((task) => task.status === 'queued')).toHaveLength(0);
+});
+
+it('первый checkpoint публикует overview и все файлы без второй задачи', async () => {
+    const { server } = await start();
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    await complete(server, { contractVersion: 6, overview: fixture.outline, files }, 'route.prepare');
+    await vi.waitFor(async () => { expect((await read(server)).phase).toBe('ready'); });
+    expect(server.queue.listTasks()).toHaveLength(1);
+    expect(preparationProgress(await read(server)).percent).toBe(100);
+});
+
+it('принимает соседние файлы, хранит квитанцию и исправляет оставшийся после рестарта', async () => {
+    const { server, dir } = await start();
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    const broken = { ...files[0], annotations: [{ side: 'new', start: 999999, end: 999999, text: 'Bad range' }] };
+    const task = await next(server);
+    const result = JSON.stringify({ contractVersion: 6, overview: fixture.outline, files: [broken, ...files.slice(1)] });
+    const receipt = server.queue.complete('worker', task.id, result);
+    expect(receipt.kind).toBe('partial');
+    expect(server.queue.complete('worker', task.id, result)).toEqual(receipt);
+    expect(preparationProgress(await read(server)).files.ready).toBe(files.length - 1);
+    await server.close();
+    const restarted = (await start(dir)).server;
+    await complete(restarted, { contractVersion: 6, files: [files[0]] }, 'route.prepare');
+    await vi.waitFor(async () => { expect((await read(restarted)).phase).toBe('ready'); });
+    expect(preparationProgress(await read(restarted)).files.ready).toBe(files.length);
+});
+
+it('невалидная структура не публикует даже корректные соседние файлы', async () => {
+    const { server } = await start();
+    const task = await next(server);
+    const overview = structuredClone(fixture.outline);
+    const first = overview.stops[0]; if (first === undefined) throw new Error('Missing block');
+    first.files = [];
+    const receipt = server.queue.complete('worker', task.id, JSON.stringify({ contractVersion: 6, overview, files: fixture.body.stops.flatMap((block) => block.files) }));
+    expect(receipt.kind).toBe('rejected');
+    expect((await read(server)).snapshot).toBeNull();
+});
+
+it('ошибка исправления готового файла остаётся в работе, пока старый текст читается', async () => {
+    const { server } = await start();
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    const first = files[0]; const second = files[1]; if (first === undefined || second === undefined) throw new Error('Missing files');
+    await complete(server, { contractVersion: 6, overview: fixture.outline, files: files.slice(1) }, 'route.prepare');
+    const task = await next(server);
+    const bad = { ...second, explanation: 'New correction', annotations: [{ side: 'new', start: 999999, end: 999999, text: 'Bad range' }] };
+    expect(server.queue.complete('worker', task.id, JSON.stringify({ contractVersion: 6, files: [first, bad] })).kind).toBe('partial');
+    const partial = await read(server);
+    expect(partial.phase).toBe('filling');
+    const saved = partial.snapshot?.stops.flatMap((block) => block.guidedFiles ?? []).find((file) => file.path === second.path);
+    expect(saved?.explanation).toBe(second.explanation);
+    expect(saved?.failure).toContain('999999');
+    await server.route.warmup(); await server.route.warmup();
+    expect(server.queue.listTasks().filter((entry) => entry.status === 'queued')).toHaveLength(1);
+    await complete(server, { contractVersion: 6, files: [{ ...second, explanation: 'Corrected explanation' }] }, 'route.prepare');
+    await vi.waitFor(async () => { expect((await read(server)).phase).toBe('ready'); });
 });

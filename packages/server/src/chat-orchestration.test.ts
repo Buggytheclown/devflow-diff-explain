@@ -269,7 +269,7 @@ describe('вопросы об объяснении и коде', () => {
         const chatFile = chatTask?.contextFiles.find((file) => file.startsWith(chatPayloadDirOf(sherpaDir, PR))) ?? '';
 
         await server.route.warmup();
-        const routeTask = server.queue.listTasks().find((task) => task.type === 'route.skeleton');
+        const routeTask = server.queue.listTasks().find((task) => task.type === 'route.prepare');
         const routeFile = routeTask?.resultSchemaFile ?? '';
 
         expect(chatFile.startsWith(chatPayloadDirOf(sherpaDir, PR))).toBe(true);
@@ -316,10 +316,10 @@ describe('вопросы об объяснении и коде', () => {
         const server = await start(PR);
         server.workerRegistry.register(WORKER, 'claude-code', 'opus-5');
         await server.route.warmup();
-        const skeleton = server.queue.listTasks().find((task) => task.type === 'route.skeleton');
+        const skeleton = server.queue.listTasks().find((task) => task.type === 'route.prepare');
         expect(server.queue.next(WORKER)?.task.id).toBe(skeleton?.id);
         expect(complete(server, skeleton?.id ?? 0, JSON.stringify(architectureStoryFixture().outline)).kind).toBe('accepted');
-        expect(server.queue.listTasks().some((task) => task.type === 'route.section' && task.status === 'queued')).toBe(
+        expect(server.queue.listTasks().some((task) => task.type === 'route.prepare' && task.status === 'queued')).toBe(
             true,
         );
 

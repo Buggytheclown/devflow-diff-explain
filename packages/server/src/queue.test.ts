@@ -595,3 +595,21 @@ describe('очередь с арендой', () => {
         });
     });
 });
+
+it('откат queue commit не публикует память RouteStore и не оставляет принятую запись', async () => {
+    const { RouteStore } = await import('./route-store.js');
+    const db = openDatabase(':memory:');
+    const store = new RouteStore({ db });
+    const queue = new TaskQueue({ db });
+    const before = store.read();
+    const task = queue.enqueue({ type: 'route.prepare', priority: 'background', instructions: 'test', contextFiles: [] });
+    queue.next('worker');
+    queue.setResultAcceptor(() => ({ kind: 'accepted', persist: () => { store.setSmallPr(!before.smallPr); } }));
+    db.exec("CREATE TRIGGER fail_done BEFORE UPDATE ON tasks WHEN NEW.status='done' BEGIN SELECT RAISE(ABORT, 'injected commit failure'); END");
+    expect(() => queue.complete('worker', task.id, 'result')).toThrow('injected commit failure');
+    expect(store.read()).toEqual(before);
+    expect(new RouteStore({ db }).read()).toEqual(before);
+    expect(queue.getTask(task.id)?.status).toBe('leased');
+    expect(db.prepare("SELECT value FROM meta WHERE key=?").get(`task_receipt:${String(task.id)}`)).toBeUndefined();
+    store.close(); db.close();
+});

@@ -91,6 +91,7 @@ export function formatDone(message: string): string {
 /** `file` — путь, который воркер передал в `complete`: повтор команды идёт с ним же. */
 export function formatCompleteResponse(response: TaskCompleteResponse, taskId: number, file: string, prKey: string): string {
     switch (response.kind) {
+        case 'partial':
         case 'accepted':
             return `${response.message}\nCall \`devflow-diff-explain worker next --pr ${prKey}\` for the next task.`;
         case 'rejected':

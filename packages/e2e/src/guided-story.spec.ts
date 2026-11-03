@@ -109,7 +109,7 @@ test('провал и локальный повтор сохраняют пла�
     const before = await file.locator('.diff-row').allTextContents();
     await page.getByRole('button', { name: 'Повторить пояснение', exact: true }).first().click();
     const retry = await server.worker.next();
-    expect(retry.type).toBe('route.section');
+    expect(retry.type).toBe('route.prepare');
     expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ contractVersion: 6, stops: [fixture.body.stops[0]] }))).stdout).not.toContain('rejected');
     await expect(page.locator('.story-inline-note')).toHaveCount(1);
     await expect(file.locator('header code')).toHaveText(fixture.first.path);

@@ -29,7 +29,7 @@ export function GuidedDocument({ snapshot, page, onVisit, onAsk, renderFile, ren
                 {block.paragraph === null ? <Skeleton label={t.pending} /> : text(block.paragraph, block.id)}<ExplanationExample example={block.example} />
                 {block.status === 'failed' ? <p className="story-notice" role="alert">{t.failed}{onRetry === undefined ? null : <button className="ctl" onClick={() => { onRetry(block.id); }}>{t.retry}</button>}</p> : null}
                 {block.guidedFiles?.map((file) => <div key={file.fileId} className="story-guided-file" data-guide-page={`file:${file.fileId}`}>
-                    {renderFile(file.fileId, <>{file.explanation === null ? file.status === 'failed' ? <p role="alert">{file.failure ?? t.failed}</p> : <Skeleton label={t.pending} /> : text(file.explanation, 'description')}<ExplanationExample example={file.example} /></>)}
+                    {renderFile(file.fileId, <>{file.explanation === null ? file.status === 'failed' ? <p role="alert">{file.failure ?? t.failed}</p> : <Skeleton label={t.pending} /> : text(file.explanation, 'description')}{file.failure != null && (file.explanation !== null || file.status !== 'failed') ? <p role="alert">{file.failure}</p> : null}<ExplanationExample example={file.example} /></>)}
                 </div>)}
                 {(block.relatedFiles?.length ?? 0) === 0 ? null : <div className="story-related"><p>{t.related}</p>{block.relatedFiles?.map((entry) => <button className="ctl" key={entry.fileId} data-reading-focus={`related:${entry.fileId}`} onClick={() => { onVisit(`file:${entry.fileId}`, true); }}>{entry.path} ↗</button>)}</div>}
             </section>)}</div>

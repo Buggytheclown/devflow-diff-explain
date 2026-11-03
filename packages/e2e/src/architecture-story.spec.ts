@@ -15,7 +15,7 @@ test('два этапа: контрастная вертикальная арх�
     await expect(page.locator('.story-topbar select')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Стиль Arcanum', exact: true })).toHaveCount(0);
     await server.worker.register('codex', 'en');
-    const overview = await server.worker.next(); expect(overview.type).toBe('route.skeleton');
+    const overview = await server.worker.next(); expect(overview.type).toBe('route.prepare');
     const styled = { ...fixture.outline, flow: { ...fixture.outline.flow, diagram: { ...fixture.diagram,
         mermaid: fixture.diagram.mermaid + '\nclassDef faint fill:#ffffff,color:#eeeeee,stroke:#ffffff\nclass request,handler,rule,saved,rejected faint\nlinkStyle default stroke:#2d2c33',
         nodes: fixture.diagram.nodes.map((node) => node.id === 'rejected' ? { ...node, change: 'added' as const } : node),
@@ -75,7 +75,7 @@ test('два этапа: контрастная вертикальная арх�
     await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);
     await expect(page.locator('.story-code .diff-row')).not.toHaveCount(0);
     const rows = await page.locator('.story-code .diff-row').allTextContents();
-    const files = await server.worker.next(); expect(files.type).toBe('route.section');
+    const files = await server.worker.next(); expect(files.type).toBe('route.prepare');
     const assignment = files.stdout.split('\n').find((line) => line.endsWith('-plan.md'));
     expect(await fs.readFile(assignment?.trim() ?? '', 'utf8')).toContain('Accepted overview and files (read when useful):');
     expect((await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body))).stdout).not.toContain('rejected');
@@ -95,7 +95,7 @@ test('ошибка Mermaid не даёт 100%; повтор схемы сохр�
     const overview = await server.worker.next();
     const broken = { ...fixture.outline, flow: { ...fixture.outline.flow, diagram: { ...fixture.diagram, mermaid: 'flowchart TB\nrequest --> handler --> rule --> saved --> rejected\nrule --> [broken' } } };
     await server.worker.complete(overview.taskId ?? 0, JSON.stringify(broken));
-    const files = await server.worker.next(); expect(files.type).toBe('route.section');
+    const files = await server.worker.next(); expect(files.type).toBe('route.prepare');
     await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
     await expect(page.locator('.story-preparation')).toContainText('Разбор подготовлен частично');
     await expect(page.locator('[role=progressbar]')).not.toHaveAttribute('aria-valuenow', '100');
@@ -188,4 +188,24 @@ test('checkpoint перегруппирует блоки, сохраняя го�
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('.story-nav-file[aria-current=page]')).toHaveAttribute('aria-label', first.path);
     await expect(code.locator('.story-file-description')).toContainText(first.explanation);
+});
+
+test('единая сдача с ошибкой одного файла сохраняет архитектуру и остальные пояснения', async ({ page, launchSherpa }) => {
+    const server = await launchSherpa('fixture-medium');
+    await page.goto(server.url);
+    await server.worker.register('codex', 'ru');
+    const task = await server.worker.next();
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    const first = files[0]; if (first === undefined) throw new Error('Missing file');
+    const broken = { ...first, annotations: [{ side: 'new', start: 999999, end: 999999, text: 'Bad range' }] };
+    const result = await server.worker.complete(task.taskId ?? 0, JSON.stringify({ contractVersion: 6, overview: fixture.outline, files: [broken, ...files.slice(1)] }));
+    expect(result.stdout).toContain('Checkpoint saved');
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    const continuation = await server.worker.next();
+    expect(continuation.type).toBe('route.prepare');
+    await server.worker.complete(continuation.taskId ?? 0, JSON.stringify({ contractVersion: 6, files: [first] }));
+    await expect(page.getByText('Разбор готов', { exact: false }).first()).toBeVisible();
+    await page.reload();
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await expect(page.locator('[data-file-path]')).toHaveCount(files.length);
 });

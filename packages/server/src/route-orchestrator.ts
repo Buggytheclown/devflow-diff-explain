@@ -15,9 +15,11 @@ import type {
     UiRouteGenerateResponse,
     WorkerStatus,
     SectionAssignment,
+    TaskCompleteResponse,
 } from '@sherpa/protocol';
 
-import { validateArchitectureCheckpoint } from './architecture-checkpoint.js';
+import { checkIndividualFiles, partitionCheckpoint, validateArchitectureCheckpoint } from './architecture-checkpoint.js';
+import { allFilesResultSchema } from '@sherpa/protocol';
 import { RpcFailure } from './errors.js';
 import { resolveGenerationLocale } from './generation-locale.js';
 import type { IterationStore } from './iteration-store.js';
@@ -123,7 +125,7 @@ export class RouteOrchestrator {
     start(): void {
         this.flow.start();
         const state = this.store.read();
-        if (this.store.generationTaskEpoch() !== 6 && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
+        if (this.store.generationTaskEpoch() !== 7 && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
             const binding = [...this.store.bindings().values()].find((entry) => entry.diffId !== null);
             const pinned = state.phase === 'filling' ? state.snapshot?.diffId : binding?.diffId ?? this.store.generationDiffId();
             this.upgradingDiff = pinned ?? null;
@@ -342,10 +344,10 @@ export class RouteOrchestrator {
      */
     acceptResult(task: TaskRecord, result: string): TaskResultAcceptance | null {
         if (task.type === 'route.diagram') return this.flow.acceptResult(task, result);
-        if (task.type === 'route.skeleton') {
+        if (task.type === 'route.skeleton' || (task.type === 'route.prepare' && this.store.bindings().get(task.id)?.kind === 'skeleton')) {
             return this.acceptSkeleton(task, result);
         }
-        if (task.type === 'route.section') {
+        if (task.type === 'route.section' || task.type === 'route.prepare') {
             return this.acceptSection(task, result);
         }
         return null;
@@ -365,16 +367,31 @@ export class RouteOrchestrator {
         }
 
         const locale = this.skeletonLocale();
-        const validation = validateArchitectureOverview(result, diff);
+        let initial: { overview?: unknown; files?: unknown };
+        try { initial = JSON.parse(result) as typeof initial; } catch { initial = {}; }
+        const split = partitionCheckpoint(result);
+        const validation = validateArchitectureOverview(initial.overview === undefined ? result : JSON.stringify(initial.overview), diff);
         if (!validation.ok) {
             return { kind: 'rejected', errors: validation.errors };
         }
 
+        if (initial.overview !== undefined) {
+            const envelope = allFilesResultSchema.safeParse(JSON.parse(split?.structure ?? result));
+            if (!envelope.success) return { kind: 'rejected', errors: [envelope.error.message] };
+        }
         const skeleton = validation.value;
+        if (initial.files !== undefined && split === null) return { kind: 'rejected', errors: ['Return unique file paths and a valid files array.'] };
+        const part = checkIndividualFiles(split?.files ?? [], diff, skeleton.stops);
+        for (const filling of part.files) {
+            const block = skeleton.stops.find((entry) => entry.planIndex === filling.planIndex);
+            if (block !== undefined) block.guidedFiles = block.guidedFiles?.map((file) => filling.guidedFiles?.find((ready) => ready.fileId === file.fileId) ?? file);
+        }
         const provenance = provenanceOf(this.registry.status(), locale);
         return {
             kind: 'accepted',
-            onCommitted: () => {
+            receipt: partialReceipt(part),
+            persist: () => {
+                this.store.recordFileOutcome(task.id, part);
                 const previous = this.store.current();
                 if (skeleton.storyContractVersion === 6 && previous?.diffId === diff.diffId && previous.storyContractVersion !== 6) {
                     const files = new Map(previous.stops.flatMap((block) => block.guidedFiles ?? []).filter((file) => file.explanation !== null).map((file) => [file.fileId, file]));
@@ -389,8 +406,8 @@ export class RouteOrchestrator {
                     snapshotId,
                     previousSnapshotId: previous?.snapshotId ?? null,
                 });
-                this.reconcile();
             },
+            onCommitted: () => { this.reconcile(); },
         };
     }
 
@@ -407,13 +424,21 @@ export class RouteOrchestrator {
         }
 
         const locale = snapshotLocale(snapshot);
-        const checked = validateArchitectureCheckpoint(result, snapshot, diff, binding.assignment, this.store.flowBeforeRetry(snapshot.snapshotId));
+        const split = partitionCheckpoint(result);
+        let structural = split?.structure ?? result;
+        if (split !== null) {
+            const envelope = JSON.parse(structural) as { overview?: unknown; update?: unknown };
+            if (envelope.overview === undefined && envelope.update === undefined) structural = JSON.stringify({ ...envelope, update: { summary: snapshot.summary } });
+        }
+        const checked = validateArchitectureCheckpoint(structural, snapshot, diff, binding.assignment, this.store.flowBeforeRetry(snapshot.snapshotId));
         if (!checked.ok) return { kind: 'rejected', errors: checked.errors };
         const provenance = provenanceOf(this.registry.status(), locale);
-        return { kind: 'accepted', onCommitted: () => {
-            this.store.applyCheckpoint(checked.value.overview, checked.value.files, provenance);
-            this.reconcile();
-        } };
+        const part = split === null ? null : checkIndividualFiles(split.files, diff, checked.value.overview?.stops ?? snapshot.stops, binding.assignment);
+        if (part !== null && part.accepted.length === 0 && part.errors.length > 0 && split !== null && !(JSON.parse(split.structure) as { overview?: unknown }).overview && !(JSON.parse(split.structure) as { update?: unknown }).update) return { kind: 'rejected', errors: part.errors.flatMap((entry) => entry.errors) };
+        return { kind: 'accepted', ...(part === null ? {} : { receipt: partialReceipt(part) }), persist: () => {
+            if (part !== null) this.store.recordFileOutcome(task.id, part);
+            this.store.applyCheckpoint(checked.value.overview, part?.files ?? checked.value.files, provenance);
+        }, onCommitted: () => { this.reconcile(); } };
     }
 
     /**
@@ -492,13 +517,17 @@ export class RouteOrchestrator {
     private reconcileAllFiles(snapshot: RouteSnapshot): void {
         const assignments = new Map<string, TaskRecord>();
         for (const { record, binding } of this.routeTasks()) for (const file of binding.assignment?.files ?? []) assignments.set(file, record);
+        const corrections = this.store.fileCorrections();
+        if (corrections.some((entry) => entry.attempts >= 3)) { this.store.fail('Не удалось применить исправление файла: ' + corrections.map((entry) => entry.path).join(', '), null); return; }
+        const unscheduledCorrections = corrections.filter((entry) => { const task = assignments.get(entry.path); return task === undefined || task.status === 'done'; });
+        if (corrections.some((entry) => assignments.get(entry.path)?.status === 'failed')) { this.store.fail('Не удалось исправить файл. Повторите подготовку.', null); return; }
         const pending: string[] = [];
         const targets: number[] = [];
         const updates = new Map<string, RouteStopStatusUpdate>();
         const strings = routeStrings(snapshotLocale(snapshot));
         for (const block of snapshot.stops) {
             for (const file of block.guidedFiles ?? []) {
-                if (file.explanation !== null) continue;
+                if (file.explanation !== null && !corrections.some((entry) => entry.path === file.path)) continue;
                 const task = assignments.get(file.path);
                 if (task === undefined || task.status === 'done') {
                     pending.push(file.path);
@@ -508,16 +537,17 @@ export class RouteOrchestrator {
             }
         }
         this.store.setFileStatuses(updates);
-        if (pending.length > 0) {
+        if (pending.length > 0 || unscheduledCorrections.length > 0) {
             const diff = this.diffOf(snapshot.diffId);
             if (diff === null) { this.awaitOrAbandonDiff(snapshot.diffId); return; }
-            const assignment = { files: pending, introduction: false };
+            const assignment = { files: [...new Set([...pending, ...unscheduledCorrections.map((entry) => entry.path)])], introduction: false };
             const input = this.payload.sectionTask({ diff, meta: this.meta, locale: snapshotLocale(snapshot), version: 6,
                 introduction: snapshot.summary, introductionEvidence: snapshot.summaryEvidence, flow: snapshot.flow, assignment },
                 targets, snapshot.stops, this.store.stopIntents());
-            this.enqueueRouteTask('section', snapshot.diffId, targets, input, assignment);
+            this.enqueueRouteTask('section', snapshot.diffId, targets, { ...input, instructions: input.instructions + (corrections.length === 0 ? '' : `\nCorrections still needed: ${JSON.stringify(corrections)}`) }, assignment);
             return;
         }
+        if (corrections.length > 0) return;
         const current = this.store.current();
         if (current?.stops.every((block) => block.status === 'ready')) this.store.markReady();
         else if (!current?.stops.flatMap((block) => block.guidedFiles ?? []).some((file) => file.status === 'queued' || file.status === 'filling')) this.store.fail('Часть пояснений не готова. Повторите незавершённый блок.', null);
@@ -883,4 +913,9 @@ function provenanceOf(status: WorkerStatus, locale: Locale): RouteProvenance {
         return { harness: null, model: null, locale };
     }
     return { harness: status.harness ?? null, model: status.model ?? null, locale };
+}
+
+function partialReceipt(part: { accepted: string[]; errors: { path: string; errors: string[] }[] }): TaskCompleteResponse {
+    return part.errors.length === 0 ? { kind: 'accepted', message: 'Checkpoint saved. Continue with the next task.' }
+        : { kind: 'partial', message: `Checkpoint saved; accepted files: ${part.accepted.join(', ')}. Corrections needed: ${JSON.stringify(part.errors)}. Continue with the next task.`, accepted: part.accepted, errors: part.errors };
 }

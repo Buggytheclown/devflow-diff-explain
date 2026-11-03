@@ -69,7 +69,7 @@ describe('короткий рассказ', () => {
         expect(partial.snapshot?.presentation).toBe('story');
         expect(partial.snapshot?.summary).toBe(outline.summary);
         expect(partial.snapshot?.stops).toHaveLength(2);
-        const tasks = server.queue.listTasks().filter((task) => task.type === 'route.section');
+        const tasks = server.queue.listTasks().filter((task) => task.type === 'route.prepare' && task.status !== 'done');
         expect(tasks).toHaveLength(1);
         expect(server.route.stopsOfTask(tasks[0]?.id ?? 0)).toEqual([1, 2]);
         const payload = tasks[0]?.contextFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
@@ -106,11 +106,11 @@ describe('короткий рассказ', () => {
     it('повторные прогревы и одновременные generate не дублируют задачи', async () => {
         const server = await start();
         await Promise.all([server.route.warmup(), server.route.warmup(), server.route.generate()]);
-        expect(server.queue.listTasks().filter((task) => task.type === 'route.skeleton')).toHaveLength(1);
+        expect(server.queue.listTasks().filter((task) => task.type === 'route.prepare' && task.status !== 'done')).toHaveLength(1);
         complete(server, outline);
         await server.route.warmup();
         expect(await server.route.generate()).toBe('already_running');
-        expect(server.queue.listTasks().filter((task) => task.type === 'route.section')).toHaveLength(1);
+        expect(server.queue.listTasks().filter((task) => task.type === 'route.prepare' && task.status !== 'done')).toHaveLength(1);
     });
 
     it('отмена перестройки сохраняет готовое объяснение и не применяет поздний результат', async () => {
@@ -149,7 +149,7 @@ describe('короткий рассказ', () => {
         store.beginSkeleton({ locale: 'ru', presentation: 'legacy' });
         store.acceptSkeleton({ skeleton: accepted.value, diff: mediumDiff(), snapshotId: 'saved-legacy',
             previousSnapshotId: null, provenance: { harness: 'codex', model: 'test', locale: 'ru' } });
-        const legacy = queue.enqueue({ type: 'route.section', priority: 'background', instructions: 'old route', contextFiles: [] });
+        const legacy = queue.enqueue({ type: 'route.prepare', priority: 'background', instructions: 'old route', contextFiles: [] });
         queue.next('previous-worker');
         const feedback = queue.enqueue({ type: 'review.feedback', priority: 'interactive', instructions: 'old review', contextFiles: [] });
         store.close(); db.close();
@@ -244,7 +244,7 @@ describe('короткий рассказ', () => {
         expect((await read(restarted)).snapshot?.summary).toBe(outline.summary);
         const pending = restarted.queue.listTasks().filter((task) => task.status === 'queued');
         expect(pending).toHaveLength(1);
-        expect(pending[0]?.type).toBe('route.section');
+        expect(pending[0]?.type).toBe('route.prepare');
     });
 });
 

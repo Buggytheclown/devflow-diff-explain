@@ -14,7 +14,7 @@ test('обзор первым → непрерывный дифф → локал
     expect((await server.worker.complete(plan.taskId ?? 0, JSON.stringify(outline))).stdout).not.toContain('rejected');
     await expect(page.locator('[role=progressbar]')).not.toHaveAttribute('aria-valuenow', '100');
     await expect(page.locator('.story-source-links,.story-source-hint,.story-flow-sources,.story-guide-pager')).toHaveCount(0);
-    const files = await server.worker.next(); expect(files.type).toBe('route.section');
+    const files = await server.worker.next(); expect(files.type).toBe('route.prepare');
     const subset = fixture.body.stops.flatMap((block) => block.files);
     expect((await server.worker.complete(files.taskId ?? 0, JSON.stringify({ contractVersion: 6, files: subset }))).stdout).not.toContain('rejected');
     await page.evaluate(async () => {

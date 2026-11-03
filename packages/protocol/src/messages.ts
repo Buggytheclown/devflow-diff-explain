@@ -130,6 +130,7 @@ export type TaskCompleteRequest = z.infer<typeof taskCompleteRequestSchema>;
 
 export const taskCompleteResponseSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('accepted'), message: z.string() }),
+    z.object({ kind: z.literal('partial'), message: z.string(), accepted: z.array(z.string()), errors: z.array(z.object({ path: z.string(), errors: z.array(z.string()) })).min(1) }),
     /** Fail-closed валидация результата не прошла: список ошибок в промпт-формате — исправь и вызови снова. */
     z.object({ kind: z.literal('rejected'), errors: z.array(z.string()).min(1) }),
     /** Задача уже закрыта — повторный вызов, no-op (`docs/protocol.md §5`, идемпотентность). */

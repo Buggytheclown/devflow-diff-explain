@@ -94,7 +94,7 @@ export class FlowCoordinator {
         if (diff === undefined) { this.schedule(); return { kind: 'deferred', errors: ['Saved diff is loading. Retry completion.'] }; }
         const checked = validateArchitectureCheckpoint(result, snapshot, diff, undefined, this.options.store.flowBeforeRetry(snapshot.snapshotId), true);
         if (!checked.ok) return { kind: 'rejected', errors: checked.errors };
-        return { kind: 'accepted', onCommitted: () => {
+        return { kind: 'accepted', persist: () => {
             if (this.current(snapshot.snapshotId, task.id)) this.options.store.applyCheckpoint(checked.value.overview, checked.value.files, snapshot.provenance);
         } };
     }

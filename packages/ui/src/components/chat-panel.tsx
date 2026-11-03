@@ -104,7 +104,7 @@ export function queueBannerText(tasks: readonly UiTask[]): MessageKey | null {
     if (current.status === 'cancelled') {
         return 'chat.queue.busy';
     }
-    if (current.type === 'route.skeleton' || current.type === 'route.section') {
+    if (current.type === 'route.prepare' || current.type === 'route.skeleton' || current.type === 'route.section') {
         return 'chat.queue.route';
     }
     return current.type === 'review.feedback' ? 'chat.queue.feedback' : 'chat.queue.busy';

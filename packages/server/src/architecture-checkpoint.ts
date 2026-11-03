@@ -74,3 +74,36 @@ export function validateArchitectureCheckpoint(raw: string, snapshot: RouteSnaps
     if (!files.ok) return files;
     return { ok: true, value: { ...(overview === undefined ? {} : { overview }), files: files.value } };
 }
+
+/** Envelope и структура проверяются целиком; файл принимается целиком независимо от соседей. */
+export function partitionCheckpoint(raw: string): { structure: string; files: unknown[] } | null {
+    try {
+        const value: unknown = JSON.parse(stripCodeFence(raw));
+        if (value === null || typeof value !== 'object' || !('files' in value)) return null;
+        if (!Array.isArray(value.files)) return null;
+        const paths = value.files.map((file: unknown) => file !== null && typeof file === 'object' && 'path' in file ? file.path : undefined);
+        if (paths.some((path) => typeof path !== 'string') || new Set(paths).size !== paths.length) return null;
+        const { files, ...structure } = value;
+        return { structure: JSON.stringify({ ...structure, files: [] }), files };
+    } catch { return null; }
+}
+
+export function checkIndividualFiles(files: unknown[], diff: PrDiff, blocks: Parameters<typeof validateAllFiles>[2], assignment?: SectionAssignment) {
+    const accepted: string[] = [];
+    const errors: { path: string; errors: string[] }[] = [];
+    const fillings: ExplanationFilling[] = [];
+    for (const file of files) {
+        const path = (file as { path: string }).path;
+        const sourceError = (file as { __sourceError?: string }).__sourceError;
+        const checked = sourceError === undefined ? validateAllFiles(JSON.stringify({ contractVersion: 6, files: [file] }), diff, blocks, assignment) : { ok: false as const, errors: [sourceError] };
+        if (checked.ok) { accepted.push(path); fillings.push(...checked.value); }
+        else errors.push({ path, errors: checked.errors });
+    }
+    // Несколько файлов одного блока должны применяться одной filling, иначе Map потеряет соседей.
+    const grouped = new Map<number, ExplanationFilling>();
+    for (const filling of fillings) {
+        const previous = grouped.get(filling.planIndex);
+        grouped.set(filling.planIndex, { ...filling, guidedFiles: [...(previous?.guidedFiles ?? []), ...(filling.guidedFiles ?? [])] });
+    }
+    return { accepted, errors, files: [...grouped.values()] };
+}
