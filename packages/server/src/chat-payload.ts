@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import type {
+    StoryExplanationEvidence,
     ChatAnchor,
     ChatExplanation,
     ChatExchange,
@@ -104,7 +105,7 @@ export function buildChatPayload(context: ChatPayloadContext, options: ChatPaylo
         const file = attached === undefined ? undefined : context.diff?.files.find((file) => file.fileId === attached.fileId);
         const attachment: SharedChatContext[] = file === undefined ? [] : [{ kind: 'guide', name: 'attached-file-patch',
             content: `# Explicitly attached file: ${file.path}\n\nPinned commit: ${context.diff?.headCommit ?? 'unknown'}\nChange: ${file.changeType}\nPrevious path: ${file.oldPath ?? file.path}\n\n${file.patch ?? '[No text patch; metadata-only or binary change.]'}` }];
-        const files = fitOwnFiles(prPayloadSpecs(context), budgetBytes);
+        const files = fitOwnFiles(prPayloadSpecs(context), budgetBytes, context.explanation?.evidence);
         return {
             instructions: chatTaskInstructions(context, files, locale),
             shared: [...(diff === null ? [guide] : [guide, diff]), ...attachment],
@@ -113,7 +114,7 @@ export function buildChatPayload(context: ChatPayloadContext, options: ChatPaylo
     }
 
     const file = sharedAnchorFile(context, context.anchor, sharedBudgetBytes);
-    const files = fitOwnFiles(anchoredPayloadSpecs(context, context.anchor, file === null), budgetBytes);
+    const files = fitOwnFiles(anchoredPayloadSpecs(context, context.anchor, file === null), budgetBytes, context.explanation?.evidence);
     return {
         instructions: chatTaskInstructions(context, files, locale),
         shared: file === null ? [guide] : [guide, file],
@@ -232,10 +233,16 @@ function sharedAnchorFile(
     return { kind: 'file', diffKey: diffKeyOf(context.diff), fileId: anchor.fileId, side: anchor.side, content };
 }
 
-function fitOwnFiles(specs: readonly PayloadFileSpec[], budgetBytes: number): ChatPayloadFile[] {
-    return fitPayloadFiles(specs, budgetBytes)
+function fitOwnFiles(specs: readonly PayloadFileSpec[], budgetBytes: number, evidence?: StoryExplanationEvidence): ChatPayloadFile[] {
+    const files = fitPayloadFiles(specs, budgetBytes)
         .sort((left, right) => left.order - right.order)
         .map(({ name, content }) => ({ name, content }));
+    const diagram = evidence?.flow === undefined ? '' : flowText(evidence.flow);
+    if (diagram !== '' && files.find((file) => file.name === 'route-context.md')?.content.includes(diagram) === true) {
+        const source = files.find((file) => file.name === 'story-evidence.md');
+        if (source !== undefined) source.content = source.content.replace(`# Saved architecture evidence\n${diagram}\n`, '# Saved architecture evidence\n');
+    }
+    return files;
 }
 
 function anchoredPayloadSpecs(
@@ -288,7 +295,7 @@ function prPayloadSpecs(context: ChatPayloadContext): PayloadFileSpec[] {
 function evidenceSpecs(context: ChatPayloadContext): PayloadFileSpec[] {
     const evidence = context.explanation?.evidence;
     return evidence === undefined ? [] : [flexibleSpec('story-evidence.md', 5,
-        storyEvidenceContext(evidence, context.diff, context.explanation?.sectionId, evidence.flow !== undefined && context.explanation?.text.includes(flowText(evidence.flow)) === true))];
+        storyEvidenceContext(evidence, context.diff, context.explanation?.sectionId))];
 }
 
 function fixedSpec(name: string, order: number, content: string): PayloadFileSpec {

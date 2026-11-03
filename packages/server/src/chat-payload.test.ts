@@ -544,3 +544,17 @@ describe('общий бюджет chat payload', () => {
         expect(Buffer.byteLength(payload.instructions, 'utf8')).toBeLessThan(8000);
     });
 });
+
+it('удаляет повтор Mermaid только после применения бюджета текста объяснения', () => {
+    const diff = mediumDiff();
+    const evidence = { contractVersion: 6 as const, introduction: { claims: [{ sources: [], limitation: 'Unknown caller' }] }, sections: [],
+        flow: { status: 'ready' as const, contexts: [], diagram: { title: 'Process', mermaid: 'flowchart LR\na[A] --> b[B]', views: [], nodes: [], edges: [] } } };
+    const diagram = 'Architecture flowchart:\nflowchart LR\na[A] --> b[B]\nData flow: Process';
+    const context = { question: 'Where?', anchor: null, pr: META, diff, fileContent: null, route: EMPTY_ROUTE,
+        history: [], explanation: { snapshotId: null, diffId: diff.diffId, commit: diff.headCommit, text: diagram, evidence } };
+    const normal = buildChatPayload(context).files.map((file) => file.content).join('\n');
+    expect(normal.match(/flowchart LR/g)).toHaveLength(1);
+    const constrained = buildChatPayload({ ...context, explanation: { ...context.explanation, text: 'Long explanation. '.repeat(30_000) + diagram } }, { budgetBytes: 64 * 1024 });
+    expect(constrained.files.find((file) => file.name === 'route-context.md')?.content).not.toContain(diagram);
+    expect(constrained.files.find((file) => file.name === 'story-evidence.md')?.content).toContain('[TRUNCATED:');
+});
