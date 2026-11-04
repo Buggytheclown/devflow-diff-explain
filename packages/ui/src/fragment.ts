@@ -22,6 +22,13 @@ export function readToken(hash: string): string | null {
     return readFragmentParam(hash, 't') ?? readFragmentParam(hash, 'token');
 }
 
+/** Смена адресуемого кода или разбора требует нового состояния чтения. */
+export function locatorChanged(before: string, after: string): boolean {
+    return readToken(before) !== readToken(after)
+        || readFragmentParam(before, 'code') !== readFragmentParam(after, 'code')
+        || readFragmentParam(before, 'review') !== readFragmentParam(after, 'review');
+}
+
 /**
  * Новый фрагмент с применённой правкой: `null` в значении убирает параметр.
  * Порядок остальных параметров сохраняется — токен как был первым, так и остаётся.

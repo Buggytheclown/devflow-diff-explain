@@ -13,13 +13,17 @@ it('одинаковые номера строк в разных файлах и
     vi.spyOn(first, 'getBoundingClientRect').mockReturnValue({ top: -100, bottom: -80 } as DOMRect);
     vi.spyOn(second, 'getBoundingClientRect').mockReturnValue({ top: 80, bottom: 100 } as DOMRect);
     const scroll = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(100);
+    vi.spyOn(document.documentElement, 'scrollHeight', 'get').mockReturnValue(window.innerHeight + 1_000);
     expect(readingFocus(first)).not.toBe(readingFocus(second));
     const position = capturePosition(root); expect(position?.address).toBe('file:two/line:a1');
     expect(revealCode(root, { path: 'two.ts', side: 'new', start: 1, end: 1 })).toBe(true);
     expect(scroll).toHaveBeenLastCalledWith({ top: 68, behavior: 'instant' });
     scroll.mockClear();
-    expect(restorePosition(root, { address: 'file:two/line:a1', offset: 0 })).toBe(true);
+    expect(restorePosition(root, { address: 'file:two/line:a1', offset: 0 })).toBe(false);
     expect(scroll).toHaveBeenCalledWith({ top: 68, behavior: 'instant' });
+    vi.spyOn(second, 'getBoundingClientRect').mockReturnValue({ top: 12, bottom: 32 } as DOMRect);
+    expect(restorePosition(root, { address: 'file:two/line:a1', offset: 0 })).toBe(true);
     expect(revealCode(root, { path: 'missing.ts', side: 'new', start: 1, end: 1 })).toBe(false);
 });
 
@@ -33,14 +37,19 @@ it('карточка ещё не разобранного файла остаё�
     expect(capturePosition(root)).toEqual({ address: 'file:two/file', offset: -2 });
 });
 
-it('не завершает восстановление на временно коротком холсте со скелетонами', () => {
+it('не завершает восстановление с невыровненным якорем после исчезновения скелетона', () => {
     const root = document.createElement('main'); document.body.append(root);
     root.innerHTML = '<p data-reading="target"></p><p data-reading-wait></p>';
     const target = root.querySelector<HTMLElement>('[data-reading]');
     if (target === null) throw new Error('Missing target');
     vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({ top: 600, bottom: 620 } as DOMRect);
     vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(100);
+    vi.spyOn(document.documentElement, 'scrollHeight', 'get').mockReturnValue(window.innerHeight + 1_000);
     expect(restorePosition(root, { address: 'target', offset: 0 })).toBe(false);
     root.querySelector('[data-reading-wait]')?.remove();
+    expect(restorePosition(root, { address: 'target', offset: 0 })).toBe(false);
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(500);
+    vi.spyOn(document.documentElement, 'scrollHeight', 'get').mockReturnValue(window.innerHeight + 500);
     expect(restorePosition(root, { address: 'target', offset: 0 })).toBe(true);
 });

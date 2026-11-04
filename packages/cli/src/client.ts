@@ -93,10 +93,11 @@ export async function requestComplete(
     connection: ServerConnection,
     taskId: number,
     result: string,
+    grantToken: string,
 ): Promise<TaskCompleteResponse> {
     return callWorker<TaskCompleteRequest, TaskCompleteResponse>(connection, {
         endpoint: WORKER_ENDPOINTS.complete,
-        payload: { taskId, result },
+        payload: { taskId, result, grantToken },
         requestSchema: taskCompleteRequestSchema,
         responseSchema: taskCompleteResponseSchema,
         timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -108,10 +109,11 @@ export async function requestProgress(
     connection: ServerConnection,
     taskId: number,
     text: string,
+    grantToken: string,
 ): Promise<TaskAckResponse> {
     return callWorker<TaskProgressRequest, TaskAckResponse>(connection, {
         endpoint: WORKER_ENDPOINTS.progress,
-        payload: { taskId, text },
+        payload: { taskId, text, grantToken },
         requestSchema: taskProgressRequestSchema,
         responseSchema: taskAckResponseSchema,
         timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -123,10 +125,11 @@ export async function requestFail(
     connection: ServerConnection,
     taskId: number,
     reason: string,
+    grantToken: string,
 ): Promise<TaskAckResponse> {
     return callWorker<TaskFailRequest, TaskAckResponse>(connection, {
         endpoint: WORKER_ENDPOINTS.fail,
-        payload: { taskId, reason },
+        payload: { taskId, reason, grantToken },
         requestSchema: taskFailRequestSchema,
         responseSchema: taskAckResponseSchema,
         timeoutMs: DEFAULT_TIMEOUT_MS,

@@ -16,6 +16,20 @@ const model = parseFileDiff(toParseRequest(file));
 afterEach(() => { vi.resetAllMocks(); });
 
 describe('память данных читателя', () => {
+    it('в закреплённой вкладке читает код по ID и не подменяет его активной итерацией', async () => {
+        const codeSnapshotId = 'a'.repeat(64);
+        const pinned = { ...diff, codeSnapshotId };
+        const fetch = vi.mocked(fetchReviewDiff).mockResolvedValue(pinned);
+        const data = createStoryData('token', codeSnapshotId);
+        expect(await data.diff(null)).toEqual(pinned);
+        expect(await data.diff(diff.diffId)).toEqual(pinned);
+        expect(fetch).toHaveBeenCalledOnce();
+        expect(fetch).toHaveBeenCalledWith('token', { codeSnapshotId });
+    });
+    it('отклоняет ответ, если сервер вернул другой ID кода', async () => {
+        vi.mocked(fetchReviewDiff).mockResolvedValue({ ...diff, codeSnapshotId: 'b'.repeat(64) });
+        await expect(createStoryData('token').code('a'.repeat(64))).rejects.toThrow();
+    });
     it('изолирует версии и удаляет только неудачную загрузку, разрешая локальный повтор', async () => {
         const fetch = vi.mocked(fetchReviewDiff);
         fetch.mockResolvedValueOnce(diff).mockRejectedValueOnce(new Error('temporary')).mockResolvedValueOnce({ ...diff, diffId: 'next' });

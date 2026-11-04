@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import type { Locale, PrDiff, PrMeta } from '@sherpa/protocol';
-import { generateJsonSchemas } from '@sherpa/protocol';
+import { allFilesWorkerResultSchema, generateJsonSchemas } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { RouteTaskContext } from './route-payload.js';
@@ -20,6 +20,7 @@ import {
     mediumReadySnapshot,
 } from './route/fixture-support.js';
 import { SharedPayloadStore } from './shared-payload.js';
+import { architectureGuide } from './architecture-story.js';
 
 /**
  * Payload генеративных задач маршрута на фикстурном диффе `medium`: 21 файл, 868
@@ -319,7 +320,7 @@ describe('запись payload на диск', () => {
         expect(target.files.map((file) => file.path)).toEqual(context().diff.files.map((file) => file.path));
         for (const file of target.files) expect(fs.statSync(file.savedPatch).size).toBe(file.savedPatchBytes);
         expect(fs.readFileSync(target.optionalFullDiff, 'utf8')).toContain('## Changed files (21, complete list)');
-        expect(input.instructions).toContain('draw its affected architecture');
+        expect(input.instructions).toContain('Prepare the pinned PR');
         expect(input.instructions).toContain(META.url);
         expect(input.instructions).toContain(context().diff.headCommit);
         expect(input.instructions).toContain(context().diff.baseCommit);
@@ -344,13 +345,13 @@ describe('запись payload на диск', () => {
         const input = writer().sectionTask(context(), [3, 4], mediumReadySnapshot().stops, intents());
 
         expect(input.type).toBe('route.prepare');
-        expect(input.instructions).toContain('remaining assigned files');
+        expect(input.instructions).toContain('assigned files');
         expect(input.contextFiles).toHaveLength(3);
         const plan = input.contextFiles[2] ?? '';
         expect(plan.startsWith(payloadDir)).toBe(true);
-        expect(path.basename(plan)).toBe('section-03-04-plan.md');
+        expect(path.basename(plan)).toMatch(/^section-03-04-[0-9a-f]{8}-plan\.md$/);
         const text = fs.readFileSync(plan, 'utf8');
-        expect(text).toContain('## Accepted blocks and remaining files');
+        expect(text).toContain('## Relevant blocks and file status');
         expect(text).not.toContain('## Patches');
     });
 
@@ -364,6 +365,20 @@ describe('запись payload на диск', () => {
         expect(second.contextFiles[1]).toBe(skeleton.contextFiles[1]);
         expect(first.contextFiles[0]).toBe(second.contextFiles[0]);
         expect(fs.readdirSync(path.dirname(skeleton.contextFiles[1] ?? ''))).toEqual(['patches', 'pr-diff.md', 'saved-patch-index.json', expect.stringMatching(/^target-[a-f0-9]{8}\.json$/)]);
+    });
+
+    it('новый импорт источника меняет target до форматирования неизменного диффа', () => {
+        const artifacts: { revision: string; path: string; hash: string; kind: string; read: () => Uint8Array }[] = [];
+        const shared = new SharedPayloadStore(sharedDir, () => [], () => artifacts);
+        const builder = new RoutePayloadWriter({ payloadDir, shared });
+        const first = builder.skeletonTask(context()).contextFiles[1] ?? '';
+        artifacts.push({ revision: mediumDiff().headCommit, path: 'src/extra.ts', hash: 'extra-hash', kind: 'text', read: () => Buffer.from('export const extra = true;') });
+        const second = builder.skeletonTask(context()).contextFiles[1] ?? '';
+        expect(second).not.toBe(first);
+        const target = JSON.parse(fs.readFileSync(second, 'utf8')) as { importedSources: string };
+        const sourceIndex = JSON.parse(fs.readFileSync(target.importedSources, 'utf8')) as { sources: { file: string; path: string }[] };
+        expect(sourceIndex.sources[0]?.path).toBe('src/extra.ts');
+        expect(fs.readFileSync(sourceIndex.sources[0]?.file ?? '', 'utf8')).toBe('export const extra = true;');
     });
 
     it('контекст на диске урезан по бюджету билдера', () => {
@@ -405,6 +420,20 @@ describe('запись payload на диск', () => {
         expect(fs.statSync(path.dirname(input.contextFiles[1] ?? '')).mode & 0o777).toBe(0o700);
         expect(fs.statSync(input.contextFiles[1] ?? '').mode & 0o777).toBe(0o600);
     });
+});
+
+it('показанный агенту минимальный checkpoint проходит worker-схему', () => {
+    const guide = architectureGuide('files', 'en');
+    const example = { contractVersion: 6, files: [{ path: 'src/example.ts', explanation: 'This change rejects expired requests.' }] };
+    expect(guide).toContain(JSON.stringify(example));
+    expect(allFilesWorkerResultSchema.safeParse(example).success).toBe(true);
+});
+
+it('показанный агенту первый обзор проходит worker-схему', () => {
+    const guide = architectureGuide('overview', 'en');
+    const encoded = /A minimal first overview shape is (\{.*?\}); replace example text/s.exec(guide)?.[1];
+    expect(encoded).toBeDefined();
+    expect(allFilesWorkerResultSchema.safeParse(JSON.parse(encoded ?? '')).success).toBe(true);
 });
 
 it('large documentation under specs does not displace implementation as if it were a test', () => {

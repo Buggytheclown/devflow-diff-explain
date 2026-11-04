@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseFragment, readFragmentParam, readToken, updateFragment } from './fragment.js';
+import { locatorChanged, parseFragment, readFragmentParam, readToken, updateFragment } from './fragment.js';
+
+describe('locatorChanged', () => {
+    it('перезагружает приложение при смене кода, разбора или токена', () => {
+        const a = '#t=token&code=A&review=one&view=route';
+        expect(locatorChanged(a, '#t=token&code=B&review=one&view=route')).toBe(true);
+        expect(locatorChanged(a, '#t=token&code=A&review=two&view=route')).toBe(true);
+        expect(locatorChanged(a, '#t=other&code=A&review=one&view=route')).toBe(true);
+    });
+    it('оставляет вкладку на месте при смене только экрана', () => {
+        expect(locatorChanged('#t=token&code=A&review=one&view=route', '#t=token&code=A&review=one&view=diff')).toBe(false);
+    });
+});
 
 describe('readToken', () => {
     it('читает короткий параметр t первым', () => {

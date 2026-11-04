@@ -29,10 +29,10 @@ export type SqlRow = Record<string, NodeSqlite.SQLOutputValue>;
  */
 export function openDatabase(file: string, migrations: readonly Migration[] = MIGRATIONS): SherpaDatabase {
     const db = new (loadSqlite().DatabaseSync)(file);
-    db.exec('PRAGMA journal_mode = WAL;');
-    db.exec('PRAGMA foreign_keys = ON;');
-
     try {
+        assertKnownSchema(db, migrations);
+        db.exec('PRAGMA journal_mode = WAL;');
+        db.exec('PRAGMA foreign_keys = ON;');
         applyMigrations(db, migrations);
     } catch (error) {
         db.close();
@@ -93,6 +93,7 @@ function runCommitEffect(effect: () => void): void {
 
 /** Последовательно применяет неприменённые миграции; каждая — в своей транзакции. */
 export function applyMigrations(db: SherpaDatabase, migrations: readonly Migration[] = MIGRATIONS): void {
+    assertKnownSchema(db, migrations);
     db.exec(`
         CREATE TABLE IF NOT EXISTS migrations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123,6 +124,22 @@ export function applyMigrations(db: SherpaDatabase, migrations: readonly Migrati
         `INSERT INTO meta (key, value) VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     ).run(SCHEMA_VERSION_KEY, String(migrations.length));
+}
+
+/** Отказ до первой записи: старая сборка не должна открывать БД с неизвестными миграциями. */
+function assertKnownSchema(db: SherpaDatabase, migrations: readonly Migration[]): void {
+    const hasTable = (name: string): boolean => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
+    if (hasTable('migrations')) {
+        const applied = (db.prepare('SELECT name FROM migrations ORDER BY id').all() as { name: string }[]).map((row) => row.name);
+        if (applied.some((name, index) => migrations[index]?.name !== name)) {
+            throw new Error('Database schema is newer or incompatible with this server. Open it with a compatible version.');
+        }
+    }
+    if (!hasTable('meta')) return;
+    const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(SCHEMA_VERSION_KEY) as { value: string } | undefined;
+    if (row !== undefined && (!/^\d+$/.test(row.value) || Number(row.value) > migrations.length)) {
+        throw new Error('Database schema is newer or incompatible with this server. Open it with a compatible version.');
+    }
 }
 
 /** Версия схемы из `meta`; `null`, если хранилище ещё не мигрировано. */

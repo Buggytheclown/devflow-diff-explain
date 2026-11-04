@@ -1,3 +1,5 @@
+import type { TaskType } from './task.js';
+
 /**
  * Лимиты и тайминги протокола (`docs/protocol.md §5, §7`; `docs/architecture.md §7.5`).
  * Это дефолты контракта: сервер может переопределить их конфигом, но семантика неизменна.
@@ -5,6 +7,14 @@
 
 /** Лимит результата `complete`; больше — задача завершается ошибкой с понятным текстом. */
 export const RESULT_MAX_BYTES = 256 * 1024;
+
+/** Структурный обзор может перечислять тысячи изменённых файлов. */
+export const STRUCTURAL_RESULT_MAX_BYTES = 16 * 1024 * 1024;
+
+/** Лимит зависит от вида задания, а не от способа доставки результата. */
+export function resultLimitForTask(type: TaskType): number {
+    return type === 'route.prepare' ? STRUCTURAL_RESULT_MAX_BYTES : RESULT_MAX_BYTES;
+}
 
 /** Окно одного long-poll `worker next`; по его исчерпании CLI перезапрашивает сам. */
 export const LONG_POLL_DEFAULT_SECONDS = 240;

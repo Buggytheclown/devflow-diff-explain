@@ -1,6 +1,7 @@
 import type { Iteration, PrDiff, CodeReader, RouteSnapshot, UiRouteStale, UiRouteState } from '@sherpa/protocol';
 import type { IterationStore } from './iteration-store.js';
 import type { RouteStore } from './route-store.js';
+import { SnapshotReader } from './snapshot-reader.js';
 
 export interface IterationFeedOptions {
     readonly host: CodeReader | null;
@@ -21,6 +22,7 @@ export class IterationFeed {
     iterations(): Iteration[] { return this.list.map((item) => ({ ...item })); }
     active(): Iteration | null { return this.list.find((item) => item.status === 'active') ?? null; }
     async resolveActive(): Promise<Iteration | null> {
+        if (this.options.host instanceof SnapshotReader) { this.refreshLocal(); return this.active(); }
         if (!this.closed && this.options.host !== null) await this.update(await this.options.host.listIterations());
         return this.active();
     }
@@ -28,7 +30,10 @@ export class IterationFeed {
     subscribe(listener: (revision: number) => void): () => void {
         if (this.closed) return () => undefined;
         this.listeners.add(listener);
-        this.unwatch ??= this.options.host?.subscribeVersions((items) => { void this.update(items); }) ?? null;
+        this.unwatch ??= this.options.host?.subscribeVersions((items) => {
+            if (this.options.host instanceof SnapshotReader) this.refreshLocal();
+            else void this.update(items);
+        }) ?? null;
         return () => {
             this.listeners.delete(listener);
             if (this.listeners.size === 0) { this.unwatch?.(); this.unwatch = null; }
@@ -36,6 +41,12 @@ export class IterationFeed {
     }
     close(): void { this.closed = true; this.unwatch?.(); this.unwatch = null; this.listeners.clear(); }
     private isClosed(): boolean { return this.closed; }
+    private refreshLocal(): void {
+        if (this.closed) return;
+        this.list = this.options.iterations.list();
+        this.revisionValue += 1;
+        for (const listener of this.listeners) listener(this.revisionValue);
+    }
     private async update(items: Iteration[]): Promise<void> {
         if (this.closed) return;
         this.list = this.options.iterations.sync(items);

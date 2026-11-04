@@ -2,7 +2,8 @@ import type { Task } from '@sherpa/protocol';
 import { RESULT_MAX_BYTES } from '@sherpa/protocol';
 import { describe, expect, it } from 'vitest';
 
-import { formatCompleteResponse, formatDone, formatOversizedResult, formatRpcError, formatTask, formatUiUrl, formatUpReady } from './format.js';
+import { formatCompleteResponse, formatDone, formatOversizedResult, formatRpcError, formatSavedUiUrl, formatTask, formatUiUrl, formatUpReady } from './format.js';
+import { formatCommand } from './command.js';
 
 const task: Task = {
     id: 42,
@@ -14,6 +15,8 @@ const task: Task = {
 };
 
 const RESULT_FILE = '/tmp/sherpa/arcanum-1/42-1.md';
+const ENTRY = '/tmp/a skill/bin/devflow-diff-explain.mjs';
+const LEASE_REF = 'a'.repeat(64);
 
 describe('ссылка UI', () => {
     it('использует короткое имя параметра фрагмента и loopback по умолчанию', () => {
@@ -26,29 +29,37 @@ describe('ссылка UI', () => {
 });
 
 it('up показывает ссылку и продолжение сохранённого проекта', () => {
-    const text = formatUpReady('http://127.0.0.1:4317/#t=token', 'arcanum-1');
-    expect(text).toContain('#t=token'); expect(text).toContain('worker next --pr arcanum-1');
+    const text = formatUpReady('http://127.0.0.1:4317/#t=token', 'arcanum-1', ENTRY);
+    expect(text).toContain('#t=token'); expect(text).toContain(formatCommand(ENTRY, 'worker', 'next', '--pr', 'arcanum-1'));
+});
+
+it('saved locator retains the fresh token and pins exact code and review', () => {
+    const code = 'a'.repeat(64);
+    expect(formatSavedUiUrl('http://127.0.0.1:4317/#t=new-token', code, 'review-2', undefined))
+        .toBe(`http://127.0.0.1:4317/#t=new-token&code=${code}&review=review-2&view=route`);
+    expect(formatSavedUiUrl('http://127.0.0.1:4317/#t=new-token', code, undefined, undefined))
+        .toBe(`http://127.0.0.1:4317/#t=new-token&code=${code}&view=diff`);
 });
 
 describe('промпт-формат задачи', () => {
     it('содержит заголовок, инструкцию, контекст и команды сдачи', () => {
-        const output = formatTask(task, RESULT_FILE, 'arcanum-1');
+        const output = formatTask(task, RESULT_FILE, 'arcanum-1', LEASE_REF, ENTRY);
 
         expect(output.startsWith('TASK sherpa/42 (echo), attempt 1')).toBe(true);
         expect(output).toContain('Return the contents of the file as is.');
         expect(output).toContain('Context: /tmp/sherpa/task-42-context.md');
         expect(output).toContain(`Write the result to ${RESULT_FILE} and submit it:`);
-        expect(output).toContain(`  devflow-diff-explain task complete 42 --file ${RESULT_FILE}`);
+        expect(output).toContain(`  ${formatCommand(ENTRY, 'task', 'complete', '42', '--file', RESULT_FILE, '--pr', 'arcanum-1', '--lease', LEASE_REF, '--next')}`);
         expect(output).not.toContain('<path>');
-        expect(output.match(/--pr arcanum-1/g)).toHaveLength(3);
-        expect(output).toContain('devflow-diff-explain task progress 42 --text');
-        expect(output).toContain('devflow-diff-explain task fail 42 --reason');
+        expect(output.match(/'--pr' 'arcanum-1'/g)).toHaveLength(3);
+        expect(output).toContain(formatCommand(ENTRY, 'task', 'progress', '42', '--text', '...', '--pr', 'arcanum-1', '--lease', LEASE_REF));
+        expect(output).toContain(formatCommand(ENTRY, 'task', 'fail', '42', '--reason', '...', '--pr', 'arcanum-1', '--lease', LEASE_REF));
     });
 
     it('без контекстных файлов пишет «none», схему результата — только когда она есть', () => {
-        expect(formatTask({ ...task, contextFiles: [] }, RESULT_FILE, 'arcanum-1')).toContain('Context: none');
-        expect(formatTask(task, RESULT_FILE, 'arcanum-1')).not.toContain('Result schema');
-        expect(formatTask({ ...task, resultSchemaFile: '/tmp/schema.json' }, RESULT_FILE, 'arcanum-1')).toContain(
+        expect(formatTask({ ...task, contextFiles: [] }, RESULT_FILE, 'arcanum-1', LEASE_REF)).toContain('Context: none');
+        expect(formatTask(task, RESULT_FILE, 'arcanum-1', LEASE_REF)).not.toContain('Result schema');
+        expect(formatTask({ ...task, resultSchemaFile: '/tmp/schema.json' }, RESULT_FILE, 'arcanum-1', LEASE_REF)).toContain(
             'Result schema: /tmp/schema.json — the result is validated against it.',
         );
     });
@@ -65,10 +76,11 @@ describe('ответы на complete', () => {
             42,
             RESULT_FILE,
             'arcanum-1',
+            LEASE_REF,
         );
 
         expect(output).toContain('The result is accepted.');
-        expect(output).toContain('devflow-diff-explain worker next');
+        expect(output).toContain(formatCommand(process.argv[1], 'worker', 'next', '--pr', 'arcanum-1'));
     });
 
     it('rejected перечисляет ошибки пунктами и просит вызвать complete снова с тем же файлом', () => {
@@ -77,11 +89,12 @@ describe('ответы на complete', () => {
             42,
             '/work/answer.md',
             'arcanum-1',
+            LEASE_REF,
         );
 
         expect(output).toContain('1. empty');
         expect(output).toContain('2. no summary section');
-        expect(output).toContain('devflow-diff-explain task complete 42 --file /work/answer.md');
+        expect(output).toContain(formatCommand(process.argv[1], 'task', 'complete', '42', '--file', '/work/answer.md', '--pr', 'arcanum-1', '--lease', LEASE_REF));
     });
 
     it('терминальный отказ не предлагает сдавать закрытую задачу снова', () => {
@@ -146,11 +159,11 @@ describe('ошибки', () => {
     });
 
     it('перебор лимита объясняется в килобайтах и оставляет задачу за воркером', () => {
-        const output = formatOversizedResult(42, '/tmp/answer.md', RESULT_MAX_BYTES * 2, 'arcanum-1');
+        const output = formatOversizedResult(42, '/tmp/answer.md', RESULT_MAX_BYTES * 2, 'arcanum-1', RESULT_MAX_BYTES, LEASE_REF);
 
         expect(output).toContain('512 KB');
         expect(output).toContain('256 KB');
-        expect(output).toContain('devflow-diff-explain task complete 42 --file /tmp/answer.md');
+        expect(output).toContain(formatCommand(process.argv[1], 'task', 'complete', '42', '--file', '/tmp/answer.md', '--pr', 'arcanum-1', '--lease', LEASE_REF));
         expect(output).toContain('The task stays yours');
     });
 });

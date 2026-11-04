@@ -42,6 +42,7 @@ export const en: Dictionary = {
     'chat.file.remove': 'Remove attached file',
     'chat.context.open': 'Open attachment version',
     'chat.context.stale': 'Attachment refers to a different code version.',
+    'chat.context.unknown': 'The earlier question’s context was not saved.',
     'chat.aria': 'Chat with the agent',
     'chat.notes': (notes: number) => `Notes ${num(notes)}`,
     'chat.history.loading': 'Loading the chat history…',
@@ -175,7 +176,7 @@ export const en: Dictionary = {
     'time.justNow': 'just now',
 };
 
-export const storyEn = { capturedSnapshot: 'Snapshot', downloadOriginal: 'Download original', attachFile: 'Attach to chat',
+export const storyEn = { capturedSnapshot: 'Snapshot', permalink: 'Link to this version', currentVersion: 'Open current version', downloadOriginal: 'Download original', attachFile: 'Attach to chat',
         showChange: 'Show change', hideChange: 'Hide change', fragments: 'Code fragments', hideFragments: 'Hide fragments',
         before: 'Before', after: 'After', retrySource: 'Retry loading', loadingSource: 'Loading source…', binary: 'Binary file',
         returnTo: 'Back to explanation', newDiff: 'Open new diff', legacy: 'This explanation has no claim-to-source links. You can update it manually.',

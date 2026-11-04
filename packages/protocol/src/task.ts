@@ -50,6 +50,8 @@ export type Task = z.infer<typeof taskSchema>;
  */
 export const leaseSchema = z.object({
     taskId: taskIdSchema,
+    /** Непрозрачная идентичность этой выдачи, в том числе повторной тому же воркеру. */
+    grantToken: z.uuid(),
     ttlSeconds: z.number().int().positive(),
     /** ISO-8601; истина о времени — на сервере, воркеру срок сообщается справочно. */
     expiresAt: z.iso.datetime(),

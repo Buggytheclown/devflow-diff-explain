@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { generationSchema } from './preparation.js';
 
-import { agentNoteIdSchema, agentNoteSchema, chatExplanationSchema, chatAnchorSchema, chatExchangeIdSchema, chatExchangeSchema } from './chat.js';
+import { agentNoteIdSchema, agentNoteSchema, chatCodeRefSchema, chatExplanationRefSchema, chatExplanationSchema, chatAnchorSchema, chatExchangeIdSchema, chatExchangeSchema } from './chat.js';
 import { distributionVersionSchema } from './distribution.js';
 import { draftBufferEntrySchema } from './draft-buffer.js';
 import { localeSchema, localeSettingSchema } from './locale.js';
@@ -190,7 +190,7 @@ export type UiCancelResponse = z.infer<typeof uiCancelResponseSchema>;
  * двумя итерациями («что нового» в читалке). Какую итерацию смотрит вкладка, знает
  * только UI (выбор в URL-фрагменте): сервер про «текущий вид» не спрашивают.
  */
-export const uiReviewDiffRequestSchema = z.object({ diffId: hostIdSchema.optional() }).strict();
+export const uiReviewDiffRequestSchema = z.object({ diffId: hostIdSchema.optional(), codeSnapshotId: z.string().min(1).optional() }).strict();
 export type UiReviewDiffRequest = z.infer<typeof uiReviewDiffRequestSchema>;
 
 export const uiReviewDiffResponseSchema = z.object({ diff: prDiffSchema });
@@ -290,11 +290,18 @@ export const uiRouteStateSchema = z.object({
     stale: uiRouteStaleSchema.nullable(),
 });
 export type UiRouteState = z.infer<typeof uiRouteStateSchema>;
-export const uiRouteRetryDiagramRequestSchema = z.object({ snapshotId: z.string().min(1), renderFailure: z.literal(true).optional() }).strict();
+export const uiRouteRetryDiagramRequestSchema = z.object({ snapshotId: z.string().min(1), renderFailure: z.literal(true).optional(),
+    reportVersion: z.literal(1).optional(), diagramHash: z.string().optional(), viewIndex: z.number().int().min(0).optional(),
+    missingId: z.string().optional(), reason: z.string().min(1).max(500).optional() }).strict().superRefine((value, ctx) => {
+    if (value.renderFailure === true && (value.reportVersion !== 1 || value.diagramHash === undefined || value.viewIndex === undefined || value.reason === undefined))
+        ctx.addIssue({ code: 'custom', message: 'Render failure needs version, diagram hash, view and reason.' });
+    if (value.renderFailure !== true && (value.reportVersion !== undefined || value.diagramHash !== undefined || value.viewIndex !== undefined || value.missingId !== undefined || value.reason !== undefined))
+        ctx.addIssue({ code: 'custom', message: 'Render diagnostics require renderFailure.' });
+});
 export const uiRouteCancelGenerationRequestSchema = z.object({ generationId: z.string().min(1) }).strict();
 
 /** Без `snapshot` — текущее состояние маршрута; с ним — прошлый снапшот в `snapshot`, фаза как у него была. */
-export const uiReviewRouteRequestSchema = z.object({ snapshot: z.string().min(1).optional() });
+export const uiReviewRouteRequestSchema = z.object({ snapshot: z.string().min(1).optional(), codeSnapshotId: z.string().min(1).optional() });
 export type UiReviewRouteRequest = z.infer<typeof uiReviewRouteRequestSchema>;
 
 export const uiReviewRouteResponseSchema = z.object({
@@ -389,14 +396,18 @@ export const uiChatAskAnchorSchema = chatAnchorSchema.extend({ diffId: hostIdSch
 export type UiChatAskAnchor = z.infer<typeof uiChatAskAnchorSchema>;
 
 export const uiChatAskRequestSchema = z.object({
+    explanationRef: chatExplanationRefSchema.optional(),
+    /** Совместимость со старыми клиентами: новый UI передаёт explanationRef. */
     explanation: chatExplanationSchema.optional(),
+    codeRef: chatCodeRefSchema.optional(),
     text: z.string().min(1).max(4000),
     /** Отсутствует — вопрос ко всему PR (Ask AI). */
     anchor: uiChatAskAnchorSchema.optional(),
     /** Язык ответа — та же лестница и тот же запасной путь, что у `uiRouteGenerateRequestSchema.locale`. */
     locale: localeSchema.optional(),
-}).refine((value) => value.anchor === undefined || value.explanation?.file === undefined,
-    'Attach either one file or one line range.');
+}).refine((value) => value.anchor === undefined || (value.explanationRef?.file === undefined && value.explanation?.file === undefined && value.codeRef?.file === undefined),
+    'Attach either one file or one line range.').refine((value) => [value.codeRef, value.explanationRef, value.explanation].filter(Boolean).length <= 1,
+    'Send one code or review context.');
 export type UiChatAskRequest = z.infer<typeof uiChatAskRequestSchema>;
 
 export const uiChatAskResponseSchema = z.object({ exchange: chatExchangeSchema });

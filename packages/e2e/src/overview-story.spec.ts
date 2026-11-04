@@ -20,8 +20,13 @@ test('обзор первым → непрерывный дифф → локал
     await page.evaluate(async () => {
         const token = new URLSearchParams(location.hash.slice(1)).get('t') ?? '';
         const response = await fetch('/api/ui/review/route', { headers: { authorization: `Bearer ${token}` } });
-        const { route } = await response.json() as { route: { snapshot: { snapshotId: string } } };
-        await fetch('/api/ui/review/route/retry-diagram', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ snapshotId: route.snapshot.snapshotId, renderFailure: true }) });
+        const { route } = await response.json() as { route: { snapshot: { snapshotId: string; flow: { diagramHash?: string } } } };
+        if (route.snapshot.flow.diagramHash === undefined) throw new Error('Missing accepted diagram hash');
+        const report = await fetch('/api/ui/review/route/retry-diagram', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({
+            snapshotId: route.snapshot.snapshotId, renderFailure: true, reportVersion: 1, diagramHash: route.snapshot.flow.diagramHash,
+            viewIndex: 0, reason: 'Synthetic renderer failure',
+        }) });
+        if (!report.ok) throw new Error(`Render report failed: ${String(report.status)}`);
     });
     await expect(page.locator('.story-preparation')).toContainText('Разбор подготовлен частично');
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();

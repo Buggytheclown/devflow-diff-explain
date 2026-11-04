@@ -14,6 +14,7 @@ import {
     uiChatEventSchema,
     uiChatResponseSchema,
     uiChatRetryResponseSchema,
+    uiReviewRouteResponseSchema,
     uiStateSchema,
 } from '@sherpa/protocol';
 import { makeFixtureHost, architectureStoryFixture } from '@sherpa/fixtures';
@@ -21,6 +22,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { chatPayloadDirOf, databasePathFor, routePayloadDirOf, sharedPayloadDirOf } from './paths.js';
 import { MAX_RESULT_REJECTIONS } from './queue.js';
+import { RouteStore } from './route-store.js';
+import { validateArchitectureOverview } from './architecture-story.js';
 import { mediumDiff } from './route/fixture-support.js';
 import type { SherpaServer } from './server.js';
 import { startServer } from './test-support.js';
@@ -30,11 +33,13 @@ const PR = 'fixture-medium';
 const LOCAL_PR = 'unknown-777';
 const WORKER = 'w-chat';
 const ANSWER = 'Кэш очищается до записи, чтобы следующий читатель не получил прежнее значение.';
+const ANCHOR_FILE = mediumDiff().files[0];
+if (ANCHOR_FILE === undefined) throw new Error('Need fixture file');
 const ANCHOR: ChatAnchor = {
     // Активная итерация фикстуры: якорь чужой итерации ручка отбивает.
     diffId: mediumDiff().diffId,
-    fileId: 'f-main',
-    path: 'src/main.ts',
+    fileId: ANCHOR_FILE.fileId,
+    path: ANCHOR_FILE.path,
     side: 'new',
     start: 10,
     end: 12,
@@ -237,19 +242,17 @@ describe('вопросы об объяснении и коде', () => {
 
     it('ask атомарно создаёт queued-обмен и interactive-задачу с полным payload', async () => {
         const server = await start();
-        const exchange = await ask(server, 'Объясни порядок записи', ANCHOR);
+        const exchange = await ask(server, 'Объясни порядок записи');
         const [task] = server.queue.listTasks();
 
-        expect(exchange).toMatchObject({ status: 'queued', answer: null, anchor: ANCHOR });
+        expect(exchange).toMatchObject({ status: 'queued', answer: null, anchor: null });
         expect(task).toMatchObject({ type: 'chat', priority: 'interactive', status: 'queued' });
         expect(Buffer.byteLength(task?.instructions ?? '', 'utf8')).toBeLessThan(8000);
         expect(task?.instructions).toContain('Available context (read selectively');
-        // Хоста у этого сервера нет: диффа и текста файла не будет, общей остаётся методичка.
+        // Хоста у этого сервера нет: общей остаётся методичка.
         expect(task?.contextFiles.map((file) => path.basename(file))).toEqual([
             expect.stringMatching(/^chat-guide-[0-9a-f]{8}\.md$/),
             'question.md',
-            'selection.patch.md',
-            'file-context.md',
             expect.stringMatching(/^chat-route-context\.md-[a-f0-9]{8}\.md$/),
             'history.md',
         ]);
@@ -259,6 +262,15 @@ describe('вопросы об объяснении и коде', () => {
         ).toBe(true);
         expect(fsSync.readFileSync(task?.contextFiles[1] ?? '', 'utf8')).toContain('Объясни порядок записи');
         expect((await readChat(server)).exchanges).toEqual([exchange]);
+    });
+
+    it('явный диапазон без сохранённой версии отклоняется до постановки задачи', async () => {
+        const server = await start();
+        const response = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk,
+            { text: 'Что в строках?', anchor: ANCHOR }, server.token);
+        expect(response.status).toBe(400);
+        expect(server.queue.listTasks()).toEqual([]);
+        expect((await readChat(server)).exchanges).toEqual([]);
     });
 
     it('генерация маршрута и вопросы чата не трогают payload друг друга', async () => {
@@ -440,7 +452,7 @@ describe('вопросы об объяснении и коде', () => {
 
     it('retry разрешён из failed и cancelled и сохраняет вопрос с якорем', async () => {
         const server = await start();
-        const exchange = await ask(server, 'Сохрани этот вопрос', ANCHOR);
+        const exchange = await ask(server, 'Сохрани этот вопрос');
         const firstTask = leaseChat(server);
         server.queue.fail(WORKER, firstTask, 'не хватило контекста');
         expect((await readChat(server)).exchanges[0]?.status).toBe('failed');
@@ -473,7 +485,7 @@ describe('вопросы об объяснении и коде', () => {
         expect((await readChat(server)).exchanges[0]).toMatchObject({
             id: exchange.id,
             question: 'Сохрани этот вопрос',
-            anchor: ANCHOR,
+            anchor: null,
             status: 'queued',
         });
     });
@@ -498,7 +510,7 @@ describe('вопросы об объяснении и коде', () => {
         expect(uiChatRetryResponseSchema.parse(await retry.json()).outcome).toBe('retried');
     });
 
-    it('вопрос по прошлой итерации не берёт текст файла активной', async () => {
+    it('вопрос по прошлой итерации использует сохранённый патч', async () => {
         const stored = await start(PR);
         // Патч v1 оседает в хранилище при первой же загрузке диффа.
         await get(stored.port, UI_ENDPOINTS.reviewDiff, stored.token);
@@ -521,9 +533,171 @@ describe('вопросы об объяснении и коде', () => {
         const task = server.queue.listTasks().find((candidate) => candidate.type === 'chat');
         const files = task?.contextFiles ?? [];
         const patch = files.find((file) => path.basename(file) === 'selection.patch.md') ?? '';
-        const fileContext = files.find((file) => path.basename(file) === 'file-context.md') ?? '';
-        expect(fsSync.readFileSync(patch, 'utf8')).toContain('src/main.ts');
-        expect(fsSync.readFileSync(fileContext, 'utf8')).toContain('UNAVAILABLE');
+        expect(fsSync.readFileSync(patch, 'utf8')).toContain(ANCHOR.path);
+    });
+
+    it('повтор A после ответа B сохраняет исходную историю вопроса', async () => {
+        const server = await start(PR);
+        await get(server.port, UI_ENDPOINTS.reviewDiff, server.token);
+        const diff = await makeFixtureHost('medium').getDiff();
+        const codeRef = { diffId: diff.diffId, commit: diff.headCommit };
+        const askPinned = async (text: string) => {
+            const response = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk, { text, codeRef }, server.token);
+            expect(response.status).toBe(200);
+            return uiChatAskResponseSchema.parse(await response.json()).exchange;
+        };
+        const a = await askPinned('Вопрос A');
+        const taskA = leaseChat(server);
+        const firstHistoryFile = server.queue.getTask(taskA)?.contextFiles.find((file) => path.basename(file) === 'history.md');
+        const firstHistory = fsSync.readFileSync(firstHistoryFile ?? '', 'utf8');
+        server.queue.fail(WORKER, taskA, 'Синтетический сбой');
+        const b = await askPinned('Вопрос B');
+        expect(b.id).toBeGreaterThan(a.id);
+        const taskB = leaseChat(server);
+        expect(complete(server, taskB, 'Ответ B').kind).toBe('accepted');
+
+        await server.close();
+        const restarted = await start(PR);
+
+        const retry = await postJson(restarted.port, UI_ENDPOINTS.reviewChatRetry, { exchangeId: a.id }, restarted.token);
+        expect(retry.status).toBe(200);
+        const retried = leaseChat(restarted);
+        const history = restarted.queue.getTask(retried)?.contextFiles.find((file) => path.basename(file) === 'history.md');
+        expect(history).toBeDefined();
+        expect(fsSync.readFileSync(history ?? '', 'utf8')).toBe(firstHistory);
+        expect(fsSync.readFileSync(history ?? '', 'utf8')).not.toContain('Ответ B');
+    });
+
+    it('checkpoint между показом обзора и POST не подменяет редакцию вопроса', async () => {
+        const server = await start(PR);
+        server.workerRegistry.register(WORKER, 'claude-code', 'opus-5');
+        await server.route.warmup();
+        const task = server.queue.listTasks().find((candidate) => candidate.type === 'route.prepare');
+        expect(server.queue.next(WORKER)?.task.id).toBe(task?.id);
+        const fixture = architectureStoryFixture();
+        expect(complete(server, task?.id ?? 0, checkpointJson(fixture.outline)).kind).toBe('accepted');
+        const response = await get(server.port, UI_ENDPOINTS.reviewRoute, server.token);
+        const shown = uiReviewRouteResponseSchema.parse(await response.json()).route.snapshot;
+        if (shown?.reviewRevision === undefined) throw new Error('Expected revision');
+
+        const checked = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
+        if (!checked.ok) throw new Error(checked.errors.join('\n'));
+        const db = new DatabaseSync(databasePathFor(sherpaDir, PR));
+        try {
+            const route = new RouteStore({ db });
+            route.refineOverview({ ...checked.value, summary: 'Новый checkpoint после показа' });
+            expect(route.current()?.reviewRevision).toBeGreaterThan(shown.reviewRevision);
+        } finally { db.close(); }
+
+        const askResponse = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk, { text: 'Что показано?',
+            explanationRef: { reviewId: shown.snapshotId, revision: shown.reviewRevision,
+                diffId: shown.diffId, commit: shown.commit } }, server.token);
+        expect(askResponse.status).toBe(200);
+        const exchange = uiChatAskResponseSchema.parse(await askResponse.json()).exchange;
+        expect(exchange.explanation?.text).toContain(shown.summary);
+        expect(exchange.explanation?.text).not.toContain('Новый checkpoint после показа');
+    });
+
+    it('история нового вопроса не копирует большой прежний обзор', async () => {
+        const server = await start(PR);
+        server.workerRegistry.register(WORKER, 'claude-code', 'opus-5');
+        await server.route.warmup();
+        const task = server.queue.listTasks().find((candidate) => candidate.type === 'route.prepare');
+        expect(server.queue.next(WORKER)?.task.id).toBe(task?.id);
+        const fixture = architectureStoryFixture();
+        expect(complete(server, task?.id ?? 0, checkpointJson(fixture.outline)).kind).toBe('accepted');
+        const checked = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
+        if (!checked.ok) throw new Error(checked.errors.join('\n'));
+        const marker = 'VERY_LARGE_PRIOR_OVERVIEW_';
+        const db = new DatabaseSync(databasePathFor(sherpaDir, PR));
+        let revision: number;
+        let reviewId: string;
+        try {
+            const route = new RouteStore({ db });
+            route.refineOverview({ ...checked.value, summary: marker.repeat(2000) });
+            const snapshot = route.current();
+            if (snapshot?.reviewRevision === undefined) throw new Error('Expected review revision');
+            revision = snapshot.reviewRevision;
+            reviewId = snapshot.snapshotId;
+        } finally { db.close(); }
+        const firstResponse = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk, { text: 'Первый вопрос',
+            explanationRef: { reviewId, revision, diffId: fixture.diff.diffId, commit: fixture.diff.headCommit } }, server.token);
+        expect(firstResponse.status).toBe(200);
+        const first = uiChatAskResponseSchema.parse(await firstResponse.json()).exchange;
+        expect(first.explanation?.text.length).toBeGreaterThan(40_000);
+        const firstDb = new DatabaseSync(databasePathFor(sherpaDir, PR));
+        try {
+            const row = firstDb.prepare('SELECT explanation, question_input FROM chat_exchanges WHERE id = ?').get(first.id) as
+                { explanation: string; question_input: string };
+            expect(row.explanation).toContain(marker);
+            expect(row.question_input).not.toContain(marker);
+        } finally { firstDb.close(); }
+        expect(complete(server, leaseChat(server), 'Первый ответ').kind).toBe('accepted');
+
+        const secondResponse = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk, { text: 'Второй вопрос',
+            codeRef: { diffId: fixture.diff.diffId, commit: fixture.diff.headCommit } }, server.token);
+        expect(secondResponse.status).toBe(200);
+        const second = uiChatAskResponseSchema.parse(await secondResponse.json()).exchange;
+        const inspect = new DatabaseSync(databasePathFor(sherpaDir, PR));
+        try {
+            const row = inspect.prepare('SELECT question_input FROM chat_exchanges WHERE id = ?').get(second.id) as { question_input: string };
+            expect(row.question_input).not.toContain(marker);
+            expect(row.question_input).toContain('Первый вопрос');
+            expect(row.question_input).toContain('Первый ответ');
+            expect(row.question_input.length).toBeLessThan(10_000);
+        } finally { inspect.close(); }
+    });
+
+    it('закреплённый диапазон проверяет точный файл и сохранённые строки', async () => {
+        const server = await start(PR);
+        await get(server.port, UI_ENDPOINTS.reviewDiff, server.token);
+        const diff = await makeFixtureHost('medium').getDiff();
+        const file = diff.files.find((entry) => entry.patch !== null);
+        if (file === undefined) throw new Error('Need a text file');
+        const codeRef = { diffId: diff.diffId, commit: diff.headCommit };
+        const anchor = { diffId: diff.diffId, fileId: file.fileId, path: 'wrong.ts', side: 'new' as const, start: 1, end: 1 };
+        const wrongPath = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk, { text: 'Где?', codeRef, anchor }, server.token);
+        const wrongRange = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk,
+            { text: 'Где?', codeRef, anchor: { ...anchor, path: file.path, end: 1000000 } }, server.token);
+        const oldClientWrongPath = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk,
+            { text: 'Старый клиент?', anchor }, server.token);
+        const oldClientWrongRange = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk,
+            { text: 'Старый клиент?', anchor: { ...anchor, path: file.path, end: 1000000 } }, server.token);
+        expect(wrongPath.status).toBe(400);
+        expect(wrongRange.status).toBe(400);
+        expect(oldClientWrongPath.status).toBe(400);
+        expect(oldClientWrongRange.status).toBe(400);
+        expect((await readChat(server)).exchanges).toHaveLength(0);
+        const attached = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk,
+            { text: 'А весь файл?', codeRef: { ...codeRef, file: { fileId: file.fileId, path: file.path } } }, server.token);
+        expect(attached.status).toBe(200);
+        expect(uiChatAskResponseSchema.parse(await attached.json()).exchange.explanation?.file).toEqual({ fileId: file.fileId, path: file.path });
+    });
+
+    it('старый вопрос без сохранённого входа читается, но не повторяется с новой историей', async () => {
+        const server = await start(PR);
+        await get(server.port, UI_ENDPOINTS.reviewDiff, server.token);
+        const diff = await makeFixtureHost('medium').getDiff();
+        const response = await postJson(server.port, UI_ENDPOINTS.reviewChatAsk,
+            { text: 'Старый вопрос', codeRef: { diffId: diff.diffId, commit: diff.headCommit } }, server.token);
+        expect(response.status).toBe(200);
+        const exchange = uiChatAskResponseSchema.parse(await response.json()).exchange;
+        const task = leaseChat(server);
+        server.queue.fail(WORKER, task, 'Синтетический сбой');
+        const db = new DatabaseSync(databasePathFor(sherpaDir, PR));
+        try { db.prepare('UPDATE chat_exchanges SET question_input = NULL WHERE id = ?').run(exchange.id); }
+        finally { db.close(); }
+        expect((await readChat(server)).exchanges[0]?.question).toBe('Старый вопрос');
+        const retry = await postJson(server.port, UI_ENDPOINTS.reviewChatRetry, { exchangeId: exchange.id }, server.token);
+        expect(retry.status).toBe(400);
+        expect(server.queue.listTasks().filter((candidate) => candidate.type === 'chat')).toHaveLength(1);
+
+        const damaged = new DatabaseSync(databasePathFor(sherpaDir, PR));
+        try { damaged.prepare('UPDATE chat_exchanges SET question_input = ? WHERE id = ?').run('{', exchange.id); }
+        finally { damaged.close(); }
+        expect((await readChat(server)).exchanges[0]?.question).toBe('Старый вопрос');
+        const damagedRetry = await postJson(server.port, UI_ENDPOINTS.reviewChatRetry, { exchangeId: exchange.id }, server.token);
+        expect(damagedRetry.status).toBe(400);
     });
 
     it('невалидный ответ пересдаётся, исчерпание отказов переводит обмен в failed', async () => {
@@ -597,7 +771,7 @@ describe('вопросы об объяснении и коде', () => {
 
     it('сбой записи ответа откатывает и обмен, и завершение задачи; повтор применяет ответ атомарно', async () => {
         const server = await start();
-        await ask(server, 'Сохрани ответ атомарно', ANCHOR);
+        await ask(server, 'Сохрани ответ атомарно');
         const taskId = leaseChat(server);
         const db = new DatabaseSync(databasePathFor(sherpaDir, LOCAL_PR));
         db.exec(`
@@ -629,7 +803,7 @@ describe('вопросы об объяснении и коде', () => {
 
     it('старой ручки заметок нет, история ответа остаётся доступной', async () => {
         const server = await start();
-        await ask(server, 'Закрепи ответ', ANCHOR);
+        await ask(server, 'Закрепи ответ');
         const taskId = leaseChat(server);
         complete(server, taskId);
         const before = await readChat(server);
@@ -668,7 +842,7 @@ describe('вопросы об объяснении и коде', () => {
 
     it('рестарт при выданной аренде chat: та же сессия сдаёт ответ с исходным якорем', async () => {
         const first = await start();
-        const exchange = await ask(first, 'Ответь уже после рестарта', ANCHOR);
+        const exchange = await ask(first, 'Ответь уже после рестарта');
         const taskId = leaseChat(first);
         expect((await readChat(first)).exchanges[0]).toMatchObject({ status: 'running' });
         await first.close();
@@ -685,7 +859,7 @@ describe('вопросы об объяснении и коде', () => {
         expect(complete(second, taskId).kind).toBe('accepted');
         const done = await readChat(second);
         expect(done.exchanges[0]).toMatchObject({ id: exchange.id, status: 'done', answer: ANSWER });
-        expect(done.exchanges[0]?.anchor).toEqual(ANCHOR);
+        expect(done.exchanges[0]?.anchor).toBeNull();
         expect(done.notes).toEqual([]);
     });
 
@@ -764,7 +938,7 @@ describe('вопросы об объяснении и коде', () => {
 
     it('рестарт сохраняет историю и сводит открытый обмен без задачи в failed', async () => {
         const first = await start();
-        await ask(first, 'Готовый ответ', ANCHOR);
+        await ask(first, 'Готовый ответ');
         complete(first, leaseChat(first));
         const done = await readChat(first);
         await ask(first, 'Потерянная задача');

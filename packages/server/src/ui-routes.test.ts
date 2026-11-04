@@ -240,14 +240,17 @@ describe('ручки UI', () => {
             expect(afterEnqueue.tasks[0]?.status).toBe('queued');
 
             const taskId = afterEnqueue.tasks[0]?.id ?? 0;
-            await postJson(server.port, WORKER_ENDPOINTS.next, WORKER_BASE, server.token);
+            const issued = workerNextResponseSchema.parse(
+                await (await postJson(server.port, WORKER_ENDPOINTS.next, WORKER_BASE, server.token)).json(),
+            );
+            if (issued.kind !== 'task') throw new Error('воркер не получил задачу');
             const afterLease = await nextState(stream);
             expect(afterLease.tasks[0]?.status).toBe('leased');
 
             await postJson(
                 server.port,
                 WORKER_ENDPOINTS.complete,
-                { ...WORKER_BASE, taskId, result: 'петля' },
+                { ...WORKER_BASE, taskId, grantToken: issued.lease.grantToken, result: 'петля' },
                 server.token,
             );
             const afterComplete = await nextState(stream);
@@ -429,7 +432,7 @@ describe('ручки UI', () => {
         await postJson(
             server.port,
             WORKER_ENDPOINTS.complete,
-            { ...WORKER_BASE, taskId: task.id, result: 'проверка петли' },
+            { ...WORKER_BASE, taskId: task.id, grantToken: leased.lease.grantToken, result: 'проверка петли' },
             server.token,
         );
 

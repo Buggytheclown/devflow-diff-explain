@@ -25,6 +25,7 @@ import { makeTempSherpaDir, postJson, postRaw, removeTempSherpaDir } from './tes
 const PR_KEY = 'arcanum-777';
 const WORKER = 'w-1';
 const BASE = { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.1.0', workerId: WORKER };
+const UNKNOWN_GRANT = 'b04cbbe4-0ed0-4d9b-98e4-39f5966adcf9';
 
 describe('воркерские ручки', () => {
     let sherpaDir: string;
@@ -83,6 +84,14 @@ describe('воркерские ручки', () => {
             instructions,
             contextFiles: ['/tmp/sherpa/task-context.md'],
         }).id;
+    }
+
+    async function grantOf(server: SherpaServer, workerId = WORKER): Promise<string> {
+        const response = workerNextResponseSchema.parse(await (
+            await postJson(server.port, WORKER_ENDPOINTS.next, { ...BASE, workerId }, server.token)
+        ).json());
+        if (response.kind !== 'task') throw new Error('expected a leased task');
+        return response.lease.grantToken;
     }
 
     async function openUi(server: SherpaServer): Promise<() => Promise<void>> {
@@ -149,7 +158,7 @@ describe('воркерские ручки', () => {
 
             const response = await postJson(
                 server.port,
-                WORKER_ENDPOINTS.complete,
+                WORKER_ENDPOINTS.register,
                 { ...BASE, taskId: 1, result: 'x'.repeat(REQUEST_BODY_MAX_BYTES + 1024) },
                 server.token,
             );
@@ -305,7 +314,7 @@ describe('воркерские ручки', () => {
             const response = await postJson(
                 server.port,
                 WORKER_ENDPOINTS.complete,
-                { ...BASE, workerId: 'w-2', taskId, result: 'чужой результат' },
+                { ...BASE, workerId: 'w-2', taskId, grantToken: UNKNOWN_GRANT, result: 'чужой результат' },
                 server.token,
             );
 
@@ -369,8 +378,10 @@ describe('воркерские ручки', () => {
         it('аренда вытесненной сессии возвращается в очередь и достаётся новой', async () => {
             const server = await start();
             const taskId = enqueueEcho(server);
-            const issued = await postJson(server.port, WORKER_ENDPOINTS.next, BASE, server.token);
-            expect(workerNextResponseSchema.parse(await issued.json()).kind).toBe('task');
+            const issued = workerNextResponseSchema.parse(
+                await (await postJson(server.port, WORKER_ENDPOINTS.next, BASE, server.token)).json(),
+            );
+            expect(issued.kind).toBe('task');
 
             await postJson(server.port, WORKER_ENDPOINTS.register, { ...BASE, workerId: 'w-2' }, server.token);
 
@@ -387,7 +398,7 @@ describe('воркерские ручки', () => {
             const late = await postJson(
                 server.port,
                 WORKER_ENDPOINTS.complete,
-                { ...BASE, taskId, result: 'результат вытесненной сессии' },
+                { ...BASE, taskId, grantToken: issued.kind === 'task' ? issued.lease.grantToken : UNKNOWN_GRANT, result: 'результат вытесненной сессии' },
                 server.token,
             );
             expect(late.status).toBe(409);
@@ -573,7 +584,7 @@ describe('воркерские ручки', () => {
             await postJson(
                 server.port,
                 WORKER_ENDPOINTS.complete,
-                { ...BASE, taskId, result: 'готово' },
+                { ...BASE, taskId, grantToken: issued.kind === 'task' ? issued.lease.grantToken : UNKNOWN_GRANT, result: 'готово' },
                 server.token,
             );
             const finished = workerNextResponseSchema.parse(
@@ -678,6 +689,23 @@ describe('воркерские ручки', () => {
     });
 
     describe('петля задачи', () => {
+        it('мутации без токена выдачи отклоняются до записи', async () => {
+            const server = await start();
+            const taskId = enqueueEcho(server);
+            await postJson(server.port, WORKER_ENDPOINTS.next, BASE, server.token);
+
+            for (const [path, body] of [
+                [WORKER_ENDPOINTS.complete, { result: 'late' }],
+                [WORKER_ENDPOINTS.progress, { text: 'late' }],
+                [WORKER_ENDPOINTS.fail, { reason: 'late' }],
+            ] as const) {
+                const response = await postJson(server.port, path, { ...BASE, taskId, ...body }, server.token);
+                expect(response.status).toBe(400);
+                expect(rpcErrorSchema.parse(await response.json()).error.code).toBe('bad_request');
+            }
+            expect(server.queue.getTask(taskId)).toMatchObject({ status: 'leased', result: null });
+        });
+
         it('next → progress → complete проходит целиком', async () => {
             const server = await start();
             const taskId = enqueueEcho(server);
@@ -694,7 +722,7 @@ describe('воркерские ручки', () => {
             const progress = await postJson(
                 server.port,
                 WORKER_ENDPOINTS.progress,
-                { ...BASE, taskId, text: 'читаю контекст' },
+                { ...BASE, taskId, grantToken: next.kind === 'task' ? next.lease.grantToken : UNKNOWN_GRANT, text: 'читаю контекст' },
                 server.token,
             );
             expect(taskAckResponseSchema.parse(await progress.json()).kind).toBe('accepted');
@@ -702,7 +730,7 @@ describe('воркерские ручки', () => {
             const complete = await postJson(
                 server.port,
                 WORKER_ENDPOINTS.complete,
-                { ...BASE, taskId, result: 'эхо' },
+                { ...BASE, taskId, grantToken: next.kind === 'task' ? next.lease.grantToken : UNKNOWN_GRANT, result: 'эхо' },
                 server.token,
             );
             expect(taskCompleteResponseSchema.parse(await complete.json()).kind).toBe('accepted');
@@ -713,7 +741,7 @@ describe('воркерские ручки', () => {
             const repeated = await postJson(
                 server.port,
                 WORKER_ENDPOINTS.complete,
-                { ...BASE, taskId, result: 'эхо' },
+                { ...BASE, taskId, grantToken: next.kind === 'task' ? next.lease.grantToken : UNKNOWN_GRANT, result: 'эхо' },
                 server.token,
             );
             expect(taskCompleteResponseSchema.parse(await repeated.json()).kind).toBe('accepted');
@@ -727,7 +755,7 @@ describe('воркерские ручки', () => {
             const response = await postJson(
                 server.port,
                 WORKER_ENDPOINTS.fail,
-                { ...BASE, taskId, reason: 'нет доступа к файлу' },
+                { ...BASE, taskId, grantToken: await grantOf(server), reason: 'нет доступа к файлу' },
                 server.token,
             );
 
@@ -741,7 +769,7 @@ describe('воркерские ручки', () => {
             const response = await postJson(
                 server.port,
                 WORKER_ENDPOINTS.complete,
-                { ...BASE, taskId: 4040, result: 'в никуда' },
+                { ...BASE, taskId: 4040, grantToken: UNKNOWN_GRANT, result: 'в никуда' },
                 server.token,
             );
 
@@ -757,7 +785,7 @@ describe('воркерские ручки', () => {
             const response = await postJson(
                 server.port,
                 WORKER_ENDPOINTS.complete,
-                { ...BASE, taskId, result: 'я'.repeat(RESULT_MAX_BYTES / 2 + 1) },
+                { ...BASE, taskId, grantToken: await grantOf(server), result: 'я'.repeat(RESULT_MAX_BYTES / 2 + 1) },
                 server.token,
             );
 

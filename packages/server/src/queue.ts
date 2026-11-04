@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type {
     Lease,
     PriorityClass,
@@ -8,7 +10,7 @@ import type {
     TaskStatus,
     TaskType,
 } from '@sherpa/protocol';
-import { taskCompleteResponseSchema, LEASE_TTL_SECONDS, MAX_TASK_ATTEMPTS, RESULT_MAX_BYTES, taskSchema } from '@sherpa/protocol';
+import { taskCompleteResponseSchema, LEASE_TTL_SECONDS, MAX_TASK_ATTEMPTS, resultLimitForTask, taskSchema } from '@sherpa/protocol';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
 import { afterDatabaseCommit, transaction } from './db.js';
@@ -107,6 +109,8 @@ interface TaskRow extends SqlRow {
     status: string;
     attempt: number;
     worker_id: string | null;
+    grant_token: string | null;
+    receipt_grant_token: string | null;
     lease_expires_at: string | null;
     last_lease_return_reason: string | null;
     progress_text: string | null;
@@ -141,9 +145,9 @@ export class TaskQueue {
 
     private readonly txEnqueue: (input: EnqueueInput) => TransactionalEnqueue;
     private readonly txNext: (workerId: string) => Outcome<LeasedTask | null>;
-    private readonly txComplete: (workerId: string, taskId: TaskId, result: string) => Outcome<TaskCompleteResponse>;
-    private readonly txFail: (workerId: string, taskId: TaskId, reason: string) => Outcome<TaskAckResponse>;
-    private readonly txProgress: (workerId: string, taskId: TaskId, text: string) => Outcome<TaskAckResponse>;
+    private readonly txComplete: (workerId: string, taskId: TaskId, result: string, grantToken?: string) => Outcome<TaskCompleteResponse>;
+    private readonly txFail: (workerId: string, taskId: TaskId, reason: string, grantToken?: string) => Outcome<TaskAckResponse>;
+    private readonly txProgress: (workerId: string, taskId: TaskId, text: string, grantToken?: string) => Outcome<TaskAckResponse>;
     private readonly txCancel: (taskId: TaskId) => Outcome<CancelOutcome>;
     private readonly txReleaseLeasesOf: (workerId: string) => void;
     private readonly txReleaseCancelledHoldsOf: (workerId: string) => void;
@@ -156,14 +160,14 @@ export class TaskQueue {
 
         this.txEnqueue = transaction(this.db, (input: EnqueueInput) => this.enqueueInTransaction(input));
         this.txNext = transaction(this.db, (workerId: string) => this.nextInTransaction(workerId));
-        this.txComplete = transaction(this.db, (workerId: string, taskId: TaskId, result: string) =>
-            this.completeInTransaction(workerId, taskId, result),
+        this.txComplete = transaction(this.db, (workerId: string, taskId: TaskId, result: string, grantToken?: string) =>
+            this.completeInTransaction(workerId, taskId, result, grantToken),
         );
-        this.txFail = transaction(this.db, (workerId: string, taskId: TaskId, reason: string) =>
-            this.failInTransaction(workerId, taskId, reason),
+        this.txFail = transaction(this.db, (workerId: string, taskId: TaskId, reason: string, grantToken?: string) =>
+            this.failInTransaction(workerId, taskId, reason, grantToken),
         );
-        this.txProgress = transaction(this.db, (workerId: string, taskId: TaskId, text: string) =>
-            this.progressInTransaction(workerId, taskId, text),
+        this.txProgress = transaction(this.db, (workerId: string, taskId: TaskId, text: string, grantToken?: string) =>
+            this.progressInTransaction(workerId, taskId, text, grantToken),
         );
         this.txCancel = transaction(this.db, (taskId: TaskId) => this.cancelInTransaction(taskId));
         this.txReleaseLeasesOf = transaction(this.db, (workerId: string) => {
@@ -253,16 +257,23 @@ export class TaskQueue {
         this.acceptor = acceptor;
     }
 
-    complete(workerId: string, taskId: TaskId, result: string): TaskCompleteResponse {
-        return this.settle(this.txComplete(workerId, taskId, result));
+    complete(workerId: string, taskId: TaskId, result: string, grantToken?: string): TaskCompleteResponse {
+        return this.settle(this.txComplete(workerId, taskId, result, grantToken));
     }
 
-    fail(workerId: string, taskId: TaskId, reason: string): TaskAckResponse {
-        return this.settle(this.txFail(workerId, taskId, reason));
+    fail(workerId: string, taskId: TaskId, reason: string, grantToken?: string): TaskAckResponse {
+        return this.settle(this.txFail(workerId, taskId, reason, grantToken));
     }
 
-    progress(workerId: string, taskId: TaskId, text: string): TaskAckResponse {
-        return this.settle(this.txProgress(workerId, taskId, text));
+    progress(workerId: string, taskId: TaskId, text: string, grantToken?: string): TaskAckResponse {
+        return this.settle(this.txProgress(workerId, taskId, text, grantToken));
+    }
+
+    /** Проверка перед дорогой асинхронной подготовкой результата; финальная проверка остаётся в complete. */
+    isCurrentGrant(workerId: string, taskId: TaskId, grantToken: string): boolean {
+        const row = this.findRow(taskId);
+        return row?.status === 'leased' && row.worker_id === workerId && row.grant_token === grantToken &&
+            row.lease_expires_at !== null && row.lease_expires_at > this.nowIso();
     }
 
     /**
@@ -342,6 +353,12 @@ export class TaskQueue {
             .prepare("SELECT * FROM tasks WHERE status = 'leased' AND worker_id = ? ORDER BY id LIMIT 1")
             .get(workerId) as TaskRow | undefined;
         if (held !== undefined) {
+            // Незавершённая legacy-аренда из старой БД ещё не имела идентификатора выдачи.
+            if (held.grant_token === null) {
+                this.db.prepare('UPDATE tasks SET grant_token = ? WHERE id = ?').run(randomUUID(), held.id);
+                this.markChanged();
+                return ok(this.toLeasedTask(this.requireRow(held.id)));
+            }
             return ok(this.toLeasedTask(held));
         }
 
@@ -364,40 +381,44 @@ export class TaskQueue {
         // `displaced` не должно пережить re-lease и сбить с толку сверку состояния при рестарте.
         this.db
             .prepare(
-                `UPDATE tasks SET status = 'leased', worker_id = ?, lease_expires_at = ?, rejections = 0,
+                `UPDATE tasks SET status = 'leased', worker_id = ?, grant_token = ?, lease_expires_at = ?, rejections = 0,
                  last_lease_return_reason = NULL, updated_at = ? WHERE id = ?`,
             )
-            .run(workerId, expiresAt, nowIso, candidate.id);
+            .run(workerId, randomUUID(), expiresAt, nowIso, candidate.id);
         this.markChanged();
 
         return ok(this.toLeasedTask(this.requireRow(candidate.id)));
     }
 
-    private completeInTransaction(workerId: string, taskId: TaskId, result: string): Outcome<TaskCompleteResponse> {
-        const owned = this.requireOwnedTask(workerId, taskId);
+    private completeInTransaction(workerId: string, taskId: TaskId, result: string, grantToken?: string): Outcome<TaskCompleteResponse> {
+        const owned = this.requireOwnedTask(workerId, taskId, grantToken);
         if (!owned.ok) {
             return owned;
         }
         if (owned.value === null) {
-            const receipt = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`task_receipt:${String(taskId)}`);
-            if (typeof receipt?.value === 'string') return ok(taskCompleteResponseSchema.parse(JSON.parse(receipt.value)));
-            return ok(closedNoop(this.requireRow(taskId)));
+            const closed = this.requireRow(taskId);
+            if (closed.status === 'done' && (grantToken === undefined || closed.receipt_grant_token === grantToken)) {
+                const receipt = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`task_receipt:${String(taskId)}`);
+                if (typeof receipt?.value === 'string') return ok(taskCompleteResponseSchema.parse(JSON.parse(receipt.value)));
+            }
+            return ok(closedNoop(closed));
         }
 
         const bytes = Buffer.byteLength(result, 'utf8');
-        if (bytes > RESULT_MAX_BYTES) {
+        const resultLimit = resultLimitForTask(owned.value.type as TaskType);
+        if (bytes > resultLimit) {
             // docs/architecture.md: превышение лимита — ошибка задачи, а не «попробуй ещё раз».
             // Причина в карточке — для ревьюера (русская), текст ошибки — для модели (английский).
             this.closeTask(taskId, 'failed', {
                 failReason:
                     `Результат больше лимита: ${String(bytes)} байт при допустимых ` +
-                    `${String(RESULT_MAX_BYTES)}. Задача завершена ошибкой.`,
+                    `${String(resultLimit)}. Задача завершена ошибкой.`,
             });
             return fail(
                 new RpcFailure(
                     'result_too_large',
                     `The result exceeds the limit: ${String(bytes)} bytes against the allowed ` +
-                        `${String(RESULT_MAX_BYTES)}. The task is closed with an error.`,
+                        `${String(resultLimit)}. The task is closed with an error.`,
                 ),
             );
         }
@@ -418,6 +439,7 @@ export class TaskQueue {
 
         acceptance?.persist?.();
         this.closeTask(taskId, 'done', { result });
+        this.db.prepare('UPDATE tasks SET receipt_grant_token = ? WHERE id = ?').run(owned.value.grant_token, taskId);
         if (acceptance?.onCommitted !== undefined) {
             afterDatabaseCommit(this.db, acceptance.onCommitted);
         }
@@ -467,8 +489,8 @@ export class TaskQueue {
         };
     }
 
-    private failInTransaction(workerId: string, taskId: TaskId, reason: string): Outcome<TaskAckResponse> {
-        const owned = this.requireOwnedTask(workerId, taskId);
+    private failInTransaction(workerId: string, taskId: TaskId, reason: string, grantToken?: string): Outcome<TaskAckResponse> {
+        const owned = this.requireOwnedTask(workerId, taskId, grantToken);
         if (!owned.ok) {
             return owned;
         }
@@ -480,8 +502,8 @@ export class TaskQueue {
         return ok({ kind: 'accepted' });
     }
 
-    private progressInTransaction(workerId: string, taskId: TaskId, text: string): Outcome<TaskAckResponse> {
-        const owned = this.requireOwnedTask(workerId, taskId);
+    private progressInTransaction(workerId: string, taskId: TaskId, text: string, grantToken?: string): Outcome<TaskAckResponse> {
+        const owned = this.requireOwnedTask(workerId, taskId, grantToken);
         if (!owned.ok) {
             return owned;
         }
@@ -526,7 +548,7 @@ export class TaskQueue {
      * Общая проверка воркерских ручек: задача существует, не закрыта и в аренде у этого воркера.
      * `value === null` — задача уже закрыта, вызывающему остаётся ответить `noop`.
      */
-    private requireOwnedTask(workerId: string, taskId: TaskId): Outcome<TaskRow | null> {
+    private requireOwnedTask(workerId: string, taskId: TaskId, grantToken?: string): Outcome<TaskRow | null> {
         this.expireLeases();
 
         const row = this.findRow(taskId);
@@ -534,20 +556,18 @@ export class TaskQueue {
             return fail(unknownTask(taskId));
         }
         if (isClosed(row)) {
+            if (grantToken !== undefined && row.grant_token !== grantToken && row.receipt_grant_token !== grantToken) {
+                return fail(leaseNotHeld(taskId, workerId));
+            }
             // Держатель отменённой задачи отозвался — узнал об отмене из ответа `noop`.
             if (row.worker_id === workerId) {
                 this.releaseHold(taskId);
             }
             return ok(null);
         }
-        if (row.status !== 'leased' || row.worker_id !== workerId) {
-            return fail(
-                new RpcFailure(
-                    'lease_not_held',
-                    `Task sherpa/${String(taskId)} is not leased to worker ${workerId}: the lease expired ` +
-                        'or another session holds the task. Call `worker next` and work on the task it gives you.',
-                ),
-            );
+        if (row.status !== 'leased' || row.worker_id !== workerId ||
+            (grantToken !== undefined && row.grant_token !== grantToken)) {
+            return fail(leaseNotHeld(taskId, workerId));
         }
         return ok(row);
     }
@@ -616,7 +636,7 @@ export class TaskQueue {
         if (attempt > MAX_TASK_ATTEMPTS) {
             this.db
                 .prepare(
-                    `UPDATE tasks SET status = 'failed', worker_id = NULL, lease_expires_at = NULL,
+                    `UPDATE tasks SET status = 'failed', worker_id = NULL, grant_token = NULL, lease_expires_at = NULL,
                      last_lease_return_reason = ?, fail_reason = ?, updated_at = ? WHERE id = ?`,
                 )
                 .run(
@@ -632,7 +652,7 @@ export class TaskQueue {
 
         this.db
             .prepare(
-                `UPDATE tasks SET status = 'queued', attempt = ?, worker_id = NULL, lease_expires_at = NULL,
+                `UPDATE tasks SET status = 'queued', attempt = ?, worker_id = NULL, grant_token = NULL, lease_expires_at = NULL,
                  last_lease_return_reason = ?, updated_at = ? WHERE id = ?`,
             )
             .run(attempt, reason, nowIso, row.id);
@@ -655,8 +675,8 @@ export class TaskQueue {
 
     private toLeasedTask(row: TaskRow): LeasedTask {
         const record = toRecord(row);
-        if (row.lease_expires_at === null) {
-            throw new Error(`У задачи sherpa/${String(row.id)} статус leased без срока аренды.`);
+        if (row.lease_expires_at === null || row.grant_token === null) {
+            throw new Error(`У задачи sherpa/${String(row.id)} статус leased без срока или токена аренды.`);
         }
 
         // Наружу уходит только контрактная часть, и уже провалидированная: серверные поля zod срезает.
@@ -664,6 +684,7 @@ export class TaskQueue {
             task: taskSchema.parse(record),
             lease: {
                 taskId: record.id,
+                grantToken: row.grant_token,
                 ttlSeconds: LEASE_TTL_SECONDS[record.priority],
                 expiresAt: row.lease_expires_at,
             },
@@ -698,9 +719,12 @@ export class TaskQueue {
         return unwrap(outcome);
     }
 
-    /** Отметка записи в хранилище; вызывается изнутри транзакций, рассылку делает `flushChanges`. */
+    /** Только подтверждённая запись меняет номер уведомления; rollback не оставляет ложный сигнал. */
     private markChanged(): void {
-        this.mutations += 1;
+        afterDatabaseCommit(this.db, () => {
+            this.mutations += 1;
+            this.flushChanges();
+        });
     }
 
     private flushChanges(): void {
@@ -736,6 +760,14 @@ function unwrap<T>(outcome: Outcome<T>): T {
 
 function acceptedMessage(taskId: TaskId): string {
     return `The result of task sherpa/${String(taskId)} is accepted.`;
+}
+
+function leaseNotHeld(taskId: TaskId, workerId: string): RpcFailure {
+    return new RpcFailure(
+        'lease_not_held',
+        `Task sherpa/${String(taskId)} is not held by this grant of worker ${workerId}. ` +
+            'The lease expired, was cancelled, or another issuance owns the task. Call `worker next`.',
+    );
 }
 
 /**

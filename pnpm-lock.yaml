@@ -94,6 +94,9 @@ importers:
       diff:
         specifier: ^9.0.0
         version: 9.0.0
+      mermaid:
+        specifier: 11.17.2
+        version: 11.17.2
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -116,6 +119,9 @@ importers:
       '@sherpa/server':
         specifier: workspace:*
         version: link:../server
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
 
   packages/ui:
     dependencies:
@@ -129,7 +135,7 @@ importers:
         specifier: ^3.3.0
         version: 3.3.0
       mermaid:
-        specifier: ^11.17.2
+        specifier: 11.17.2
         version: 11.17.2
       react:
         specifier: ^19.2.8

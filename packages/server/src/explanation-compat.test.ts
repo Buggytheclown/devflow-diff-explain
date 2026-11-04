@@ -1,6 +1,6 @@
 import { checkpointJson } from '@sherpa/fixtures';
 import { makeFixtureHost, architectureStoryFixture, readableStoryFixture } from '@sherpa/fixtures';
-import { routeSnapshotSchema, explanationSnapshotSchema } from '@sherpa/protocol';
+import { routeSnapshotSchema, explanationSnapshotSchema, explanationCanonicalSnapshotSchema } from '@sherpa/protocol';
 import type { CodeReader } from '@sherpa/protocol';
 import { DatabaseSync } from 'node:sqlite';
 import { expect, it } from 'vitest';
@@ -24,6 +24,7 @@ it('генерация и хранение не несут поля ревью; 
     expect(restored.flow).toEqual(fixture.snapshot.flow);
     expect(restored.stops.map((block) => block.guidedFiles)).toEqual(fixture.snapshot.stops.map((block) => block.guidedFiles));
     expect(restoreSnapshot(fixture.snapshot)).toBe(fixture.snapshot);
+    expect(() => restoreSnapshot({ ...fixture.snapshot, format: 'explanation/99' })).toThrow('Unsupported stored explanation format');
     const anotherAuthor = { ...fixture.snapshot, provenance: { harness: 'other', model: 'other', locale: 'ru' as const }, stops: fixture.snapshot.stops.map((block) => ({ ...block, provenance: { harness: 'other', model: 'other', locale: 'ru' as const } })) };
     expect(contentHashOf(anotherAuthor)).toBe(contentHashOf(fixture.snapshot));
 });
@@ -47,8 +48,8 @@ it('источник только для чтения строит текущи�
         await server.close();
         const db = new DatabaseSync(databasePathFor(dir, 'fixture-medium'));
         const rows = db.prepare('SELECT snapshot_json FROM route_snapshots').all(); db.close();
-        const saved = JSON.parse(String(rows[0]?.snapshot_json)) as { format: string; stops: Record<string, unknown>[]; snapshotId: string };
-        expect(saved.format).toBe('explanation/1'); expect(saved.stops[0]).not.toHaveProperty('tier');
+        const saved = JSON.parse(String(rows[0]?.snapshot_json)) as { format: string; blocks: Record<string, unknown>[]; snapshotId: string };
+        expect(saved.format).toBe('explanation/2'); expect(saved.blocks[0]).not.toHaveProperty('planIndex');
         server = await startServer(options); server.workerRegistry.register('test', 'codex', 'test'); await server.route.warmup();
         expect(await server.route.fillStop(saved.snapshotId, 1)).toBe('started');
         let retry = next();
@@ -56,6 +57,37 @@ it('источник только для чтения строит текущи�
         expect(server.route.stopsOfTask(retry.id)).toEqual([1]);
         expect(server.queue.complete('test', retry.id, checkpointJson({ ...fixture.body, stops: [fixture.body.stops[0]] })).kind).toBe('accepted');
     } finally { await server.close(); await removeTempSherpaDir(dir); }
+});
+
+it('новый канон хранит пояснения по fileId и выводит порядок из блоков', () => {
+    const source = architectureStoryFixture().snapshot;
+    const saved = explanationCanonicalSnapshotSchema.parse(storedSnapshot(source));
+    expect(saved.blocks[0]).not.toHaveProperty('guidedFiles');
+    expect(saved).not.toHaveProperty('tourOrder');
+    const restored = routeSnapshotSchema.parse(restoreSnapshot(saved));
+    expect(restored.stops.flatMap((block) => block.guidedFiles ?? [])).toEqual(source.stops.flatMap((block) => block.guidedFiles ?? []));
+    expect(restored.tourOrder).toEqual(saved.blocks.map((block) => block.id));
+    const first = saved.blocks[0]?.fileIds[0];
+    if (first === undefined) throw new Error('Fixture needs a file');
+    expect(() => restoreSnapshot({ ...saved, blocks: saved.blocks.map((block, index) => index === 0
+        ? { ...block, fileIds: [...block.fileIds, first] } : block) })).toThrow('one owner');
+});
+
+it('канон сохраняет полный порядок и непрозрачные ID файлов', () => {
+    const source = structuredClone(architectureStoryFixture().snapshot);
+    source.tourOrder = [...source.tourOrder].reverse();
+    const files = source.stops.flatMap((block) => block.guidedFiles ?? []);
+    const first = files[0]; const second = files[1];
+    if (first === undefined || second === undefined) throw new Error('Fixture needs two files');
+    first.fileId = '__proto__';
+    second.fileId = 'constructor';
+    const saved = explanationCanonicalSnapshotSchema.parse(storedSnapshot(source));
+    expect(saved.blocks.map((block) => block.id)).toEqual(source.tourOrder);
+    expect(saved.files.map((file) => file.fileId)).toContain('__proto__');
+    expect(saved.files.map((file) => file.fileId)).toContain('constructor');
+    const restored = routeSnapshotSchema.parse(restoreSnapshot(saved));
+    expect(restored.stops.flatMap((block) => block.guidedFiles ?? []).map((file) => file.fileId)).toContain('__proto__');
+    expect(restored.stops.flatMap((block) => block.guidedFiles ?? []).map((file) => file.fileId)).toContain('constructor');
 });
 
 it('компактное хранение сохраняет проверки доказательств и единственного владельца файла', () => {

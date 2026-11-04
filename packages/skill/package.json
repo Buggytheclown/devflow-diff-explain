@@ -9,10 +9,11 @@
     "build": "node build.mjs",
     "typecheck": "echo \"@sherpa/skill: нечего типизировать\"",
     "lint": "eslint . --no-error-on-unmatched-pattern",
-    "test": "vitest run"
+    "test": "node --test ../../scripts/arc-export*.test.mjs && vitest run"
   },
   "devDependencies": {
     "@sherpa/cli": "workspace:*",
-    "@sherpa/server": "workspace:*"
+    "@sherpa/server": "workspace:*",
+    "esbuild": "^0.28.2"
   }
 }

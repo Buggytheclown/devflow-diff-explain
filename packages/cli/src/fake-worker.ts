@@ -17,6 +17,8 @@ export interface WorkerRun {
 
 /** Вывод `worker next` плюс разобранная шапка выданной задачи, если она в нём была. */
 export interface NextRun extends WorkerRun {
+    /** Непрозрачная ссылка из команды задания, привязанная именно к этой выдаче. */
+    readonly leaseRef: string | null;
     /** null — задачи не дали (`done`, ошибка или отказ сервера). */
     readonly taskId: number | null;
     /** Тип задачи из шапки (`route.skeleton`, `route.section`, `echo`, …); null — задачи не дали. */
@@ -49,6 +51,7 @@ export interface FakeWorkerOptions {
 export class FakeWorker {
     private readonly options: FakeWorkerOptions;
     private resultFiles = 0;
+    private readonly leaseRefs = new Map<number, string>();
 
     constructor(options: FakeWorkerOptions) {
         this.options = options;
@@ -56,7 +59,9 @@ export class FakeWorker {
 
     /** Та же сессия, но с явной идентичностью: так «старая» сессия продолжает ходить после реконнекта. */
     as(workerId: string): FakeWorker {
-        return new FakeWorker({ ...this.options, workerId });
+        const worker = new FakeWorker({ ...this.options, workerId });
+        for (const [taskId, leaseRef] of this.leaseRefs) worker.leaseRefs.set(taskId, leaseRef);
+        return worker;
     }
 
     /** id, под которым ходят команды этой сессии: оверрайд либо записанный `register`-ом файл. */
@@ -81,25 +86,28 @@ export class FakeWorker {
     /** Ждёт задачу без срока: звать, только когда задача заведомо будет. */
     async next(): Promise<NextRun> {
         const run = await this.run('worker', 'next');
-        return { ...run, ...parseTaskHead(run.stdout), planIndexes: parsePlanIndexes(run.stdout) };
+        const head = parseTaskHead(run.stdout);
+        const leaseRef = /'--lease' '([a-f0-9]{64})'/.exec(run.stdout)?.[1] ?? null;
+        if (head.taskId !== null && leaseRef !== null) this.leaseRefs.set(head.taskId, leaseRef);
+        return { ...run, ...head, leaseRef, planIndexes: parsePlanIndexes(run.stdout) };
     }
 
     /** Сдача результата: файл пишется сам, как это делает модель перед вызовом команды. */
-    async complete(taskId: number, content: string): Promise<WorkerRun> {
+    async complete(taskId: number, content: string, leaseRef = this.leaseRefs.get(taskId)): Promise<WorkerRun> {
         this.resultFiles += 1;
         const file = path.join(this.options.workDir, `result-${String(this.resultFiles)}.md`);
         let normalized = content;
         try { normalized = checkpointJson(JSON.parse(content) as unknown); } catch { /* Тесты ошибок JSON/Markdown сдают исходный текст. */ }
         await fs.writeFile(file, normalized);
-        return this.run('task', 'complete', String(taskId), '--file', file);
+        return this.run('task', 'complete', String(taskId), '--file', file, '--lease', leaseRef ?? '');
     }
 
-    async progress(taskId: number, text: string): Promise<WorkerRun> {
-        return this.run('task', 'progress', String(taskId), '--text', text);
+    async progress(taskId: number, text: string, leaseRef = this.leaseRefs.get(taskId)): Promise<WorkerRun> {
+        return this.run('task', 'progress', String(taskId), '--text', text, '--lease', leaseRef ?? '');
     }
 
-    async fail(taskId: number, reason: string): Promise<WorkerRun> {
-        return this.run('task', 'fail', String(taskId), '--reason', reason);
+    async fail(taskId: number, reason: string, leaseRef = this.leaseRefs.get(taskId)): Promise<WorkerRun> {
+        return this.run('task', 'fail', String(taskId), '--reason', reason, '--lease', leaseRef ?? '');
     }
 
     /** Произвольный вызов бандла: сюда сходятся все команды сценариев. */

@@ -1,5 +1,5 @@
-import type { ChatExplanation, CodeLocation, PrDiff, RouteSnapshot, UiChatAskAnchor, UiChatResponse, UiRouteState } from '@sherpa/protocol';
-import { explanationText, preparationProgress } from '@sherpa/protocol';
+import type { CodeLocation, FlowCitation, FlowState, PrDiff, RouteSnapshot, UiChatAskAnchor, UiChatResponse, UiRouteState } from '@sherpa/protocol';
+import { preparationProgress } from '@sherpa/protocol';
 import { useEffect, useEffectEvent, useMemo, useRef, useReducer, useState, useSyncExternalStore } from 'react';
 
 import { askReviewChat, cancelReviewChat, cancelRouteGeneration, fillRouteStop, fetchReviewChat, fetchReviewRoute, generateReviewRoute, retryReviewChat, retryRouteDiagram } from '../api.js';
@@ -12,6 +12,8 @@ import { useLocale } from '../i18n/index.js';
 import { storyCopy, guidedCopy, preparationCopy } from '../i18n/story.js';
 import { createStoryData } from './data.js';
 import { EvidenceSource } from './evidence.tsx';
+import { SavedSourceView } from './saved-source.tsx';
+import { exchangesForReading } from './chat-scope.js';
 import { ReadFile } from './read-file.tsx';
 import { FloatingChat } from './floating-chat.js';
 import { ChatLauncher } from './chat-launcher.js';
@@ -24,6 +26,7 @@ import { useReadingSession } from './use-reading-session.js';
 import { initialNavigation, visitReader } from './navigation.js';
 import { OverviewSkeleton, Preparation, Skeleton } from './preparation.tsx';
 import { readReader, writeCache } from './reading-cache.js';
+import { updateFragment } from '../fragment.js';
 import './story.css';
 
 export { StoryDocument } from './story-document.tsx';
@@ -31,23 +34,25 @@ export { StoryDocument } from './story-document.tsx';
 const EMPTY_CHAT: UiChatResponse = { exchanges: [], notes: [], chatRevision: 0 };
 const noop = (): void => undefined;
 
-export function App({ store, session, token }: { store: Store; session: StorySession; token: string }) {
+interface AttachedContext { snapshotId: string | null; revision?: number | undefined; diffId: string; codeSnapshotId?: string | undefined; commit: string; sectionId?: string | undefined; file?: { fileId: string; path: string } | undefined }
+
+export function App({ store, session, token, code = null, review = null }: { store: Store; session: StorySession; token: string; code?: string | null; review?: string | null }) {
     const locale = useLocale();
     const t = storyCopy[locale];
     const pt = preparationCopy[locale];
     const stream = useSyncExternalStore(store.subscribe, store.getSnapshot);
     const ui = useSyncExternalStore(session.subscribe, session.getSnapshot);
     const [route, setRoute] = useState<UiRouteState | null>(null);
-    const routeLoaded = route !== null;
+    const routeLoaded = route !== null || review !== null || code !== null;
     const [diff, setDiff] = useState<PrDiff | null>(null);
     const [chat, setChat] = useState<UiChatResponse>(EMPTY_CHAT);
-    const shownPr = diff?.metadata === undefined ? stream.state?.pr : diff.metadata;
+    const shownPr = diff?.metadata === undefined ? code === null ? stream.state?.pr : null : diff.metadata;
     const [chatLoaded, setChatLoaded] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [chatError, setChatError] = useState<string | null>(null);
     const [cached] = useState(readReader);
     const [reader, visit] = useReducer(visitReader, cached?.navigation ?? initialNavigation);
-    const [selectedSnapshotId, selectSnapshot] = useState<string | null>(cached?.snapshotId ?? null);
+    const [selectedSnapshotId, selectSnapshot] = useState<string | null>(review ?? (code === null ? cached?.snapshotId ?? null : null));
     const [snapshots, setSnapshots] = useState(() => new Map<string, RouteSnapshot>());
     const { guide: guidePosition, returnTo: guideReturn, location: navigation, epoch: navigationEpoch } = reader;
     const diffVersion = diff?.diffId ?? null;
@@ -57,13 +62,18 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const [previewBlock, setPreviewBlock] = useState<string>();
     const [anchor, setAnchor] = useState<UiChatAskAnchor | null>(cached?.anchor ?? null);
     const [anchorText, setAnchorText] = useState<string | null>(cached?.anchorText ?? cached?.anchor?.selectedText ?? null);
-    const [explanation, setExplanation] = useState<ChatExplanation | undefined>(cached?.anchor != null || cached?.explanation?.file !== undefined ? cached.explanation : undefined);
+    const [explanation, setExplanation] = useState<AttachedContext | undefined>(cached?.anchor != null || cached?.explanation?.file !== undefined ? cached.explanation : undefined);
     const [focus, setFocus] = useState(0);
     const attachmentEpoch = useRef(0);
-    const [data] = useState(() => createStoryData(token));
+    const [data] = useState(() => createStoryData(token, code));
     const fileId = reader.address?.kind === 'diff' ? reader.address.fileId : diff === null ? null : data.view(diff.diffId).fileId;
     const chosenId = selectedSnapshotId ?? route?.snapshot?.snapshotId;
     const snapshot = (chosenId === undefined ? null : snapshots.get(chosenId)) ?? null;
+    const selectedMissing = selectedSnapshotId !== null && !snapshots.has(selectedSnapshotId);
+    const pinnedCodeId = snapshot?.codeSnapshotId ?? diff?.codeSnapshotId ?? code;
+    const permalink = pinnedCodeId === null ? null : `${window.location.pathname}${window.location.search}${updateFragment(window.location.hash, {
+        code: pinnedCodeId, review: snapshot?.snapshotId ?? null, view: snapshot === null ? 'diff' : 'route',
+    })}`;
     const guidePage = guidePosition !== null && guidePosition.snapshotId === snapshot?.snapshotId ? guidePosition.page : 'intro';
     const guided = snapshot !== null && (snapshot.storyContractVersion ?? 0) >= 3;
     const gt = guidedCopy[locale];
@@ -71,10 +81,11 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     const guideFileId = !showDiff && guided && guidePage.startsWith('file:') ? guidePage.slice(5) : null;
     const guideScope = storyScope(snapshot?.snapshotId, stream.state?.prKey ?? '', guided);
     const active = stream.state?.iterations.find((iteration) => iteration.status === 'active')?.diffId;
-    const viewedDiffId = (showDiff ? diffVersion ?? active : snapshot?.diffId) ?? active ?? null;
+    const viewedDiffId = (showDiff ? diffVersion ?? (code === null ? active : null) : snapshot?.diffId ?? diffVersion) ?? (code === null ? active ?? null : null);
     const worker = stream.state?.worker ?? { kind: 'never' as const };
     const connected = worker.kind === 'connected';
-    const shownExchanges = useMemo(() => chat.exchanges.filter((exchange) => exchange.explanation?.diffId === (explanation?.diffId ?? viewedDiffId)), [chat.exchanges, explanation?.diffId, viewedDiffId]);
+    const chatCodeId = explanation?.codeSnapshotId ?? snapshot?.codeSnapshotId ?? diff?.codeSnapshotId ?? code;
+    const shownExchanges = useMemo(() => exchangesForReading(chat.exchanges, explanation?.diffId ?? viewedDiffId, chatCodeId, code !== null), [chat.exchanges, explanation?.diffId, viewedDiffId, chatCodeId, code]);
     const unreadCount = useChatNotifications({ prKey: stream.state?.prKey ?? null, exchanges: chat.exchanges, shown: shownExchanges, loaded: chatLoaded, open: ui.chatOpen });
     const pendingQuestion = shownExchanges.find((exchange) => exchange.status === 'running') ?? shownExchanges.find((exchange) => exchange.status === 'queued');
     const chatActivity = pendingQuestion === undefined ? 'idle' : !connected ? 'paused' : pendingQuestion.status === 'running' ? 'running' : 'queued';
@@ -111,39 +122,59 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     });
     useEffect(() => {
         if (!showDiff) return;
-        if (reader.address?.kind !== 'diff') session.setView('route');
+        if (reader.address?.kind !== 'diff') {
+            if (code === null) session.setView('route');
+            else if (diff !== null) {
+                const first = diff.files[0];
+                if (first === undefined) return;
+                const epoch = reading.begin();
+                data.updateView(diff.diffId, { fileId: first.fileId });
+                visit({ kind: 'diff', address: { kind: 'diff', diffId: diff.diffId, fileId: first.fileId }, epoch, location: null });
+                reading.restore(`diff:${diff.diffId}:${first.fileId}`, epoch, null, false);
+            }
+        }
         else if (guided && reader.address.diffId === snapshot.diffId) resumeCanvas();
-    }, [guided, showDiff, reader.address, snapshot?.diffId, session]);
+    }, [guided, showDiff, reader.address, snapshot?.diffId, session, code, diff, data, reading]);
     useEffect(() => store.subscribe(() => { beforeRoute(); }), [store]);
     useEffect(() => () => { data.close(); }, [data]);
     useEffect(() => {
         let alive = true;
-        void fetchReviewRoute(token).then((response) => {
+        if (review !== null) return;
+        void fetchReviewRoute(token, undefined, code).then((response) => {
             if (alive) { beforeRoute(); setRoute(response.route); const next = response.route.snapshot;
-                if (next?.presentation === 'story') { setSnapshots((value) => new Map(value).set(next.snapshotId, next)); selectSnapshot((value) => value ?? next.snapshotId); }
+                if (next?.presentation === 'story' && (code === null || next.codeSnapshotId === code)) {
+                    setSnapshots((value) => new Map(value).set(next.snapshotId, next));
+                    selectSnapshot((value) => code === null ? value ?? next.snapshotId : next.snapshotId);
+                    if (code !== null && selectedSnapshotId === null) session.setView('route');
+                }
                 setError(null); }
         }, (reason: unknown) => { if (alive) setError(String(reason)); });
         return () => { alive = false; };
-    }, [token, stream.routeRevision, active]);
+    }, [token, stream.routeRevision, active, code, review, selectedSnapshotId, session]);
     useEffect(() => {
-        if (!routeLoaded || selectedSnapshotId === null || snapshots.has(selectedSnapshotId)) return;
+        if (!routeLoaded || selectedSnapshotId === null || (review === null && !selectedMissing)) return;
         let alive = true;
-        void fetchReviewRoute(token, selectedSnapshotId).then(({ route: saved }) => {
-            if (alive && saved.snapshot !== null) { const value = saved.snapshot; setSnapshots((entries) => new Map(entries).set(value.snapshotId, value)); }
-        }, (reason: unknown) => { if (alive) { setError(String(reason)); selectSnapshot(null); } });
+        void fetchReviewRoute(token, selectedSnapshotId, code).then(({ route: saved }) => {
+            if (alive && saved.snapshot !== null) { const value = saved.snapshot;
+                if (code !== null && value.codeSnapshotId !== code) { setError(t.unavailable); return; }
+                setSnapshots((entries) => new Map(entries).set(value.snapshotId, value));
+                if (review !== null) setRoute(saved);
+            }
+        }, (reason: unknown) => { if (alive) setError(String(reason)); });
         return () => { alive = false; };
-    }, [selectedSnapshotId, snapshots, token, routeLoaded]);
+    }, [selectedSnapshotId, selectedMissing, token, routeLoaded, code, review, t.unavailable, stream.routeRevision]);
     useEffect(() => { if (cached?.chatOpen === true) session.setChatOpen(true); }, [cached?.chatOpen, session]);
     useEffect(() => { writeCache('reader', { snapshotId: selectedSnapshotId, navigation: reader, draft, anchor, anchorText, explanation, chatOpen: ui.chatOpen }); }, [selectedSnapshotId, reader, draft, anchor, anchorText, explanation, ui.chatOpen]);
     useEffect(() => {
-        const target = showDiff && reader.address?.kind === 'diff' ? reader.address.diffId : snapshot?.diffId ?? active ?? null;
+        const target = showDiff && reader.address?.kind === 'diff' ? reader.address.diffId : snapshot?.diffId ?? (code === null ? active ?? null : null);
         if (diffVersion !== null && (target === null || target === diffVersion)) return;
         let alive = true;
-        void data.diff(target).then((value) => {
+        const targetCode = code ?? (review === null ? null : snapshot?.codeSnapshotId ?? null);
+        void (targetCode !== null && (target === null || snapshot?.codeSnapshotId === targetCode) ? data.code(targetCode) : data.diff(target)).then((value) => {
             if (alive) { setDiff(value); setError(null); }
         }, (reason: unknown) => { if (alive) setError(String(reason)); });
         return () => { alive = false; };
-    }, [data, diffVersion, active, snapshot?.diffId, showDiff, reader.address]);
+    }, [data, diffVersion, active, snapshot?.diffId, snapshot?.codeSnapshotId, showDiff, reader.address, code, review]);
     useEffect(() => {
         let alive = true;
         void fetchReviewChat(token).then((value) => { if (alive) { setChat(value); setChatLoaded(true); setChatError(null); } },
@@ -151,9 +182,8 @@ export function App({ store, session, token }: { store: Store; session: StorySes
         return () => { alive = false; };
     }, [token, stream.chatRevision]);
 
-    const capture = (): ChatExplanation | undefined => snapshot === null || (showDiff && diff?.diffId !== snapshot.diffId) ? (diff === null ? undefined : { snapshotId: null, diffId: diff.diffId, ...(diff.codeSnapshotId === undefined ? {} : { codeSnapshotId: diff.codeSnapshotId }), commit: diff.headCommit, text: '' }) : ({
-        snapshotId: snapshot.snapshotId, diffId: snapshot.diffId, ...(snapshot.codeSnapshotId === undefined ? {} : { codeSnapshotId: snapshot.codeSnapshotId }), commit: snapshot.commit,
-        text: explanationText(snapshot),
+    const capture = (): AttachedContext | undefined => snapshot === null || (showDiff && diff?.diffId !== snapshot.diffId) ? (diff === null ? undefined : { snapshotId: null, diffId: diff.diffId, ...(diff.codeSnapshotId === undefined ? {} : { codeSnapshotId: diff.codeSnapshotId }), commit: diff.headCommit }) : ({
+        snapshotId: snapshot.snapshotId, revision: snapshot.reviewRevision, diffId: snapshot.diffId, ...(snapshot.codeSnapshotId === undefined ? {} : { codeSnapshotId: snapshot.codeSnapshotId }), commit: snapshot.commit,
     });
     const selectCode = (selected: UiChatAskAnchor, text: string | null): void => {
         reading.preserve();
@@ -171,6 +201,7 @@ export function App({ store, session, token }: { store: Store; session: StorySes
     };
     const openChat = (): void => {
         reading.preserve(); session.setChatOpen(true);
+        if (explanation === undefined) setExplanation(capture());
         setFocus((value) => value + 1);
     };
     const attachFile = async (fileId: string): Promise<void> => {
@@ -182,10 +213,10 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             if (attachmentEpoch.current !== epoch) return;
             const file = value.files.find((entry) => entry.fileId === fileId);
             if (file === undefined) throw new Error(t.unavailable);
-            const pinned: ChatExplanation = snapshot?.diffId === target ? {
-                snapshotId: snapshot.snapshotId, diffId: target, commit: snapshot.commit, text: explanationText(snapshot, `file:${fileId}`),
-            } : { snapshotId: null, diffId: target, commit: value.headCommit, text: '' };
-            removeSelection(); setExplanation({ ...pinned, file: { fileId, path: file.path } }); openChat();
+            const pinned: AttachedContext = snapshot?.diffId === target ? {
+                snapshotId: snapshot.snapshotId, revision: snapshot.reviewRevision, diffId: target, codeSnapshotId: snapshot.codeSnapshotId, commit: snapshot.commit,
+            } : { snapshotId: null, diffId: target, codeSnapshotId: value.codeSnapshotId, commit: value.headCommit };
+            removeSelection(); openChat(); setExplanation({ ...pinned, file: { fileId, path: file.path } });
         } catch (reason: unknown) { if (attachmentEpoch.current === epoch) setError(String(reason)); }
     };
     const closeChat = (): void => { session.setChatOpen(false); };
@@ -278,9 +309,11 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             <h1>{shownPr?.title ?? stream.state?.prKey ?? t.loading}</h1>
             {!showDiff ? <p className="story-pr-metadata">{diff?.capturedAt === undefined ? null : <span title={diff.capturedAt}>{t.capturedSnapshot} {new Date(diff.capturedAt).toLocaleString(locale)} · </span>}{shownPr == null ? null : <><a href={shownPr.url} target="_blank" rel="noreferrer">{shownPr.id ?? stream.state?.prKey ?? ''}</a>{shownPr.author === undefined ? null : <> · {shownPr.author.displayName ?? shownPr.author.login}</>}{shownPr.fromBranch === undefined || shownPr.toBranch === undefined ? null : <> · {shownPr.fromBranch} → {shownPr.toBranch}</>}{shownPr.statusLabel === undefined && shownPr.state === undefined ? null : <> · {shownPr.statusLabel ?? shownPr.state}</>}</>}{diff === null || (snapshot !== null && diff.diffId !== snapshot.diffId) ? null : <> · {diff.files.length} {pt.fileCount} · +{diff.files.reduce((sum, file) => sum + file.additions, 0)} / −{diff.files.reduce((sum, file) => sum + file.deletions, 0)}</>}</p> : null}
             {showDiff && reading.origin !== null ? <button className="ctl story-return" onClick={backToStory}>{t.returnTo} · {reading.origin.sectionId === 'intro' ? t.introduction : snapshot?.stops.flatMap((stop) => stop.guidedFiles ?? []).find((file) => `file:${file.fileId}` === reading.origin?.sectionId)?.path ?? snapshot?.stops.find((stop) => stop.id === reading.origin?.sectionId)?.title ?? t.introduction}</button> : null}
-            {showDiff && diffVersion !== active && active !== undefined ? <p><button className="ctl" onClick={() => { void goDiff(active); }}>{t.newDiff}</button></p> : null}
+            {showDiff && code === null && diffVersion !== active && active !== undefined ? <p><button className="ctl" onClick={() => { void goDiff(active); }}>{t.newDiff}</button></p> : null}
+            {code !== null && active !== undefined ? <p><a href={`${window.location.pathname}${window.location.search}${updateFragment(window.location.hash, { code: null, review: null, view: 'diff' })}`} target="_blank" rel="noreferrer">{t.currentVersion}</a></p> : null}
             {!showDiff && snapshot !== null && (snapshot.storyContractVersion ?? 0) < 5 && route?.stale == null ? <p className="story-notice">{snapshot.storyContractVersion === undefined ? t.legacy : pt.legacy} <button className="ctl" disabled={generating || !connected} onClick={generate}>{t.refresh}</button></p> : null}
             {snapshot === null ? null : <p className="story-provenance">{(showDiff ? diff?.headCommit ?? snapshot.commit : snapshot.commit).slice(0, 12)} · {snapshot.provenance.harness} · {snapshot.provenance.model}</p>}
+            {permalink === null ? null : <p className="story-permalink"><a href={permalink} target="_blank" rel="noreferrer">{t.permalink}</a></p>}
             {error === null ? null : <p role="alert" className="story-notice">{error}</p>}
             {route?.stale == null ? null : <div className="story-notice">{t.stale} <button className="ctl" disabled={generating || !connected} onClick={generate}>{t.refresh}</button></div>}
             {!connected ? <p className="story-notice">{t.offline}</p> : null}
@@ -289,10 +322,12 @@ export function App({ store, session, token }: { store: Store; session: StorySes
             {showDiff ? (diff === null ? <p data-reading-wait>{t.loading}</p> : selectedFile === null ? <p>{t.noFiles}</p>
                 : <ReadFile onAttach={() => { void attachFile(selectedFile.fileId); }} key={`${diff.diffId}:${selectedFile.fileId}:${String(navigationEpoch)}`} file={selectedFile} diffId={diff.diffId} data={data} token={token} originals={diff.codeSnapshotId !== undefined} navigation={navigation ?? undefined} anchor={anchor} onSelect={(selected, text) => { selectCode(selected, text); }} onLayout={layout} onMediaLayout={reading.relayout} />)
                 : snapshot === null ? <>{!generating && connected ? <div><p>{t.empty}</p><button className="ctl ctl--primary" disabled={!connected} onClick={generate}>{t.generate}</button></div> : null}<OverviewSkeleton />{diff?.files.map((file) => <ReadFile key={file.fileId} file={file} diffId={diff.diffId} data={data} token={token} originals={diff.codeSnapshotId !== undefined} onAttach={() => { void attachFile(file.fileId); }} anchor={anchor} onSelect={selectCode} onLayout={layout} onMediaLayout={reading.relayout} />)}</>
-                    : guided ? <GuidedDocument onLayout={layout} activeBlock={previewBlock} snapshot={snapshot} page={guidePage} onVisit={(page, remember) => { void goGuide(page, undefined, remember); }} onBack={guideReturn?.snapshotId === snapshot.snapshotId ? () => { void goGuide(guideReturn.page, undefined, false, true, true); } : undefined} returnLabel={guideReturn?.page === 'intro' ? gt.description : snapshot.stops.flatMap((stop) => stop.guidedFiles ?? []).find((file) => `file:${file.fileId}` === guideReturn?.page)?.path ?? snapshot.stops.find((stop) => stop.id === guideReturn?.page)?.title ?? t.returnTo} onAsk={openChat} onRetry={(id) => { const stop = snapshot.stops.find((entry) => entry.id === id); if (stop !== undefined) void fillRouteStop(token, { snapshotId: snapshot.snapshotId, planIndex: stop.planIndex }).catch((reason: unknown) => { setError(String(reason)); }); }}
+                    : guided ? <GuidedDocument onLayout={layout} activeBlock={previewBlock} snapshot={snapshot} page={guidePage} onVisit={(page, remember) => { void goGuide(page, undefined, remember); }} onBack={guideReturn?.snapshotId === snapshot.snapshotId ? () => { void goGuide(guideReturn.page, undefined, false, true, true); } : undefined} returnLabel={guideReturn?.page === 'intro' ? gt.description : snapshot.stops.flatMap((stop) => stop.guidedFiles ?? []).find((file) => `file:${file.fileId}` === guideReturn?.page)?.path ?? snapshot.stops.find((stop) => stop.id === guideReturn?.page)?.title ?? t.returnTo} onAsk={openChat} expanded={reading.expanded} onToggle={reading.toggle} onRetry={(id) => { const stop = snapshot.stops.find((entry) => entry.id === id); if (stop !== undefined) void fillRouteStop(token, { snapshotId: snapshot.snapshotId, planIndex: stop.planIndex }).catch((reason: unknown) => { setError(String(reason)); }); }}
+                        renderSource={(source, sectionId, index) => <EvidenceSource key={`${sectionId}:${String(index)}`} source={source} diffId={snapshot.diffId} data={data} token={token} focusId={`source:${sectionId}:${String(index)}`} onLayout={layout} onMediaLayout={reading.relayout} anchor={anchor} onSelect={selectCode} onOpen={(id, location) => { void goGuide(`file:${id}`, location, true); }} />}
+                        renderDiagramSource={(source, index) => <DiagramSource key={index} source={source} flow={snapshot.flow} token={token} onOpen={(location) => { openCode(location, snapshot.diffId); }} />}
                         connected={connected} onRetryDiagram={route?.phase === 'reading' || snapshot.snapshotId !== route?.snapshot?.snapshotId ? undefined : () => { void retryRouteDiagram(token, snapshot.snapshotId).catch((reason: unknown) => { setError(String(reason)); }); }}
-                        onDiagramFailure={route?.phase === 'reading' || snapshot.snapshotId !== route?.snapshot?.snapshotId ? undefined : () => { void retryRouteDiagram(token, snapshot.snapshotId, true).catch((reason: unknown) => { setError(String(reason)); }); }}
-                        renderDescription={<StoryDocument hideSources snapshot={{ ...snapshot, stops: [], tourOrder: [] }} onAsk={openChat} expanded={reading.expanded} onToggle={reading.toggle} onOpenSource={(source) => { void goGuide(`file:${source.fileId}`, source.kind === 'lines' ? source : undefined, true); }} renderSource={(source, sectionId, index) =>
+                        onDiagramFailure={route?.phase === 'reading' || snapshot.snapshotId !== route?.snapshot?.snapshotId || snapshot.flow?.status !== 'ready' || snapshot.flow.diagramHash === undefined ? undefined : (report) => { const hash = snapshot.flow?.status === 'ready' ? snapshot.flow.diagramHash : undefined; if (hash !== undefined) void retryRouteDiagram(token, snapshot.snapshotId, { diagramHash: hash, ...report }).catch((reason: unknown) => { setError(String(reason)); }); }}
+                        renderDescription={<StoryDocument snapshot={{ ...snapshot, stops: [], tourOrder: [] }} onAsk={openChat} expanded={reading.expanded} onToggle={reading.toggle} renderSource={(source, sectionId, index) =>
                             <EvidenceSource key={`${sectionId}:${String(index)}`} source={source} diffId={snapshot.diffId} data={data} token={token} focusId={`source:${sectionId}:${String(index)}`} onLayout={layout} onMediaLayout={reading.relayout} anchor={anchor} onSelect={(selected, text) => { selectCode(selected, text); }} onOpen={(id, location) => { void goGuide(`file:${id}`, location, true); }} />
                         } />}
                         renderFile={(id, description) => { const file = diff?.diffId === snapshot.diffId ? diff.files.find((entry) => entry.fileId === id) : undefined; const explanation = snapshot.stops.flatMap((stop) => stop.guidedFiles ?? []).find((entry) => entry.fileId === id); return file === undefined ? <p data-reading-wait>{t.loading}</p> : <ReadFile onAttach={() => { void attachFile(id); }} description={description} key={`${snapshot.diffId}:${id}`} file={file} diffId={snapshot.diffId} data={data} token={token} originals={diff?.codeSnapshotId !== undefined} navigation={navigation?.diffId === snapshot.diffId && (navigation.path === file.path || navigation.path === file.oldPath) ? navigation : undefined} annotations={explanation?.annotations} anchor={anchor} onSelect={(selected, text) => { selectCode(selected, text); }} onLayout={layout} onMediaLayout={reading.relayout} />; }} />
@@ -312,7 +347,16 @@ export function App({ store, session, token }: { store: Store; session: StorySes
                     if (attached === undefined) throw new Error(t.loading);
                     // Подготовка может достроить пояснения, пока человек пишет вопрос. Код и вложение остаются прежними.
                     const saved = attached.snapshotId === null ? undefined : snapshots.get(attached.snapshotId);
-                    const pinned = saved === undefined ? attached : { ...attached, text: explanationText(saved, attached.file === undefined ? attached.sectionId : `file:${attached.file.fileId}`) };
+                    const revision = attached.revision ?? saved?.reviewRevision;
+                    if (attached.snapshotId !== null && revision === undefined) throw new Error(t.unavailable);
+                    const pinned = attached.snapshotId === null ? { diffId: attached.diffId, commit: attached.commit,
+                        ...(attached.codeSnapshotId === undefined ? {} : { codeSnapshotId: attached.codeSnapshotId }),
+                        ...(attached.file === undefined ? {} : { file: attached.file }) } : {
+                        reviewId: attached.snapshotId, revision, diffId: attached.diffId, commit: attached.commit,
+                        ...(attached.codeSnapshotId === undefined ? {} : { codeSnapshotId: attached.codeSnapshotId }),
+                        ...(attached.sectionId === undefined ? {} : { sectionId: attached.sectionId }),
+                        ...(attached.file === undefined ? {} : { file: attached.file }),
+                    };
                     if (selected !== undefined && anchorText === null) throw new Error(t.unavailable);
                     const answer = await askReviewChat(token, text, selected, undefined, pinned);
                     setChat((value) => ({ ...value, exchanges: [...value.exchanges.filter((entry) => entry.id !== answer.id), answer] }));
@@ -327,4 +371,14 @@ export function App({ store, session, token }: { store: Store; session: StorySes
 
 function storyScope(snapshotId: string | undefined, prKey: string, guided: boolean): string | null {
     return snapshotId === undefined ? null : `story:${prKey}:${snapshotId}${guided ? ':canvas' : ''}`;
+}
+
+function DiagramSource({ source, flow, token, onOpen }: { source: FlowCitation; flow: FlowState | undefined; token: string; onOpen: (location: CodeLocation) => void }) {
+    if (source.kind === 'patch') {
+        const title = `${source.path}:${String(source.start)}–${String(source.end)}`;
+        return source.sourceId === undefined ? <button className="ctl" onClick={() => { onOpen(source); }}>{title} ↗</button>
+            : <details><summary>{title}</summary><SavedSourceView id={source.sourceId} token={token} /></details>;
+    }
+    const context = flow?.status === 'ready' || flow?.status === 'pending' ? flow.contexts.find((entry) => entry.id === source.id) : undefined;
+    return context === undefined ? null : <details><summary>{context.path}:{String(context.start)}–{String(context.end)}</summary><pre className="md-pre">{context.text}</pre></details>;
 }

@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { FloatingChat } from '../../story/floating-chat.js';
 import { ChatLauncher } from '../../story/chat-launcher.js';
 import { GuidedNavigation } from '../../story/guided-navigation.js';
-import type { RouteSnapshot, StorySource } from '@sherpa/protocol';
+import type { ChatExchange, RouteSnapshot, StorySource } from '@sherpa/protocol';
 
 import { createStoryData } from '../../story/data.js';
 import { EvidenceSource } from '../../story/evidence.tsx';
@@ -42,14 +42,19 @@ const noop = (): void => undefined;
 
 const renderSource = (source: StorySource, section: string, index: number) => <EvidenceSource key={`${section}:${String(index)}`} source={source} diffId={diff.diffId} data={data} token="gallery" focusId={`${section}:${String(index)}`} onOpen={noop} onSelect={noop} onLayout={noop} />;
 
-function QuietChatGallery({ attached = false, offline = false, inFrame = false, headerActions, activity }: { attached?: boolean; offline?: boolean; inFrame?: boolean; headerActions?: ReactNode; activity?: 'queued' | 'running' }) {
-    const exchanges = activity === undefined ? [] : chatFixtures('medium')?.exchanges.filter((exchange) => exchange.status === activity) ?? [];
+const legacyUnknownExchange: ChatExchange = { id: 1, question: 'Почему изменилось поведение?', anchor: null, status: 'done', taskId: null,
+    answer: 'См. [проверку](#code?path=services%2Forders%2Fsrc%2Fdomain%2Fedit-window.ts&side=new&start=12&end=12).',
+    progressText: null, error: null, locale: null, createdAt: '2026-10-28T10:00:00.000Z', updatedAt: '2026-10-28T10:00:00.000Z' };
+
+function QuietChatGallery({ attached = false, offline = false, inFrame = false, headerActions, activity, legacyUnknown = false }: { attached?: boolean; offline?: boolean; inFrame?: boolean; headerActions?: ReactNode; activity?: 'queued' | 'running'; legacyUnknown?: boolean }) {
+    const exchanges = legacyUnknown ? [legacyUnknownExchange] : activity === undefined ? [] : chatFixtures('medium')?.exchanges.filter((exchange) => exchange.status === activity) ?? [];
     const panel = <ChatPanel headerActions={headerActions}
         worker={offline ? { kind: 'never' } : { kind: 'connected', workerId: 'gallery', harness: 'codex', model: 'gpt', registeredAt: '2026-10-28T10:00:00Z', lastSeenAt: '2026-10-28T10:00:00Z' }}
         tasks={[]} exchanges={exchanges} notes={[]} loading={false} error={null} reconnectCommand="devflow-diff-explain worker next --pr fixture-medium"
         now={Date.parse(exchanges[0]?.createdAt ?? '2026-10-28T10:00:00Z') + 500}
         anchor={null} fileAttachment={attached ? { fileId: sourceRef.fileId, path: sourceRef.path } : undefined} contextCommit={snapshot.commit}
         focusRequest={0} scrollRequest={null} onScrollRequestHandled={noop} onClose={noop} onRemoveAnchor={noop}
+        onNavigateCode={legacyUnknown ? noop : undefined}
         onAsk={() => Promise.reject(new Error('Gallery only'))} onCancel={() => Promise.resolve()} onRetry={() => Promise.resolve()} onNavigate={noop} onNavigateToNote={noop}
     />;
     return inFrame ? panel : <div style={{ height: 560, maxWidth: 550 }}>{panel}</div>;
@@ -67,6 +72,7 @@ export const STORY_STATES: readonly GalleryState[] = [
     { id: 'chat-composer-queued', group: 'Чат', title: 'Очередь · отмена из поля ввода', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery activity="queued" inFrame headerActions={headerActions} />}</FloatingChat> },
     { id: 'chat-composer-paused', group: 'Чат', title: 'Отключение · стоп без вращения', render: () => <FloatingChat open onClose={noop}>{({ headerActions }) => <QuietChatGallery activity="running" offline inFrame headerActions={headerActions} />}</FloatingChat> },
     { id: 'chat-quiet-empty', group: 'Чат', title: 'Пустой чат · вопрос по всему PR', render: () => <QuietChatGallery /> },
+    { id: 'chat-legacy-unknown', group: 'Чат', title: 'Старый ответ · контекст не сохранён, ссылка на код недоступна', render: () => <QuietChatGallery legacyUnknown /> },
     { id: 'chat-explicit-file', group: 'Чат', title: 'Явно прикреплённый файл возле ввода', render: () => <QuietChatGallery attached /> },
     { id: 'chat-quiet-offline', group: 'Чат', title: 'Отключение · команда скрыта до запроса', render: () => <QuietChatGallery offline /> },
     { id: 'story-legacy', group: 'Рассказ', title: 'Прежний рассказ без связей тезисов с кодом',
@@ -120,6 +126,8 @@ function SidebarOverviewGallery() {
     return <div className="story-app" data-prepared="true"><header className="story-topbar"><strong>◆ Devflow</strong><span className="story-pr-key">fixture-medium</span><Preparation route={{ phase: 'ready', smallPr: false, snapshot: guided.snapshot, failure: null, stale: null }} connected /></header><aside className="story-nav"><nav className="story-sections"><button className="ctl" onClick={() => { visit('intro'); }}>Описание ПРа</button></nav><GuidedNavigation snapshot={guided.snapshot} diff={guided.diff} page={page} onVisit={visit} /></aside><GuidedGallery page={page} /></div>;
 }
 export const GUIDED_STORY_STATES: readonly GalleryState[] = [
+    { id: 'pinned-code-link', group: 'По диффу', title: 'Ссылка на сохранённую версию кода до обзора', render: () => <main className="story-main"><p className="story-permalink"><a href={`#t=gallery&code=${'a'.repeat(64)}&view=diff`}>Ссылка на эту версию</a></p><p>Обзор ещё не готов; сохранённый код доступен.</p></main> },
+    { id: 'guided-block-sources', group: 'По диффу', title: 'Основание и ограничение рядом с блоком', render: () => <main className="story-main"><GuidedDocument snapshot={{ ...guided.snapshot, stops: guided.snapshot.stops.map((block, i) => i === 0 ? { ...block, storyEvidence: { claims: [{ quote: block.paragraph ?? 'Вывод блока', sources: [sourceRef], limitation: 'Поведение вне показанного фрагмента не проверено.' }] } } : block) }} page="intro" onVisit={noop} onAsk={noop} renderFile={() => null} renderSource={(source) => <button className="ctl" onClick={noop}>{source.path} ↗</button>} /></main> },
     { id: 'overview-left-navigation', group: 'По диффу', title: 'Обзор · единая навигация слева и готовность в шапке', render: () => <SidebarOverviewGallery /> },
     { id: 'route-collapsed', group: 'По диффу', title: 'Маршрут · блоки свёрнуты до выбора', render: () => <aside className="story-nav" style={{ position: 'static', width: 420, height: 720 }}><GuidedNavigation snapshot={architecture.snapshot} diff={architecture.diff} page="intro" onVisit={noop} /></aside> },
     { id: 'guided-arcanum-tree', group: 'По диффу', title: 'Смысловые заголовки и дерево каталогов · строки и пояснения', render: () => <aside className="story-nav" style={{ position: 'static', width: 420, height: 720 }}><GuidedNavigation snapshot={architecture.snapshot} diff={architecture.diff} page={`file:${architecture.first.fileId}`} onVisit={noop} /></aside> },

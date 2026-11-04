@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { localeSchema } from './locale.js';
 
-import { PROGRESS_TEXT_MAX_CHARS, RESULT_MAX_BYTES, VERDICTS_INSTRUCTION_MAX_CHARS } from './constants.js';
+import { PROGRESS_TEXT_MAX_CHARS, STRUCTURAL_RESULT_MAX_BYTES, VERDICTS_INSTRUCTION_MAX_CHARS } from './constants.js';
 import { leaseSchema, taskIdSchema, taskSchema } from './task.js';
 import { semverSchema } from './version.js';
 
@@ -18,6 +18,9 @@ export const verdictsInstructionSchema = z
 /** Идентификатор сессии-воркера; генерируется на стороне скилла/CLI при старте сессии. */
 export const workerIdSchema = z.string().min(1).max(128);
 export type WorkerId = z.infer<typeof workerIdSchema>;
+
+/** CLI сохраняет токен из `worker next` и автоматически передаёт его при изменении задачи. */
+export const grantTokenSchema = z.uuid();
 
 /**
  * Общая часть всех воркерских запросов. Версии — в каждом вызове: CLI не хранит состояние
@@ -121,9 +124,10 @@ export type WorkerNextResponse = z.infer<typeof workerNextResponseSchema>;
 /** `devflow-diff-explain task complete <id> --file <path>` — CLI передаёт содержимое файла результата. */
 export const taskCompleteRequestSchema = workerRequestBase.extend({
     taskId: taskIdSchema,
+    grantToken: grantTokenSchema,
     result: z.string().refine(
-        (value) => new TextEncoder().encode(value).byteLength <= RESULT_MAX_BYTES,
-        { message: `результат больше ${String(RESULT_MAX_BYTES)} байт — задача будет завершена ошибкой` },
+        (value) => new TextEncoder().encode(value).byteLength <= STRUCTURAL_RESULT_MAX_BYTES,
+        { message: `The result exceeds ${String(STRUCTURAL_RESULT_MAX_BYTES)} bytes.` },
     ),
 });
 export type TaskCompleteRequest = z.infer<typeof taskCompleteRequestSchema>;
@@ -141,6 +145,7 @@ export type TaskCompleteResponse = z.infer<typeof taskCompleteResponseSchema>;
 /** `devflow-diff-explain task progress <id> --text` — дешёвая статусная отметка, UI показывает «агент работает: …». */
 export const taskProgressRequestSchema = workerRequestBase.extend({
     taskId: taskIdSchema,
+    grantToken: grantTokenSchema,
     text: z.string().min(1).max(PROGRESS_TEXT_MAX_CHARS),
 });
 export type TaskProgressRequest = z.infer<typeof taskProgressRequestSchema>;
@@ -148,6 +153,7 @@ export type TaskProgressRequest = z.infer<typeof taskProgressRequestSchema>;
 /** `devflow-diff-explain task fail <id> --reason` — явный отказ; задача уходит в ошибку с причиной, видимой в UI. */
 export const taskFailRequestSchema = workerRequestBase.extend({
     taskId: taskIdSchema,
+    grantToken: grantTokenSchema,
     reason: z.string().min(1),
 });
 export type TaskFailRequest = z.infer<typeof taskFailRequestSchema>;

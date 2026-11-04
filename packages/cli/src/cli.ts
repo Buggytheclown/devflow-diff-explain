@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 
-import type { WorkerNextResponse, WorkerRegisterResponse } from '@sherpa/protocol';
-import { RESULT_MAX_BYTES, ARTIFACT_ENDPOINTS, codeSnapshotInputSchema, sourcesInputSchema, codeSnapshotReceiptSchema } from '@sherpa/protocol';
+import type { CodeSnapshotReceipt, TaskType, WorkerNextResponse, WorkerRegisterResponse } from '@sherpa/protocol';
+import { resultLimitForTask, ARTIFACT_ENDPOINTS, codeSnapshotInputSchema, sourcesInputSchema, codeSnapshotReceiptSchema } from '@sherpa/protocol';
 
 import type { Command } from './args.js';
 import { parseArgs } from './args.js';
@@ -15,16 +15,19 @@ import { requestComplete, requestFail, requestNext, requestProgress, requestRegi
 import type { ServerConnection } from './discovery.js';
 import { connect, connectAs, freshWorkerId, resolvePrKey, readServerManifest } from './discovery.js';
 import { CliError, userMessage } from './errors.js';
+import { formatCommand } from './command.js';
 import {
     formatCompleteResponse,
     formatDone,
     formatFailResponse,
     formatOversizedResult,
     formatProgressResponse,
+    formatSavedUiUrl,
     formatTask,
     formatUpReady,
     helpText,
 } from './format.js';
+import { loadTaskGrant, saveTaskGrant } from './grants.js';
 import {
     serverBinOverrideFrom,
     sherpaDirFrom,
@@ -74,7 +77,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
                 io.out(CLI_VERSION);
                 return 0;
             case 'help':
-                io.out(helpText());
+                io.out(helpText(io.entry ?? process.argv[1]));
                 return 0;
             case 'server':
                 return await server(command, io);
@@ -92,7 +95,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
                 return await taskFail(command, io);
         }
     } catch (error) {
-        io.err(userMessage(error));
+        io.err(userMessage(error).replaceAll('devflow-diff-explain ', `${formatCommand(io.entry ?? process.argv[1])} `));
         return 1;
     }
 }
@@ -105,7 +108,7 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
 async function up(command: Extract<Command, { kind: 'up' }>, io: CliIo): Promise<number> {
     // Явный manifest или сохранённый ключ; cwd не меняет цель.
     const snapshot = command.snapshot === undefined ? null : codeSnapshotInputSchema.parse(JSON.parse(await fs.readFile(command.snapshot, 'utf8')) as unknown);
-    if (command.local !== undefined || command.base !== undefined) throw new CliError('Export the local changes with your native tools, then use `up --snapshot <manifest.json>`.');
+    if (command.local !== undefined || command.base !== undefined) throw new CliError(`Export the local changes with your native tools, then use \`${formatCommand(io.entry ?? process.argv[1], 'up', '--snapshot', '<manifest.json>')}\`.`);
     const prKey = await resolvePrKey(command.prKey ?? snapshot?.project, io.env);
 
     const server = await (io.ensureServer ?? ensureServer)({
@@ -116,19 +119,24 @@ async function up(command: Extract<Command, { kind: 'up' }>, io: CliIo): Promise
         nodeFlags: io.daemonNodeFlags ?? [],
 
     });
-    if (command.snapshot !== undefined) await importArtifacts(prKey, command.snapshot, false, io);
+    const receipt = command.snapshot === undefined ? undefined : await importArtifacts(prKey, command.snapshot, false, io);
+    if (receipt !== undefined && command.code !== undefined && receipt.codeSnapshotId !== command.code) {
+        throw new CliError('devflow-diff-explain: --code differs from the snapshot just imported. Use the codeSnapshotId in the import receipt.');
+    }
     // Новый up передаёт слот воркера текущей сессии.
     await registerWorker(prKey, labelsOf(command), io);
 
+    const uiUrl = formatSavedUiUrl(server.uiUrl, command.code ?? receipt?.codeSnapshotId, command.review, command.view);
     io.out(
         formatUpReady(
-            server.uiUrl,
+            uiUrl,
             prKey,
+            io.entry ?? process.argv[1],
         ),
     );
     if (server.started && !command.noOpen) {
         try {
-            (io.openBrowser ?? openBrowser)({ uiUrl: server.uiUrl });
+            (io.openBrowser ?? openBrowser)({ uiUrl });
         } catch {
             // Ссылка уже напечатана: headless/ssh и сбой opener не превращают успешный up в ошибку.
         }
@@ -136,7 +144,7 @@ async function up(command: Extract<Command, { kind: 'up' }>, io: CliIo): Promise
     return 0;
 }
 
-async function importArtifacts(prKey: string, file: string, sources: boolean, io: CliIo): Promise<void> {
+async function importArtifacts(prKey: string, file: string, sources: boolean, io: CliIo): Promise<CodeSnapshotReceipt> {
     const manifest = await readServerManifest(sherpaDirFrom(io.env), prKey);
     const response = await fetch(`http://127.0.0.1:${String(manifest.port)}${sources ? ARTIFACT_ENDPOINTS.sources : ARTIFACT_ENDPOINTS.snapshot}`, {
         method: 'POST', headers: { authorization: `Bearer ${manifest.token}`, 'content-type': 'application/json' },
@@ -144,7 +152,9 @@ async function importArtifacts(prKey: string, file: string, sources: boolean, io
     });
     const body: unknown = await response.json();
     if (!response.ok) throw new CliError(`Artifact import failed: ${JSON.stringify(body)}`);
-    io.out(JSON.stringify(codeSnapshotReceiptSchema.parse(body)));
+    const receipt = codeSnapshotReceiptSchema.parse(body);
+    io.out(JSON.stringify(receipt));
+    return receipt;
 }
 
 /** Процесс сервера PR, который демонизирует `up`. */
@@ -158,7 +168,7 @@ async function workerRegister(command: Extract<Command, { kind: 'worker-register
     const response = await registerWorker(command.prKey, labelsOf(command), io);
 
     // Текст сервера уже содержит следующий шаг петли — CLI печатает его как есть.
-    io.out(response.message);
+    io.out(response.message.replace('devflow-diff-explain worker next', formatCommand(io.entry ?? process.argv[1], 'worker', 'next', '--pr', await resolvePrKey(command.prKey, io.env))));
     return 0;
 }
 
@@ -189,13 +199,15 @@ async function workerNext(command: Extract<Command, { kind: 'worker-next' }>, io
 
 /** Complete-and-next сохраняет workerId, даже если другая сессия уже перехватила слот. */
 async function nextForConnection(connection: ServerConnection, io: CliIo): Promise<number> {
-    const resultDir = await prepareResultDir(io.tmpDir ?? os.tmpdir(), sherpaDirFrom(io.env), connection);
+    const resultDir = await prepareResultDir(io.tmpDir ?? os.tmpdir(), sherpaDirFrom(io.env), connection, io.entry ?? process.argv[1]);
     const response = await awaitTask(connection);
 
     switch (response.kind) {
-        case 'task':
-            io.out(formatTask(response.task, taskResultFileFor(resultDir, response.task), connection.prKey));
+        case 'task': {
+            const leaseRef = await saveTaskGrant(sherpaDirFrom(io.env), connection, response);
+            io.out(formatTask(response.task, taskResultFileFor(resultDir, response.task), connection.prKey, leaseRef, io.entry ?? process.argv[1]));
             return 0;
+        }
         case 'done':
             io.out(formatDone(response.message));
             return 0;
@@ -207,7 +219,7 @@ async function nextForConnection(connection: ServerConnection, io: CliIo): Promi
  * уникален для аренды, поэтому файл, уже лежащий по нему, — от той же аренды (повторный `next`) и
  * не трогается.
  */
-async function prepareResultDir(tmpRoot: string, sherpaDir: string, connection: ServerConnection): Promise<string> {
+async function prepareResultDir(tmpRoot: string, sherpaDir: string, connection: ServerConnection, entry: string | undefined): Promise<string> {
     const root = taskResultRootFor(tmpRoot);
     const dir = taskResultDirFor(tmpRoot, sherpaDir, connection.prKey, connection.workerId);
     try {
@@ -218,7 +230,7 @@ async function prepareResultDir(tmpRoot: string, sherpaDir: string, connection: 
         const detail = error instanceof Error ? error.message : String(error);
         throw new CliError(
             `devflow-diff-explain: cannot prepare the directory for task results ${dir} — ${detail}.\n` +
-                `Fix it or point TMPDIR to a private directory, then call \`devflow-diff-explain worker next --pr ${connection.prKey}\` again.`,
+                `Fix it or point TMPDIR to a private directory, then call \`${formatCommand(entry, 'worker', 'next', '--pr', connection.prKey)}\` again.`,
         );
     }
     return dir;
@@ -264,29 +276,31 @@ async function awaitTask(connection: ServerConnection): Promise<Exclude<WorkerNe
 
 async function taskComplete(command: Extract<Command, { kind: 'task-complete' }>, io: CliIo): Promise<number> {
     const prKey = await resolvePrKey(command.prKey, io.env);
-    const result = await readResultFile(command.file, command.taskId, prKey);
-
     const connection = await connect(prKey, io.env);
-    const response = await requestComplete(connection, command.taskId, result);
+    const grant = await loadTaskGrant(sherpaDirFrom(io.env), connection, command.taskId, command.leaseRef);
+    const result = await readResultFile(command.file, command.taskId, prKey, grant.type, command.leaseRef, io.entry ?? process.argv[1]);
+    const response = await requestComplete(connection, command.taskId, result, grant.grantToken);
     if (command.next === true && response.kind !== 'rejected') {
         io.out(response.message);
         return nextForConnection(connection, io);
     }
-    io.out(formatCompleteResponse(response, command.taskId, command.file, connection.prKey));
+    io.out(formatCompleteResponse(response, command.taskId, command.file, connection.prKey, command.leaseRef, io.entry ?? process.argv[1]));
     return 0;
 }
 
 async function taskProgress(command: Extract<Command, { kind: 'task-progress' }>, io: CliIo): Promise<number> {
     const connection = await connect(command.prKey, io.env);
-    const response = await requestProgress(connection, command.taskId, command.text);
-    io.out(formatProgressResponse(response, command.taskId, connection.prKey));
+    const grant = await loadTaskGrant(sherpaDirFrom(io.env), connection, command.taskId, command.leaseRef);
+    const response = await requestProgress(connection, command.taskId, command.text, grant.grantToken);
+    io.out(formatProgressResponse(response, command.taskId, connection.prKey, io.entry ?? process.argv[1]));
     return 0;
 }
 
 async function taskFail(command: Extract<Command, { kind: 'task-fail' }>, io: CliIo): Promise<number> {
     const connection = await connect(command.prKey, io.env);
-    const response = await requestFail(connection, command.taskId, command.reason);
-    io.out(formatFailResponse(response, command.taskId, connection.prKey));
+    const grant = await loadTaskGrant(sherpaDirFrom(io.env), connection, command.taskId, command.leaseRef);
+    const response = await requestFail(connection, command.taskId, command.reason, grant.grantToken);
+    io.out(formatFailResponse(response, command.taskId, connection.prKey, io.entry ?? process.argv[1]));
     return 0;
 }
 
@@ -294,19 +308,20 @@ async function taskFail(command: Extract<Command, { kind: 'task-fail' }>, io: Cl
  * Читает файл результата с пре-чеком размера: перебор лимита отбивается локально,
  * до отправки, — задача остаётся в аренде, и у модели есть попытка сократить результат.
  */
-export async function readResultFile(file: string, taskId: number, prKey: string): Promise<string> {
+export async function readResultFile(file: string, taskId: number, prKey: string, type: TaskType = 'chat', leaseRef = '', entry = process.argv[1]): Promise<string> {
+    const limit = resultLimitForTask(type);
     const stats = await fs.stat(file).catch(() => null);
     if (stats === null) {
         throw new CliError(
             `devflow-diff-explain: there is no file ${file}.\nWrite the result to ${file} and call ` +
-                `\`devflow-diff-explain task complete ${String(taskId)} --file ${file} --pr ${prKey}\` again.`,
+                `\`${formatCommand(entry, 'task', 'complete', String(taskId), '--file', file, '--pr', prKey, '--lease', leaseRef)}\` again.`,
         );
     }
     if (!stats.isFile()) {
         throw new CliError(`devflow-diff-explain: ${file} is not a file.\nPass the path of the file with the task result.`);
     }
-    if (stats.size > RESULT_MAX_BYTES) {
-        throw new CliError(formatOversizedResult(taskId, file, stats.size, prKey));
+    if (stats.size > limit) {
+        throw new CliError(formatOversizedResult(taskId, file, stats.size, prKey, limit, leaseRef, entry));
     }
 
     let result: string;
@@ -319,8 +334,8 @@ export async function readResultFile(file: string, taskId: number, prKey: string
 
     // Размер файла и длина строки расходятся на битой кодировке: считаем ещё раз по тому, что уйдёт в тело.
     const bytes = Buffer.byteLength(result, 'utf8');
-    if (bytes > RESULT_MAX_BYTES) {
-        throw new CliError(formatOversizedResult(taskId, file, bytes, prKey));
+    if (bytes > limit) {
+        throw new CliError(formatOversizedResult(taskId, file, bytes, prKey, limit, leaseRef, entry));
     }
     return result;
 }

@@ -1,6 +1,7 @@
 import type { FileDiff, PrDiff, UiChatAskAnchor } from '@sherpa/protocol';
 
 import { fetchReviewDiff } from '../api.js';
+import { activeT } from '../i18n/index.js';
 import type { DiffClient } from '../diff/client.js';
 import { createDiffClient } from '../diff/client.js';
 import type { DiffFileModel } from '../diff/model.js';
@@ -8,13 +9,30 @@ import { toParseRequest } from '../diff/model.js';
 import type { DiffMemory } from './reading-state.js';
 
 export interface SavedFile { model: DiffFileModel | null; highlight: UiChatAskAnchor | null }
-export function createStoryData(token: string) {
+export function createStoryData(token: string, pinnedCode: string | null = null) {
     let client: DiffClient | null = null;
     const diffs = new Map<string, Promise<PrDiff>>();
     const files = new Map<string, SavedFile>();
     const views = new Map<string, DiffMemory>();
+    const code = (codeSnapshotId: string): Promise<PrDiff> => {
+            const key = `code:${codeSnapshotId}`;
+            let promise = diffs.get(key);
+            if (promise === undefined) {
+                promise = fetchReviewDiff(token, { codeSnapshotId }).then((diff) => {
+                    if (diff.codeSnapshotId !== codeSnapshotId) throw new Error(activeT()('error.contract'));
+                    diffs.set(diff.diffId, Promise.resolve(diff)); return diff;
+                }).catch((error: unknown) => { diffs.delete(key); throw error; });
+                diffs.set(key, promise);
+            }
+            return promise;
+        };
     return {
+        code,
         diff: (id: string | null): Promise<PrDiff> => {
+            if (pinnedCode !== null) return code(pinnedCode).then((pinned) => {
+                if (id === null || id === pinned.diffId) return pinned;
+                return fetchReviewDiff(token, { diffId: id });
+            });
             const key = id ?? 'active';
             let promise = diffs.get(key);
             if (promise === undefined) {

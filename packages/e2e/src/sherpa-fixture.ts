@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test as base } from '@playwright/test';
 import { FakeWorker } from '@sherpa/cli/fake-worker';
+import { fixtureData } from '@sherpa/fixtures';
+import type { FixtureName } from '@sherpa/fixtures';
 import type { RouteSnapshot } from '@sherpa/protocol';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -200,11 +202,35 @@ async function startSherpaServer(prKey: FixturePrKey, options?: LaunchOptions): 
     const sherpaDir = options?.sherpaDir ?? (await mkdtemp(path.join(tmpdir(), 'sherpa-e2e-')));
     if (options?.savedSnapshot !== undefined) {
         const { openDatabase } = await import('../../server/src/db.js');
+        const { MIGRATIONS } = await import('../../server/src/migrations.js');
+        const { CodeSnapshots } = await import('../../server/src/code-snapshots.js');
+        const { exportFixture } = await import('../../server/src/fixture-import.js');
         const { storedSnapshot } = await import('../../server/src/explanation-compat.js');
         const target = path.join(sherpaDir, 'prs', prKey); await mkdir(target, { recursive: true });
-        const db = openDatabase(path.join(target, 'sherpa.db'));
+        // Реальная старая БД: 027 создаст первую редакцию из уже сохранённого разбора при старте сервера.
+        const revisionMigration = MIGRATIONS.findIndex((migration) => migration.name === '027-review-revisions');
+        if (revisionMigration < 0) throw new Error('Missing legacy review migration boundary');
+        const snapshot = options.savedSnapshot;
+        const fixtureName = prKey.slice('fixture-'.length) as FixtureName;
+        const iteration = fixtureData(fixtureName).iterations.find((entry) => entry.diff.diffId === snapshot.diffId);
+        if (iteration === undefined) throw new Error(`No fixture iteration for saved snapshot ${snapshot.diffId}`);
+        // Старый synthetic patch из fixtureData не соответствует полным сторонам, которые dev.ts
+        // экспортирует для локального импорта. Получаем совместимый diff тем же импортёром отдельно.
+        const manifest = await exportFixture(fixtureName, prKey, path.join(sherpaDir, 'dev-export'));
+        const probe = openDatabase(':memory:');
+        let legacyDiff;
         try {
-            const snapshot = options.savedSnapshot;
+            const snapshots = new CodeSnapshots(probe, prKey);
+            await snapshots.importSnapshot(manifest);
+            const canonical = snapshots.forDiff(snapshot.diffId)?.diff;
+            if (canonical === undefined) throw new Error(`No imported fixture diff for ${snapshot.diffId}`);
+            legacyDiff = { ...canonical, codeSnapshotId: undefined };
+        } finally { probe.close(); }
+        const db = openDatabase(path.join(target, 'sherpa.db'), MIGRATIONS.slice(0, revisionMigration));
+        try {
+            db.prepare(`INSERT INTO iterations(diff_id,base_commit,head_commit,created_at,status,diff_json,fetched_at)
+                VALUES(?,?,?,?,?,?,?)`).run(legacyDiff.diffId, legacyDiff.baseCommit, legacyDiff.headCommit,
+                iteration.iteration.createdAt, 'active', JSON.stringify(legacyDiff), iteration.iteration.createdAt);
             db.prepare('INSERT INTO route_snapshots(snapshot_id,diff_id,created_at,previous_snapshot_id,snapshot_json,content_hash) VALUES(?,?,?,?,?,?)')
                 .run(snapshot.snapshotId, snapshot.diffId, snapshot.createdAt, snapshot.previousSnapshotId, JSON.stringify(storedSnapshot(snapshot)), snapshot.contentHash);
             db.prepare("INSERT INTO route_state(id,phase,small_pr,current_snapshot_id,intents,updated_at) VALUES(1,'ready',0,?,'[]',?)")

@@ -20,7 +20,8 @@ describe('методичка чата', () => {
     it('оставляет выбор чтения агенту, сохраняя требования к версии и доказательствам', () => {
         for (const locale of LOCALES) {
             expect(chatGuide(locale)).toContain('Choose what to read yourself.');
-            expect(chatInstructions(locale)).toContain('You do not need to read every context file.');
+            expect(chatInstructions(locale)).toContain('Read context selectively');
+            expect(chatGuide(locale)).toContain('You do not need to read every context file.');
             expect(chatGuide(locale)).toContain('Do not concatenate all');
             expect(chatGuide(locale)).toContain('same pinned version');
             expect(chatGuide(locale)).toContain('unavailable or truncated evidence');

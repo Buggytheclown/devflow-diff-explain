@@ -26,6 +26,10 @@ function addressed(root: HTMLElement): { element: HTMLElement; address: string }
     }));
 }
 
+export function hasReadingAddress(root: HTMLElement, address: string): boolean {
+    return addressed(root).some((entry) => entry.address === address);
+}
+
 export function capturePosition(root: HTMLElement): ReadingPosition | null {
     const top = readingTop();
     const all = addressed(root);
@@ -45,9 +49,14 @@ export function restorePosition(root: HTMLElement, position: ReadingPosition): b
         if (Math.abs(delta) <= 1) break;
         window.scrollBy({ top: delta, behavior: 'instant' });
     }
-    // Короткий ещё загружающийся холст может ограничить scrollY.
-    // Не принимаем эту промежуточную позицию за восстановленную.
-    return Math.abs(target.getBoundingClientRect().top - readingTop() - position.offset) <= 1 || root.querySelector('[data-reading-wait]') === null;
+    const rect = target.getBoundingClientRect();
+    const delta = rect.top - readingTop() - position.offset;
+    if (Math.abs(delta) <= 1) return true;
+    // У настоящего края страницы сохранить точный offset невозможно. Принимаем
+    // только видимый якорь; короткий холст после загрузки продолжим выравнивать.
+    if (root.querySelector('[data-reading-wait]') !== null || rect.bottom <= readingTop() || rect.top >= window.innerHeight) return false;
+    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    return delta < 0 && window.scrollY <= 1 || delta > 0 && window.scrollY >= maxScroll - 1;
 }
 
 export function revealCode(root: HTMLElement, location: CodeLocation): boolean {

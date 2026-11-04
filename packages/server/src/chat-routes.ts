@@ -45,7 +45,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Route[] {
                         request.text,
                         request.anchor ?? null,
                         request.locale,
-                        request.explanation,
+                        request.explanationRef ?? request.explanation,
+                        ...(request.codeRef === undefined ? [] : [request.codeRef]),
                     ),
                 };
                 return respond(uiChatAskResponseSchema, body, 'local');

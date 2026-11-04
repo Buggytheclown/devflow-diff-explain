@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 
 import type {
-    ExplanationSnapshot,
     FlowState,
     Generation,
     SectionAssignment,
@@ -21,6 +20,7 @@ import { generationSchema, sectionAssignmentSchema, localeSchema, routeSnapshotS
 
 import type { AcceptedExplanation, ExplanationFilling } from './story.js';
 import { storedSnapshot, restoreSnapshot } from './explanation-compat.js';
+import { reviewContentSignature } from './review-revisions.js';
 
 import type { SherpaDatabase, SqlRow } from './db.js';
 import { transaction, afterDatabaseCommit } from './db.js';
@@ -47,6 +47,7 @@ function generationCapKey(snapshotId: string): string {
 
 /** Ключ языка последней запущенной генерации в `meta`: генерация у PR одна, ключ фиксированный. */
 const GENERATION_LOCALE_KEY = 'generation_locale';
+export const CURRENT_ROUTE_TASK_EPOCH = 9;
 
 /** Длина контент-хеша в hex-символах: его показывает снапшот-селектор («snapshot 3f2a… · current»). */
 const CONTENT_HASH_LENGTH = 12;
@@ -167,8 +168,9 @@ export class RouteStore {
                     step.snapshot === undefined
                         ? state
                         : uiRouteStateSchema.parse({ ...state, snapshot: step.snapshot });
-                this.writeInTransaction(written, intents);
-                return { state: written, afterCommit: step.afterCommit };
+                const versioned = this.versionStateInTransaction(written);
+                this.writeInTransaction(versioned, intents);
+                return { state: versioned, afterCommit: step.afterCommit };
             },
         );
 
@@ -230,6 +232,21 @@ export class RouteStore {
         return row === undefined ? null : this.parseSnapshotRow(row);
     }
 
+    /** Последний разбор точного кода; адрес кода существует ещё до первого обзора. */
+    latestForCode(codeSnapshotId: string): RouteSnapshot | null {
+        const row = this.db.prepare(`SELECT snapshot_id, snapshot_json FROM route_snapshots
+            WHERE CASE WHEN json_valid(snapshot_json) THEN json_extract(snapshot_json, '$.codeSnapshotId') = ? ELSE 0 END
+            ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(codeSnapshotId) as RouteSnapshotRow | undefined;
+        return row === undefined ? null : this.parseSnapshotRow(row);
+    }
+
+    /** Точная ранее показанная редакция, включая промежуточные checkpoint. */
+    getReviewRevision(reviewId: string, revision: number): RouteSnapshot | null {
+        const row = this.db.prepare('SELECT snapshot_json FROM review_revisions WHERE review_id = ? AND revision = ?')
+            .get(reviewId, revision) as { snapshot_json: string } | undefined;
+        return row === undefined ? null : this.parseSnapshotRow({ snapshot_id: reviewId, snapshot_json: row.snapshot_json }, revision);
+    }
+
     /**
      * Черновые замыслы стопов из принятого скелета: в снапшот они не входят (контракт),
      * но постановщику секций без них не собрать промпт.
@@ -253,7 +270,7 @@ export class RouteStore {
             this.setGenerationPresentation(generation.presentation);
             if (generation.diffId !== undefined) this.pinGenerationDiff(generation.diffId);
             this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                .run(generation.version === 6 ? '8' : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
+                .run(generation.version === 6 ? String(CURRENT_ROUTE_TASK_EPOCH) : generation.version === 5 ? '3' : generation.presentation === 'story' ? '2' : '1');
             if ((generation.version ?? 0) >= 5) this.writeGeneration({ id: randomUUID(), commit: generation.commit ?? null,
                 snapshotId: null, previousSnapshotId: this.state.snapshot?.snapshotId ?? null, status: 'running' });
             else this.db.prepare("DELETE FROM meta WHERE key='preparation_generation'").run();
@@ -274,7 +291,8 @@ export class RouteStore {
         this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_diff_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(diffId);
     }
     upgradeTaskEpoch(): void {
-        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version','8') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
+        this.db.prepare("INSERT INTO meta(key,value) VALUES ('generation_story_contract_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            .run(String(CURRENT_ROUTE_TASK_EPOCH));
     }
 
     /**
@@ -345,9 +363,12 @@ export class RouteStore {
     }
 
     /** Обзор, связи и пояснения одного результата публикуются одной записью. */
-    applyCheckpoint(overview: AcceptedExplanation | undefined, fillings: readonly ExplanationFilling[], provenance: RouteProvenance): void {
+    applyCheckpoint(overview: AcceptedExplanation | undefined, fillings: readonly ExplanationFilling[], provenance: RouteProvenance, expectedReviewRevision?: number): void {
         const snapshot = this.state.snapshot;
         if (snapshot === null) return;
+        if (expectedReviewRevision !== undefined && snapshot.reviewRevision !== expectedReviewRevision) {
+            throw new Error('Review revision changed before checkpoint publication.');
+        }
         const byIndex = new Map(fillings.map((file) => [file.planIndex, file]));
         const stops = (overview?.stops ?? snapshot.stops).map((block) => {
             const filling = byIndex.get(block.planIndex);
@@ -424,11 +445,12 @@ export class RouteStore {
             const files = stop.guidedFiles?.map((file) => {
                 const update = updates.get(file.fileId);
                 const correction = corrections.find((entry) => entry.path === file.path);
-                if (correction !== undefined) return { ...file, failure: 'Пояснение требует исправления: ' + correction.errors.join('; '), status: file.explanation === null ? (update?.status ?? file.status) : 'ready' as const };
-                return file.explanation !== null ? { ...file, status: 'ready' as const, failure: null }
+                if (correction !== undefined) return { ...file, failure: 'Пояснение требует исправления: ' + correction.errors.join('; '), status: update?.status ?? file.status };
+                return file.explanation !== null ? { ...file, status: update?.status ?? 'ready' as const,
+                    failure: update?.note ?? (update?.status === 'queued' || update?.status === 'filling' ? file.failure ?? null : null) }
                     : update === undefined ? file : { ...file, status: update.status, failure: update.note ?? null };
             });
-            const ready = stop.paragraph !== null && files?.every((file) => file.explanation !== null);
+            const ready = stop.paragraph !== null && files?.every((file) => file.explanation !== null && file.status === 'ready');
             const active = files?.some((file) => file.status === 'queued' || file.status === 'filling');
             return { ...stop, guidedFiles: files, status: ready ? 'ready' as const
                 : active ? 'filling' as const : files?.some((file) => file.status === 'failed') ? 'failed' as const : 'queued' as const };
@@ -443,15 +465,27 @@ export class RouteStore {
             return;
         }
 
+        const paths = new Set(snapshot.stops.find((stop) => stop.planIndex === planIndex)?.guidedFiles?.map((file) => file.path) ?? []);
         const stops = snapshot.stops.map((stop) =>
             stop.planIndex === planIndex && stop.tier !== 'other'
-                ? { ...stop, status: 'queued' as const, validationNotes: [] }
+                ? { ...stop, status: 'queued' as const, validationNotes: [], guidedFiles: stop.guidedFiles?.map((file) =>
+                    file.status === 'failed' || file.failure !== null && file.failure !== undefined
+                        ? { ...file, status: 'queued' as const, failure: 'Пояснение ожидает повторной сдачи.' } : file) }
                 : stop,
         );
         this.commit(
             { ...this.state, phase: 'filling', failure: null, snapshot: { ...snapshot, stops, contentHash: null } },
             this.intents,
             () => {
+                for (const [taskId] of this.bindings()) {
+                    const key = `file_outcome:${String(taskId)}`;
+                    const raw = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value;
+                    if (typeof raw !== 'string') continue;
+                    const outcome = JSON.parse(raw) as { accepted: string[]; errors: { path: string; errors: string[] }[] };
+                    if (!outcome.errors.some((error) => paths.has(error.path))) continue;
+                    this.db.prepare('UPDATE meta SET value = ? WHERE key = ?').run(JSON.stringify({ ...outcome,
+                        errors: outcome.errors.filter((error) => !paths.has(error.path)) }), key);
+                }
                 this.deleteSectionBindingsFor(planIndex);
                 return {};
             },
@@ -703,6 +737,38 @@ export class RouteStore {
      * Текущий снапшот пишется своей строкой в `route_snapshots` (id — ключ), а `route_state`
      * держит только ссылку на него: история снапшотов PR не перезаписывается.
      */
+    private latestReviewRevision(reviewId: string): number | null {
+        const row = this.db.prepare('SELECT MAX(revision) AS revision FROM review_revisions WHERE review_id = ?')
+            .get(reviewId) as { revision: number | null };
+        return row.revision;
+    }
+
+    private versionStateInTransaction(state: UiRouteState): UiRouteState {
+        const snapshot = state.snapshot;
+        if (snapshot === null) return state;
+        const signature = reviewContentSignature(snapshot);
+        const previous = this.db.prepare(
+            'SELECT revision, content_signature, snapshot_json FROM review_revisions WHERE review_id = ? ORDER BY revision DESC LIMIT 1',
+        ).get(snapshot.snapshotId) as { revision: number; content_signature: string | null; snapshot_json: string } | undefined;
+        let previousSignature = previous?.content_signature;
+        if (previous !== undefined && previousSignature === null) {
+            const restored = withSnapshotDefaults(restoreSnapshot(JSON.parse(previous.snapshot_json) as unknown),
+                (diffId) => this.baseCommitOf(diffId));
+            previousSignature = reviewContentSignature(routeSnapshotSchema.parse(restored));
+            this.db.prepare('UPDATE review_revisions SET content_signature = ? WHERE review_id = ? AND revision = ?')
+                .run(previousSignature, snapshot.snapshotId, previous.revision);
+        }
+        if (previous !== undefined && previousSignature === signature) {
+            return { ...state, snapshot: { ...snapshot, reviewRevision: previous.revision } };
+        }
+        const revision = (previous?.revision ?? 0) + 1;
+        const versioned = { ...snapshot, reviewRevision: revision };
+        this.db.prepare(
+            'INSERT INTO review_revisions(review_id, revision, content_signature, snapshot_json) VALUES (?, ?, ?, ?)',
+        ).run(snapshot.snapshotId, revision, signature, JSON.stringify(storedSnapshot(versioned)));
+        return { ...state, snapshot: versioned };
+    }
+
     private writeInTransaction(state: UiRouteState, intents: ReadonlyMap<number, string>): void {
         const snapshot = state.snapshot === null ? null : routeSnapshotSchema.parse(state.snapshot);
         if (snapshot !== null) {
@@ -757,13 +823,12 @@ export class RouteStore {
      * его целиком, и накопленный маршрут молча превратился бы в «маршрута нет».
      * Повреждённая строка — предупреждение и `null`: остальная история остаётся читаемой.
      */
-    private parseSnapshotRow(row: RouteSnapshotRow): RouteSnapshot | null {
+    private parseSnapshotRow(row: RouteSnapshotRow, revision?: number): RouteSnapshot | null {
         try {
-            return routeSnapshotSchema.parse(
-                withSnapshotDefaults(restoreSnapshot(JSON.parse(row.snapshot_json) as unknown), (diffId) =>
+            const saved = withSnapshotDefaults(restoreSnapshot(JSON.parse(row.snapshot_json) as unknown), (diffId) =>
                     this.baseCommitOf(diffId),
-                ),
-            );
+                );
+            return routeSnapshotSchema.parse({ ...(saved as object), reviewRevision: revision ?? this.latestReviewRevision(row.snapshot_id) ?? undefined });
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             process.stderr.write(
@@ -831,9 +896,12 @@ export class RouteStore {
  */
 export function contentHashOf(snapshot: RouteSnapshot): string {
     if (snapshot.presentation === 'story' && snapshot.storyContractVersion !== undefined) {
-        const saved = storedSnapshot(snapshot) as ExplanationSnapshot;
-        const { snapshotId: _id, commit: _commit, baseCommit: _base, diffId: _diff, codeSnapshotId: _codeSnapshotId, createdAt: _created, provenance: _provenance, previousSnapshotId: _previous, contentHash: _hash, ...content } = saved;
-        return createHash('sha256').update(JSON.stringify({ ...content, stops: content.stops.map(({ provenance: _sectionProvenance, ...block }) => block) })).digest('hex').slice(0, CONTENT_HASH_LENGTH);
+        const { snapshotId: _id, commit: _commit, baseCommit: _base, diffId: _diff, codeSnapshotId: _codeSnapshotId,
+            createdAt: _created, provenance: _provenance, previousSnapshotId: _previous, contentHash: _hash,
+            reviewRevision: _reviewRevision, ...content } = snapshot;
+        return createHash('sha256').update(JSON.stringify({ ...content,
+            stops: content.stops.map(({ provenance: _sectionProvenance, ...block }) => block),
+        })).digest('hex').slice(0, CONTENT_HASH_LENGTH);
     }
     const payload = JSON.stringify({
         summary: snapshot.summary,

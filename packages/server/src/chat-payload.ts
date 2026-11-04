@@ -43,6 +43,8 @@ const FILE_MODE = 0o600;
 const GUTTER_WIDTH = 5;
 const NO_LINE = '.';
 
+export type HistoryExchange = Pick<ChatExchange, 'id' | 'question' | 'anchor' | 'answer' | 'status'>;
+
 export interface ChatPayloadContext {
     readonly question: string;
     readonly explanation?: ChatExplanation | null;
@@ -51,7 +53,8 @@ export interface ChatPayloadContext {
     readonly diff: PrDiff | null;
     readonly fileContent: FileContent | null;
     readonly route: UiRouteState;
-    readonly history: readonly ChatExchange[];
+    /** Новые вопросы хранят уже отрендеренный контекст; старые входы содержали обмены целиком. */
+    readonly history: readonly HistoryExchange[] | string;
     /** Язык ответа; по умолчанию русский — на нём записаны обмены, сделанные до появления выбора. */
     readonly locale?: Locale;
 }
@@ -113,11 +116,14 @@ export function buildChatPayload(context: ChatPayloadContext, options: ChatPaylo
         };
     }
 
-    const file = sharedAnchorFile(context, context.anchor, sharedBudgetBytes);
-    const files = fitOwnFiles(anchoredPayloadSpecs(context, context.anchor, file === null), budgetBytes, context.explanation?.evidence);
+    const anchoredContext = context.diff?.files.some((entry) => entry.fileId === context.anchor?.fileId && entry.path === context.anchor.path) === true
+        ? context : { ...context, fileContent: null };
+    const file = sharedAnchorFile(anchoredContext, context.anchor, sharedBudgetBytes);
+    const target = sharedPrDiff(context, sharedBudgetBytes);
+    const files = fitOwnFiles(anchoredPayloadSpecs(anchoredContext, context.anchor, file === null), budgetBytes, context.explanation?.evidence);
     return {
         instructions: chatTaskInstructions(context, files, locale),
-        shared: file === null ? [guide] : [guide, file],
+        shared: [guide, ...(target === null ? [] : [target]), ...(file === null ? [] : [file])],
         files,
     };
 }
@@ -622,7 +628,7 @@ function routePlan(snapshot: RouteSnapshot): string[] {
     ];
 }
 
-function historyContext(history: readonly ChatExchange[]): string {
+export function renderChatHistory(history: readonly HistoryExchange[]): string {
     const completed = history
         .filter((exchange) => exchange.status === 'done' && exchange.answer !== null)
         .slice(-CHAT_HISTORY_EXCHANGES)
@@ -635,8 +641,12 @@ function historyContext(history: readonly ChatExchange[]): string {
     return ['# Recent completed chat exchanges (newest first)', '', ...blocks, ''].join('\n\n');
 }
 
+function historyContext(history: readonly HistoryExchange[] | string): string {
+    return typeof history === 'string' ? history : renderChatHistory(history);
+}
+
 /** Один старый обмен режется до попадания в общий бюджет, чтобы не вытеснить текущий код. */
-function historyExchangeBlock(exchange: ChatExchange, index: number): string {
+function historyExchangeBlock(exchange: HistoryExchange, index: number): string {
     const scope =
         exchange.anchor === null
             ? 'whole pull request'
@@ -675,11 +685,7 @@ function fileOf(diff: PrDiff | null, anchor: ChatAnchor): FileDiff | null {
     if (diff === null) {
         return null;
     }
-    return (
-        diff.files.find((file) => file.fileId === anchor.fileId) ??
-        diff.files.find((file) => file.path === anchor.path) ??
-        null
-    );
+    return diff.files.find((file) => file.fileId === anchor.fileId && file.path === anchor.path) ?? null;
 }
 
 

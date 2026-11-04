@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import type { PrDiff, RouteStop } from '@sherpa/protocol';
+import { chatExplanationSchema, explanationText } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SherpaDatabase } from './db.js';
@@ -107,6 +108,57 @@ describe('хранилище маршрута: история снапшотов
         expect(store.listSnapshots()).toHaveLength(1);
         expect(store.getSnapshot('snap-1')?.stops[0]?.status).toBe('ready');
         expect(store.getSnapshot('snap-1')?.contentHash).toBe(store.current()?.contentHash);
+    });
+
+    it('редакция разбора меняется при публикации текста, но не от служебного статуса', () => {
+        const db = open();
+        const store = new RouteStore({ db });
+        store.acceptSkeleton(accepted('snap-revision', null, 'iter-1'));
+        expect(store.current()?.reviewRevision).toBe(1);
+        store.setStopStatuses(new Map([[1, { status: 'filling' }]]));
+        expect(store.current()?.reviewRevision).toBe(1);
+        expect(db.prepare('SELECT COUNT(*) AS count FROM review_revisions WHERE review_id = ?').get('snap-revision')?.count).toBe(1);
+
+        store.applyFillings([{ planIndex: 1, paragraph: 'Опубликованный абзац', bridge: null, anchors: [], tests: [],
+            droppedClaims: 0, validationNotes: [], change: null }], { harness: 'claude-code', model: 'opus', locale: null });
+        expect(store.current()?.reviewRevision).toBe(2);
+        expect(store.getReviewRevision('snap-revision', 1)?.stops[0]?.paragraph).toBeNull();
+        expect(store.getReviewRevision('snap-revision', 2)?.stops[0]?.paragraph).toBe('Опубликованный абзац');
+        expect(new RouteStore({ db: open() }).getReviewRevision('snap-revision', 1)?.stops[0]?.paragraph).toBeNull();
+    });
+
+    it('изменение видимых связей блока создаёт новую редакцию', () => {
+        const fixture = architectureStoryFixture();
+        const checked = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
+        if (!checked.ok) throw new Error(checked.errors.join('\n'));
+        const store = new RouteStore({ db: open() });
+        store.acceptSkeleton({ ...accepted('links', null, fixture.diff.diffId), skeleton: checked.value,
+            diff: fixture.diff, presentation: 'story' });
+        const before = store.current();
+        if (before === null) throw new Error('Expected review');
+        const first = before.stops[0];
+        if (first === undefined) throw new Error('Expected block');
+        const link = { fileId: 'new-related-file', path: 'src/new.ts' };
+        store.refineOverview({ ...checked.value, stops: [
+            { ...first, relatedFiles: [link] }, ...before.stops.slice(1),
+        ] });
+        expect(store.current()?.reviewRevision).toBe(2);
+        expect(store.getReviewRevision('links', 1)?.stops[0]?.relatedFiles).not.toEqual([link]);
+    });
+
+    it('редакция большого обзора восстанавливается без прежнего предела 40 000 символов', () => {
+        const fixture = architectureStoryFixture();
+        const checked = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
+        if (!checked.ok) throw new Error(checked.errors.join('\n'));
+        const store = new RouteStore({ db: open() });
+        store.acceptSkeleton({ ...accepted('large', null, fixture.diff.diffId),
+            skeleton: { ...checked.value, summary: 'Большой обзор '.repeat(3500) }, diff: fixture.diff, presentation: 'story' });
+        const restored = store.getReviewRevision('large', 1);
+        if (restored === null) throw new Error('Expected saved revision');
+        const text = explanationText(restored);
+        expect(text.length).toBeGreaterThan(40_000);
+        expect(chatExplanationSchema.parse({ snapshotId: 'large', diffId: restored.diffId,
+            commit: restored.commit, text }).text).toBe(text);
     });
 
     it('reset и cancelSkeleton истории не трогают', () => {

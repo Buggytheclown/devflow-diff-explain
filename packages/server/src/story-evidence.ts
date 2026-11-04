@@ -2,7 +2,7 @@ import type { FileDiff, PrDiff, RawStoryEvidenceBlock, StoryEvidenceBlock, Story
 
 import { flowText } from '@sherpa/protocol';
 
-import { sourceEvidence } from './saved-sources.js';
+import { sourceEvidence, sourceFileEvidence } from './saved-sources.js';
 import { savedPatchIndex } from './saved-patch.js';
 import type { RouteValidation } from './route/types.js';
 
@@ -19,6 +19,11 @@ export function storyEvidenceResolver(diff: PrDiff) {
                 if (source.kind === 'lines' && source.sourceId !== undefined) {
                     const saved = sourceEvidence(diff, source);
                     if (saved === null) { errors.push(`Unknown pinned source: ${source.sourceId}`); return []; }
+                    return [{ ...source, fileId: saved.id }];
+                }
+                if (source.kind === 'file' && source.sourceId !== undefined) {
+                    const saved = sourceFileEvidence(diff, source);
+                    if (saved === null) { errors.push(`Unknown pinned full source: ${source.sourceId}`); return []; }
                     return [{ ...source, fileId: saved.id }];
                 }
                 const file = index.file(source.path, source.kind === 'file' ? 'new' : source.side);
@@ -79,7 +84,7 @@ export function storyEvidenceContext(evidence: StoryExplanationEvidence, diff: P
     const flow = evidence.flow;
     const flowContext = flow === undefined ? [] : ['# Saved architecture evidence', ...(diagramAlreadyShown ? [] : [flowText(flow)]),
         ...[...flow.diagram.nodes.map((node) => ({ ...node, owner: `Node ${node.id}` })),
-            ...flow.diagram.edges.map((edge) => ({ ...edge, owner: `Edge ${edge.from} -> ${edge.to}: ${edge.label}` }))].flatMap((item) => [item.owner,
+        ...flow.diagram.edges.map((edge) => ({ ...edge, owner: 'id' in edge ? `Edge ${edge.id}` : `Edge ${edge.from} -> ${edge.to}: ${edge.label}` }))].flatMap((item) => [item.owner,
             ...item.sources.flatMap((source) => source.kind === 'patch' ? range(source) : [`Saved flow context: ${source.id}`])]),
         ...flow.contexts.flatMap((context) => [`Flow context ${context.id}: ${context.path} @ ${context.revision}:${String(context.start)}-${String(context.end)}`, context.text])];
     return [...flowContext, '# Saved explanation evidence', ...blocks.flatMap((block) => [`## ${block.id}`,
@@ -88,6 +93,12 @@ export function storyEvidenceContext(evidence: StoryExplanationEvidence, diff: P
             ...(claim.limitation === null ? [] : [`Evidence limit: ${claim.limitation}`]),
             ...claim.sources.flatMap((source) => {
                 if (source.kind === 'lines') return range(source);
+                if (source.sourceId !== undefined) {
+                    const saved = sourceFileEvidence(diff, source);
+                    return emit(`saved-file:${source.sourceId}`, source.path, saved === null
+                        ? [`[UNAVAILABLE: saved full source ${source.sourceId}]`]
+                        : [`Saved full revision source: ${saved.id} (${saved.path}) @ ${saved.revision}; read through the pinned source index.`]);
+                }
                 const file = index.byId(source.fileId);
                 return file === null ? [`[UNAVAILABLE: saved source ${source.path}]`] : emit(`file:${file.fileId}`, source.path, [fileMetadata(file)]);
             }),

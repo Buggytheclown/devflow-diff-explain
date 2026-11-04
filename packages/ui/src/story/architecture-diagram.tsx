@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { ArchitectureDiagram as Diagram, ExplanationBlock } from '@sherpa/protocol';
+import type { ArchitectureDiagram as Diagram, ExplanationBlock, FlowCitation } from '@sherpa/protocol';
+import type { ReactNode } from 'react';
 import { useLocale } from '../i18n/index.js';
 import { flowCopy } from '../i18n/story.js';
 import { Skeleton } from './preparation.tsx';
@@ -9,19 +10,20 @@ export function ArchitectureDiagram(props: Parameters<typeof ArchitectureView>[0
     const diagram = props.diagram;
     const views = [{ title: diagram.title, mermaid: diagram.mermaid }, ...(diagram.views ?? [])];
     return <>{views.map((view, index) => {
-        const nodes = diagram.nodes.filter((node) => new RegExp(`(^|[^a-zA-Z0-9_-])${node.id}(?=$|[^a-zA-Z0-9_-])`, 'm').test(view.mermaid));
         return <section key={index} aria-label={view.title}>
             {views.length > 1 ? <h3>{view.title}</h3> : null}
-            <ArchitectureView {...props} diagram={{ ...diagram, ...view, nodes }} />
+            <ArchitectureView {...props} viewIndex={index} diagram={{ ...diagram, ...view }} />
         </section>;
     })}</>;
 }
 
-function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry, connected, onRenderFailure, onLayout }: {
+function ArchitectureView({ diagram, viewIndex, blocks = [], activeBlock, onVisit, onRetry, connected, onRenderFailure, onLayout, renderDiagramSource }: {
     diagram: Diagram; blocks?: readonly Pick<ExplanationBlock, 'id' | 'title' | 'nodeIds'>[] | undefined;
+    viewIndex?: number | undefined;
     activeBlock?: string | undefined; onVisit?: ((id: string) => void) | undefined;
     onRetry?: (() => void) | undefined; connected: boolean;
-    onRenderFailure?: (() => void) | undefined; onLayout?: (() => void) | undefined;
+    onRenderFailure?: ((report: { viewIndex: number; missingId?: string; reason: string }) => void) | undefined; onLayout?: (() => void) | undefined;
+    renderDiagramSource?: ((source: FlowCitation, index: number) => ReactNode) | undefined;
 }) {
     const t = flowCopy[useLocale()];
     const root = useRef<HTMLDivElement>(null);
@@ -29,6 +31,7 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
     const [nodes, setNodes] = useState(diagram.nodes);
     const [selected, setSelected] = useState<string | null>(null);
+    const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
     const [rendered, setRendered] = useState(0);
     const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
     const content = JSON.stringify(diagram);
@@ -39,6 +42,8 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
     useEffect(() => {
         const element = root.current;
         if (element === null) return;
+        element.replaceChildren();
+        setStatus('loading');
         const diagram = JSON.parse(content) as Diagram;
         let revision = 0;
         let closed = false;
@@ -49,7 +54,6 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
                 const focused = element.contains(document.activeElement) ? document.activeElement?.getAttribute('data-architecture-node') : null;
                 layout.current?.();
                 element.replaceChildren(svg);
-                if (element.querySelectorAll('g.node').length > 120) throw new Error('Too many architecture nodes');
                 const targets = new Map<string, SVGGElement>();
                 // Mermaid добавляет render ID к DOM-id групп; смысловой ID остаётся из исходной схемы.
                 const groupId = (target: SVGGElement) => target.getAttribute('data-id') ??
@@ -65,8 +69,6 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
                     const label = (target.querySelector(group ? '.cluster-label' : '.nodeLabel')?.textContent ?? target.querySelector('text')?.textContent ?? id).trim();
                     return { ...(metadata ?? { id, change: 'existing' as const, sources: [], limitation: null }), label };
                 });
-                const missing = diagram.nodes.find((node) => !renderedNodes.some((entry) => entry.id === node.id));
-                if (missing !== undefined) throw new Error(`Missing annotated diagram node: ${missing.id}`);
                 setNodes(renderedNodes);
                 for (const node of renderedNodes) {
                     const target = targets.get(node.id);
@@ -84,20 +86,37 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
                     }
                     target.setAttribute('role', 'button'); target.setAttribute('tabindex', '0');
                     target.setAttribute('aria-label', `${node.label} · ${diagram.nodes.some((entry) => entry.id === node.id) ? t[node.change] : t.context}`);
-                    const select = () => { setSelected(node.id); };
+                    const select = () => { setSelected(node.id); setSelectedEdge(null); };
                     target.addEventListener('click', (event) => { event.stopPropagation(); select(); });
                     target.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); select(); } });
                     if (node.id === focused) target.focus({ preventScroll: true });
                 }
+                const visibleEdges = new Set<string>();
+                for (const target of element.querySelectorAll<SVGElement>('.flowchart-link[id]')) {
+                    const edge = diagram.edges.find((entry) => 'id' in entry && (entry.id === target.id || `${id}-${entry.id}` === target.id) && (entry.viewIndex === undefined || entry.viewIndex === viewIndex));
+                    if (edge === undefined || !('id' in edge)) continue;
+                    visibleEdges.add(edge.id);
+                    target.classList.add(`architecture-edge--${edge.change}`);
+                    paint(target, { stroke: 'var(--architecture-edge-stroke, var(--text-link-muted))', 'stroke-width': 'var(--architecture-edge-width, 2px)' });
+                    target.setAttribute('role', 'button'); target.setAttribute('tabindex', '0');
+                    target.setAttribute('aria-label', `${target.id} · ${t[edge.change]}`);
+                    target.addEventListener('click', (event) => { event.stopPropagation(); setSelected(null); setSelectedEdge(edge.id); });
+                    target.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(null); setSelectedEdge(edge.id); } });
+                }
+                for (const edge of diagram.edges) if ('id' in edge && (edge.viewIndex === undefined || edge.viewIndex === viewIndex) && !visibleEdges.has(edge.id)) {
+                    throw new Error(`Missing annotated diagram edge: ${edge.id}`);
+                }
                 setStatus('ready');
                 setRendered((value) => value + 1);
-            }).catch((reason: unknown) => { if (!closed && requested === revision) { console.error('Architecture diagram rendering failed', reason); layout.current?.(); element.replaceChildren(); setStatus('error'); failure.current?.(); } });
+            }).catch((reason: unknown) => { if (!closed && requested === revision) { console.error('Architecture diagram rendering failed', reason); layout.current?.(); element.replaceChildren(); setStatus('error');
+                const message = String(reason); const missingId = /^Error: Missing annotated diagram edge: (.+)$/.exec(message)?.[1];
+                failure.current?.({ viewIndex: viewIndex ?? 0, reason: message.slice(0, 500), ...(missingId === undefined ? {} : { missingId }) }); } });
         };
         draw();
         const observer = new MutationObserver(draw);
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'data-arcanum', 'style'] });
         return () => { closed = true; revision++; observer.disconnect(); };
-    }, [content, direction, id, t]);
+    }, [content, direction, id, t, viewIndex]);
     useEffect(() => {
         const ids = new Set(blocks.find((block) => block.id === activeBlock)?.nodeIds ?? (selected === null ? [] : [selected]));
         for (const node of root.current?.querySelectorAll<SVGGElement>('[data-architecture-node]') ?? []) {
@@ -107,6 +126,7 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
         }
     }, [activeBlock, blocks, selected, rendered]);
     const chosen = nodes.find((node) => node.id === selected);
+    const chosenEdge = diagram.edges.find((edge) => 'id' in edge && edge.id === selectedEdge && (edge.viewIndex === undefined || edge.viewIndex === viewIndex));
     const related = blocks.filter((block) => selected !== null && block.nodeIds?.includes(selected));
     return <div className="story-architecture" data-reading="architecture">
         <div className="story-architecture-toolbar" role="group" aria-label={t.orientation}>
@@ -117,7 +137,11 @@ function ArchitectureView({ diagram, blocks = [], activeBlock, onVisit, onRetry,
         {status === 'error' ? <p className="story-notice" role="alert">{t.renderError}{onRetry === undefined ? null : <button className="ctl" disabled={!connected} onClick={onRetry}>{t.retry}</button>}</p> : null}
         <div className="story-architecture-scroll" data-direction={direction} ref={root} aria-label={diagram.title} />
         {chosen === undefined ? null : <aside className="story-architecture-selection" aria-live="polite"><strong>{chosen.label}</strong><span>{diagram.nodes.some((node) => node.id === chosen.id) ? t[chosen.change] : t.context}</span>{chosen.limitation === null ? null : <p>{chosen.limitation}</p>}
+            {chosen.sources.map((source, index) => <span key={index}>{renderDiagramSource?.(source, index) ?? (source.kind === 'patch' ? `${source.path}:${String(source.start)}–${String(source.end)}` : `Context ${source.id}`)}</span>)}
             {related.map((block) => <button className="ctl" key={block.id} data-reading-focus={`architecture-block:${block.id}`} onClick={() => { onVisit?.(block.id); }}>{block.title} →</button>)}
+        </aside>}
+        {chosenEdge === undefined ? null : <aside className="story-architecture-selection" aria-live="polite"><strong>{'id' in chosenEdge ? chosenEdge.id : chosenEdge.label}</strong><span>{t[chosenEdge.change]}</span>{chosenEdge.limitation === null ? null : <p>{chosenEdge.limitation}</p>}
+            {chosenEdge.sources.map((source, index) => <span key={index}>{renderDiagramSource?.(source, index) ?? (source.kind === 'patch' ? `${source.path}:${String(source.start)}–${String(source.end)}` : `Context ${source.id}`)}</span>)}
         </aside>}
     </div>;
 }

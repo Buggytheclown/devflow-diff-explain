@@ -33,16 +33,23 @@ test('описание → схема → все блоки и файлы обы
     await expect(nav.locator('.story-nav-file[aria-current=page]')).toHaveAttribute('aria-label', last.path);
     await expect(page.locator(`[data-reading-file="${last.fileId}"] header`)).toBeInViewport();
     // Память прежнего отдельного списка переводится на тот же общий холст.
-    await page.evaluate(({ diffId, fileId }) => {
-        const reader = JSON.parse(localStorage.getItem('devflow:reader') ?? '{}') as { navigation: { address: unknown } };
-        reader.navigation.address = { kind: 'diff', diffId, fileId };
-        localStorage.setItem('devflow:reader', JSON.stringify(reader));
-        const positions = JSON.parse(localStorage.getItem('devflow:positions') ?? '[]') as [string, unknown][];
-        const canvas = positions.find(([key]) => key.endsWith(':canvas'));
-        if (canvas !== undefined) positions.push([`diff:${diffId}:${fileId}`, canvas[1]]);
-        localStorage.setItem('devflow:positions', JSON.stringify(positions));
+    await page.evaluate(() => {
         const params = new URLSearchParams(location.hash.slice(1)); params.set('view', 'diff');
         history.replaceState(null, '', '#' + params.toString());
+    });
+    // Данные прежней читалки устанавливаем перед инициализацией новой страницы:
+    // живая вкладка ещё может сохранить своё текущее положение в sessionStorage.
+    await page.addInitScript(({ diffId, fileId }) => {
+        const readerKey = Object.keys(sessionStorage).find((key) => key.startsWith('devflow:') && key.endsWith(':reader'));
+        if (readerKey === undefined) throw new Error('Reader cache is missing');
+        const positionsKey = `${readerKey.slice(0, -'reader'.length)}positions`;
+        const reader = JSON.parse(sessionStorage.getItem(readerKey) ?? '{}') as { navigation: { address: unknown } };
+        reader.navigation.address = { kind: 'diff', diffId, fileId };
+        sessionStorage.setItem(readerKey, JSON.stringify(reader));
+        const positions = JSON.parse(sessionStorage.getItem(positionsKey) ?? '[]') as [string, unknown][];
+        const canvas = positions.find(([key]) => key.endsWith(':canvas'));
+        if (canvas !== undefined) positions.push([`diff:${diffId}:${fileId}`, canvas[1]]);
+        sessionStorage.setItem(positionsKey, JSON.stringify(positions));
     }, { diffId: fixture.diff.diffId, fileId: last.fileId });
     await page.reload();
     await expect(page.locator('.story-code')).toHaveCount(fixture.diff.files.length);

@@ -30,8 +30,11 @@ export class SnapshotReader implements CodeReader {
         }
     }
     async getFileContent(fileId: string): Promise<FileContent | null> { return this.snapshots.file(await this.getDiff(), fileId); }
-    async getSourceAtRevision(sourcePath: string, revision: string): Promise<string | null> {
-        return this.snapshots.source((await this.getDiff()).diffId, revision, sourcePath);
+    getSourceAtRevision(_sourcePath: string, _revision: string): Promise<string | null> {
+        // У локальных снимков revision (например, base/worktree) не уникален между импортами.
+        // Этот контракт не передаёт code ID, поэтому чтение через активную версию было бы ложным.
+        return Promise.resolve(null);
     }
     getBlob(blobId: string): Promise<Uint8Array | null> { return Promise.resolve(this.snapshots.bytes(blobId)); }
+    hasRegisteredBlob(blobId: string): boolean { return this.snapshots.hasRegisteredBlob(blobId); }
 }

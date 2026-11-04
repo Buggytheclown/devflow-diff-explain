@@ -36,6 +36,7 @@ export function EvidenceDisclosure({ evidence, open, onToggle, children, legacy 
             if (open && root.current?.contains(document.activeElement)) button.current?.focus({ preventScroll: true });
             onToggle();
         }}>{legacy ? (open ? t.hideFragments : t.fragments) : open ? t.hideChange : t.showChange}</button>
+        {open ? null : evidence?.claims.map((claim, index) => claim.limitation === null ? null : <p className="story-evidence-limit" key={index}>{claim.limitation}</p>)}
         {open ? <div id={id} className="story-evidence-body">{children}</div> : null}
     </div>;
 }

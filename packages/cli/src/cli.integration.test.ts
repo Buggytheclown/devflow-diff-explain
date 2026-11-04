@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CliIo } from './cli.js';
 import { run } from './cli.js';
+import { formatCommand } from './command.js';
 import { taskResultDirFor, taskResultFileFor, taskResultRootFor } from './paths.js';
 
 const PR_KEY = 'arcanum-777';
@@ -30,11 +31,13 @@ describe('CLI против сервера', () => {
     let sherpaDir: string;
     let workDir: string;
     let server: SherpaServer | null;
+    let leaseRefs: Map<string, string>;
 
     beforeEach(async () => {
         sherpaDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sherpa-cli-state-'));
         workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sherpa-cli-work-'));
         server = null;
+        leaseRefs = new Map();
     });
 
     afterEach(async () => {
@@ -86,7 +89,14 @@ describe('CLI против сервера', () => {
             ...(overrides.openBrowser === undefined ? {} : { openBrowser: overrides.openBrowser }),
         };
 
-        const code = await run(argv, io);
+        const taskId = argv[0] === 'task' ? argv[2] : undefined;
+        const leaseRef = taskId === undefined ? undefined : leaseRefs.get(taskId);
+        const effectiveArgv = taskId === undefined || argv.includes('--lease') || leaseRef === undefined ? argv : [...argv, '--lease', leaseRef];
+        const code = await run(effectiveArgv, io);
+        const issued = stdout.join('\n');
+        const issuedTaskId = /TASK sherpa\/(\d+)/.exec(issued)?.[1];
+        const issuedLeaseRef = /'--lease' '([a-f0-9]{64})'/.exec(issued)?.[1];
+        if (issuedTaskId !== undefined && issuedLeaseRef !== undefined) leaseRefs.set(issuedTaskId, issuedLeaseRef);
         return { code, stdout: stdout.join('\n'), stderr: stderr.join('\n') };
     }
 
@@ -152,7 +162,7 @@ describe('CLI против сервера', () => {
         expect(result.code).toBe(0);
         expect(result.stdout).toContain(`http://127.0.0.1:${String(running.port)}/#t=`);
         expect(result.stdout).toContain('Show this link to the user in full');
-        expect(result.stdout).toContain(`devflow-diff-explain worker next --pr ${PR_KEY}`);
+        expect(result.stdout).toContain(formatCommand(fileURLToPath(import.meta.url), 'worker', 'next', '--pr', PR_KEY));
         // Сервер и регистрация в выводе не всплывают — модели про них знать нечего.
         expect(result.stdout).not.toContain('register');
         expect(opened).toEqual([]);
@@ -164,10 +174,36 @@ describe('CLI против сервера', () => {
         });
     });
 
+    it('up opens a saved review with current authorization before an overview exists', async () => {
+        const running = await start();
+        const code = 'a'.repeat(64);
+        const opened: string[] = [];
+        const result = await sherpaWith(
+            { ensureServer: () => Promise.resolve({ uiUrl: `http://127.0.0.1:${String(running.port)}/#t=${running.token}`, started: true }), openBrowser: ({ uiUrl }) => opened.push(uiUrl) },
+            'up', '--pr', PR_KEY, '--code', code, '--review', 'route-7',
+        );
+        const expected = `http://127.0.0.1:${String(running.port)}/#t=${running.token}&code=${code}&review=route-7&view=route`;
+        expect(result.code).toBe(0);
+        expect(result.stdout).toContain(expected);
+        expect(opened).toEqual([expected]);
+    });
+
+    it('up pins a freshly imported code snapshot before any overview is published', async () => {
+        const running = await start();
+        const manifest = await writeFile('empty-snapshot.json', JSON.stringify({
+            format: 'code-snapshot/1', project: PR_KEY, diffId: 'empty-1', baseCommit: 'base-1', headCommit: 'head-1',
+            capturedAt: '2026-11-04T12:00:00.000Z', files: [],
+        }));
+        const result = await sherpa('up', '--snapshot', manifest);
+        expect(result.code).toBe(0);
+        const receipt = JSON.parse(result.stdout.split('\n')[0] ?? '') as { codeSnapshotId: string };
+        expect(result.stdout).toContain(`http://127.0.0.1:${String(running.port)}/#t=${running.token}&code=${receipt.codeSnapshotId}&view=diff`);
+    });
+
     it('local acquisition is delegated to the agent', async () => {
         const result = await sherpaWith({}, 'up', '--local', workDir, '--base', 'trunk~3');
         expect(result.code).toBe(1);
-        expect(result.stderr).toContain('up --snapshot');
+        expect(result.stderr).toContain(formatCommand(fileURLToPath(import.meta.url), 'up', '--snapshot', '<manifest.json>'));
     });
 
     it('браузер открывается только при холодном старте и без --no-open', async () => {
@@ -379,7 +415,7 @@ describe('CLI против сервера', () => {
         const result = await sherpa('worker', 'register', '--harness', 'claude-code');
 
         expect(result.code).toBe(0);
-        expect(result.stdout).toContain('devflow-diff-explain worker next');
+        expect(result.stdout).toContain(formatCommand(fileURLToPath(import.meta.url), 'worker', 'next', '--pr', PR_KEY));
         const workerId = await readWorkerIdFile();
         expect(running.workerRegistry.status()).toMatchObject({
             kind: 'connected',
@@ -431,7 +467,7 @@ describe('CLI против сервера', () => {
         const second = await sherpa('worker', 'register', '--harness', 'codex');
 
         expect(second.code).toBe(0);
-        expect(second.stdout).toContain('devflow-diff-explain worker next');
+        expect(second.stdout).toContain(formatCommand(fileURLToPath(import.meta.url), 'worker', 'next', '--pr', PR_KEY));
         const workerId = await readWorkerIdFile();
         expect(workerId).not.toBe(first);
         expect(running.workerRegistry.status()).toMatchObject({
@@ -506,18 +542,18 @@ describe('CLI против сервера', () => {
         expect(issued.stdout).toContain('Context: /tmp/sherpa/task-context.md');
         const resultFile = await resultFileOf(taskId);
         expect(issued.stdout).toContain(`Write the result to ${resultFile} and submit it:`);
-        expect(issued.stdout).toContain(`devflow-diff-explain task complete ${String(taskId)} --file ${resultFile}`);
+        expect(issued.stdout).toContain(`'task' 'complete' '${String(taskId)}' '--file' '${resultFile}'`);
 
         const progress = await sherpa('task', 'progress', String(taskId), '--text', 'читаю дифф');
         expect(progress.code).toBe(0);
         expect(running.queue.getTask(taskId)?.progressText).toBe('читаю дифф');
 
         await fs.writeFile(resultFile, 'Готовый ответ.');
-        const printed = issued.stdout.split('\n').find((line) => line.trimStart().startsWith('devflow-diff-explain task complete '));
-        expect(printed).toContain(`--pr ${PR_KEY}`);
+        const printed = issued.stdout.split('\n').find((line) => line.trimStart().startsWith('node '));
+        expect(printed).toContain(`'--pr' '${PR_KEY}'`);
         const nextTaskId = enqueueEcho(running, 'Second task.');
         expect(printed).toContain('--next');
-        const completeArgs = printed?.trim().split(' ').slice(1) ?? [];
+        const completeArgs = [...(printed?.matchAll(/'([^']*)'/g) ?? [])].map((match) => match[1] ?? '').slice(1);
         const completed = await sherpaWith({ extraEnv: { SHERPA_PR: undefined } }, ...completeArgs);
         expect(completed.code).toBe(0);
         expect(completed.stdout).toContain('accepted');
@@ -577,7 +613,7 @@ describe('CLI против сервера', () => {
 
         expect(issued.code).toBe(0);
         const resultFile = await resultFileOf(taskId);
-        expect(issued.stdout).toContain(`--file ${resultFile}`);
+        expect(issued.stdout).toContain(`'--file' '${resultFile}'`);
         expect(path.dirname(path.dirname(resultFile))).toBe(path.join(taskResultRootFor(workDir), PR_KEY));
         expect((await fs.stat(taskResultRootFor(workDir))).mode & 0o777).toBe(0o700);
         expect((await fs.stat(path.dirname(resultFile))).mode & 0o777).toBe(0o700);
@@ -593,7 +629,7 @@ describe('CLI против сервера', () => {
         const again = await sherpa('worker', 'next');
 
         expect(again.stdout).toContain(`TASK sherpa/${String(taskId)} (echo), attempt 1`);
-        expect(again.stdout).toContain(`--file ${resultFile}`);
+        expect(again.stdout).toContain(`'--file' '${resultFile}'`);
         expect(await fs.readFile(resultFile, 'utf8')).toBe('Готовый ответ.');
     });
 
@@ -603,7 +639,7 @@ describe('CLI против сервера', () => {
         const taskId = enqueueEcho(running);
         const first = await sherpa('worker', 'next');
         const firstFile = await resultFileOf(taskId, 1);
-        expect(first.stdout).toContain(`--file ${firstFile}`);
+        expect(first.stdout).toContain(`'--file' '${firstFile}'`);
 
         // Новая сессия перехватывает слот, аренда прежней возвращается в очередь следующей попыткой.
         await sherpa('worker', 'register');
@@ -612,7 +648,7 @@ describe('CLI против сервера', () => {
         expect(second.stdout).toContain(`TASK sherpa/${String(taskId)} (echo), attempt 2`);
         const secondFile = await resultFileOf(taskId, 2);
         expect(path.dirname(secondFile)).not.toBe(path.dirname(firstFile));
-        expect(second.stdout).toContain(`--file ${secondFile}`);
+        expect(second.stdout).toContain(`'--file' '${secondFile}'`);
     });
 
     it('корень результатов открыт другим или это симлинк — задача не выдаётся, следующий шаг назван', async () => {
@@ -626,7 +662,7 @@ describe('CLI против сервера', () => {
 
         expect(open.code).toBe(1);
         expect(open.stderr).toContain(`${root} is open to other users`);
-        expect(open.stderr).toContain(`call \`devflow-diff-explain worker next --pr ${PR_KEY}\` again`);
+        expect(open.stderr).toContain(`call \`${formatCommand(fileURLToPath(import.meta.url), 'worker', 'next', '--pr', PR_KEY)}\` again`);
         expect(running.queue.getTask(taskId)?.status).toBe('queued');
 
         await fs.rm(root, { recursive: true });
@@ -650,7 +686,7 @@ describe('CLI против сервера', () => {
 
         expect(result.code).toBe(1);
         expect(result.stderr).toContain('cannot prepare the directory for task results');
-        expect(result.stderr).toContain(`call \`devflow-diff-explain worker next --pr ${PR_KEY}\` again`);
+        expect(result.stderr).toContain(`call \`${formatCommand(fileURLToPath(import.meta.url), 'worker', 'next', '--pr', PR_KEY)}\` again`);
         expect(running.queue.getTask(taskId)?.status).toBe('queued');
     });
 
@@ -666,7 +702,7 @@ describe('CLI против сервера', () => {
         expect(rejected.code).toBe(0);
         expect(rejected.stdout).toContain('rejected');
         expect(rejected.stdout).toContain('1. ');
-        expect(rejected.stdout).toContain(`devflow-diff-explain task complete ${String(taskId)} --file ${file}`);
+        expect(rejected.stdout).toContain(`'task' 'complete' '${String(taskId)}' '--file' '${file}'`);
         expect(running.queue.getTask(taskId)?.status).toBe('leased');
     });
 
@@ -709,7 +745,7 @@ describe('CLI против сервера', () => {
 
         expect(repeated.code).toBe(0);
         expect(repeated.stdout).toContain('is accepted');
-        expect(repeated.stdout).toContain('devflow-diff-explain worker next');
+        expect(repeated.stdout).toContain("'worker' 'next'");
     });
 
     it('отказ по задаче доходит до очереди с причиной', async () => {
@@ -727,13 +763,13 @@ describe('CLI против сервера', () => {
         });
     });
 
-    it('чужой номер задачи — ошибка сервера человеческим текстом, код 1', async () => {
+    it('чужой номер задачи без выданной аренды отвергается локально', async () => {
         await start();
 
         const result = await sherpa('task', 'fail', '999', '--reason', 'x');
 
         expect(result.code).toBe(1);
-        expect(result.stderr).toContain('sherpa/999');
+        expect(result.stderr).toContain('--lease reference printed with the task');
         expect(result.stderr).not.toContain('unknown_task');
     });
 
@@ -747,7 +783,7 @@ describe('CLI против сервера', () => {
 
         expect(result.code).toBe(1);
         expect(result.stderr).toContain(`Write the result to ${missing}`);
-        expect(result.stderr).toContain(`devflow-diff-explain task complete ${String(taskId)} --file ${missing} --pr ${PR_KEY}`);
+        expect(result.stderr).toContain(`'task' 'complete' '${String(taskId)}' '--file' '${missing}' '--pr' '${PR_KEY}'`);
         expect(running.queue.getTask(taskId)).toMatchObject({ status: 'leased', result: null });
     });
 

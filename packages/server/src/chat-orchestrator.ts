@@ -5,6 +5,8 @@ import path from 'node:path';
 import type {
     ChatAnchor,
     ChatExplanation,
+    ChatExplanationRef,
+    ChatCodeRef,
     ChatExchange,
     FileContent,
     FileDiff,
@@ -17,9 +19,10 @@ import type {
     UiChatRetryResponse,
 } from '@sherpa/protocol';
 
-import { buildChatPayload, materializeChatPayload, questionDirIn } from './chat-payload.js';
+import { buildChatPayload, materializeChatPayload, questionDirIn, renderChatHistory } from './chat-payload.js';
+import type { HistoryExchange } from './chat-payload.js';
 import { chatCodeLinkErrors } from './chat-code-links.js';
-import type { ChatStore, StoredChatExchange } from './chat-store.js';
+import type { ChatStore, FrozenQuestionInput, StoredChatExchange } from './chat-store.js';
 import { explanationText } from '@sherpa/protocol';
 import { RpcFailure } from './errors.js';
 import { resolveGenerationLocale } from './generation-locale.js';
@@ -106,11 +109,37 @@ export class ChatOrchestrator {
         question: string,
         requested: UiChatAskAnchor | null,
         requestedLocale?: Locale,
-        explanation?: ChatExplanation,
+        reference?: ChatExplanationRef | ChatExplanation,
+        codeRef?: ChatCodeRef,
     ): Promise<ChatExchange> {
+        let explanation: ChatExplanation | undefined;
+        if (reference !== undefined && 'reviewId' in reference) {
+            const shown = this.route.getReviewRevision(reference.reviewId, reference.revision);
+            if (shown?.presentation !== 'story' || shown.diffId !== reference.diffId ||
+                shown.commit !== reference.commit || (reference.codeSnapshotId !== undefined && shown.codeSnapshotId !== reference.codeSnapshotId)) {
+                throw new RpcFailure('bad_request', 'Показанная редакция разбора недоступна. Обновите страницу перед отправкой вопроса.');
+            }
+            if (reference.sectionId !== undefined && reference.sectionId !== 'intro' &&
+                !shown.stops.some((stop) => stop.id === reference.sectionId)) {
+                throw new RpcFailure('bad_request', 'Выбранный блок отсутствует в показанной редакции.');
+            }
+            const focus = reference.file === undefined ? reference.sectionId : `file:${reference.file.fileId}`;
+            explanation = {
+                codeSnapshotId: shown.codeSnapshotId,
+                snapshotId: reference.reviewId, diffId: shown.diffId, commit: shown.commit,
+                ...(reference.sectionId === undefined ? {} : { sectionId: reference.sectionId }),
+                ...(reference.file === undefined ? {} : { file: reference.file }),
+                text: explanationText(shown, focus),
+                evidence: explanationEvidence(shown, focus),
+            };
+        } else if (reference !== undefined) {
+            explanation = reference;
+        }
         if (explanation !== undefined) {
             const focus = explanation.file === undefined ? explanation.sectionId : `file:${explanation.file.fileId}`;
-            const shown = explanation.snapshotId === null ? null : this.route.getSnapshot(explanation.snapshotId);
+            const shown = explanation.snapshotId === null ? null : ('reviewId' in (reference ?? {})
+                ? this.route.getReviewRevision((reference as ChatExplanationRef).reviewId, (reference as ChatExplanationRef).revision)
+                : this.route.getSnapshot(explanation.snapshotId));
             if ((explanation.snapshotId !== null && (shown?.presentation !== 'story' || shown.diffId !== explanation.diffId ||
                 shown.commit !== explanation.commit || explanation.text !== explanationText(shown, focus))) ||
                 (explanation.snapshotId === null && (explanation.text !== '' || explanation.sectionId !== undefined)) ||
@@ -122,24 +151,47 @@ export class ChatOrchestrator {
             const evidence = shown === null ? undefined : explanationEvidence(shown, focus);
             explanation = { ...pinned, ...(evidence === undefined ? {} : { evidence }) };
         }
-        const context = await this.loadPrContext(requested, explanation?.diffId);
+        if (codeRef !== undefined && explanation !== undefined) throw new RpcFailure('bad_request', 'Укажите только одну версию вопроса.');
+        if (requested?.diffId !== undefined && codeRef !== undefined && requested.diffId !== codeRef.diffId) {
+            throw new RpcFailure('bad_request', 'Диапазон и выбранный код относятся к разным версиям.');
+        }
+        const pinnedDiffId = explanation?.diffId ?? codeRef?.diffId;
+        const context = await this.loadPrContext(requested, pinnedDiffId,
+            reference !== undefined || codeRef !== undefined || requested !== null);
+        if (codeRef !== undefined && (context.diff?.diffId !== codeRef.diffId || context.headCommit !== codeRef.commit ||
+            (codeRef.codeSnapshotId !== undefined && context.diff.codeSnapshotId !== codeRef.codeSnapshotId))) {
+            throw new RpcFailure('bad_request', 'Не удалось получить код показанной версии ПР.');
+        }
         if (explanation !== undefined && (context.diff?.diffId !== explanation.diffId || context.headCommit !== explanation.commit || (explanation.codeSnapshotId !== undefined && explanation.codeSnapshotId !== context.diff.codeSnapshotId))) {
             throw new RpcFailure('bad_request', 'Не удалось получить код показанной версии ПР.');
         }
-        if (explanation === undefined && context.diff !== null) explanation = { snapshotId: null, diffId: context.diff.diffId, commit: context.diff.headCommit, text: '' };
+        if (explanation === undefined && context.diff !== null) explanation = { snapshotId: null, diffId: context.diff.diffId,
+            commit: context.diff.headCommit, text: '',
+            ...(context.diff.codeSnapshotId === undefined ? {} : { codeSnapshotId: context.diff.codeSnapshotId }),
+            ...(codeRef?.file === undefined ? {} : { file: codeRef.file }) };
         const anchor = resolveAskAnchor(requested, context.diff);
+        if (anchor !== null) validatePinnedAnchor(anchor, context);
         const attached = explanation?.file;
         if (attached !== undefined && (requested !== null || !context.diff?.files.some((file) => file.fileId === attached.fileId && file.path === attached.path))) {
             throw new RpcFailure('bad_request', 'Прикреплённый файл недоступен в выбранной версии ПР.');
         }
         const locale = this.resolveLocale(requestedLocale);
+        if (context.diff === null && (reference !== undefined || codeRef !== undefined)) {
+            throw new RpcFailure('bad_request', 'Код выбранной версии ПР недоступен.');
+        }
+        const history = this.store.recentHistory(context.diff?.diffId ?? null);
+        const historyText = renderChatHistory(history);
+        const frozen: FrozenQuestionInput = { diffId: context.diff?.diffId ?? null,
+            ...(context.diff?.codeSnapshotId === undefined ? {} : { codeSnapshotId: context.diff.codeSnapshotId }),
+            headCommit: context.headCommit, historyText };
         const taskDir = questionDirIn(this.payloadDir);
         this.reservedDirs.add(taskDir);
         try {
-            const input = await this.materialize(taskDir, question, anchor, context, locale, explanation ?? null);
+            const input = await this.materialize(taskDir, question, anchor, context, locale, explanation ?? null, historyText);
             return this.store.ask(question, anchor, context.headCommit, locale, () =>
                 this.queue.enqueueInTransaction(input),
                 explanation ?? null,
+                frozen,
             );
         } finally {
             this.reservedDirs.delete(taskDir);
@@ -165,7 +217,26 @@ export class ChatOrchestrator {
             return 'noop';
         }
 
-        const context = await this.loadPrContext(stored.exchange.anchor, stored.exchange.explanation?.diffId);
+        if (stored.questionInputCorrupt) {
+            throw new RpcFailure('bad_request', 'Сохранённый контекст вопроса повреждён; точный повтор недоступен.');
+        }
+
+        const frozen = stored.questionInput;
+        const noCode = frozen?.diffId === null || (frozen === null && stored.headCommit === null);
+        if (frozen === null && !noCode) {
+            throw new RpcFailure('bad_request', 'Исходный контекст этого старого вопроса не сохранён; точный повтор недоступен.');
+        }
+        const pinnedDiffId = noCode ? undefined : frozen?.diffId ?? stored.exchange.explanation?.diffId ??
+            (stored.exchange.anchor?.diffId === LEGACY_DIFF_ID ? undefined : stored.exchange.anchor?.diffId);
+        if (pinnedDiffId === undefined && !noCode) {
+            throw new RpcFailure('bad_request', 'Исходная версия этого старого вопроса недоступна для повтора.');
+        }
+        const context = await this.loadPrContext(noCode ? null : stored.exchange.anchor, pinnedDiffId, !noCode);
+        if ((pinnedDiffId === undefined && context.diff !== null) || (pinnedDiffId !== undefined && context.diff === null) ||
+            (frozen !== null && ((context.diff?.headCommit ?? null) !== frozen.headCommit ||
+            (frozen.codeSnapshotId !== undefined && context.diff?.codeSnapshotId !== frozen.codeSnapshotId)))) {
+            throw new RpcFailure('bad_request', 'Исходная версия этого вопроса недоступна для повтора.');
+        }
         const taskDir = questionDirIn(this.payloadDir);
         this.reservedDirs.add(taskDir);
         try {
@@ -176,7 +247,8 @@ export class ChatOrchestrator {
                 context,
                 // Повтор говорит на языке исходного вопроса: ответ не меняет язык посреди ленты.
                 localeOf(stored.exchange),
-                stored.exchange.explanation ?? null,
+                frozen?.explanation ?? stored.exchange.explanation ?? null,
+                frozen?.historyText ?? frozen?.history ?? [],
             );
             return this.store.retry(exchangeId, context.headCommit, () => this.queue.enqueueInTransaction(input))
                 ? 'retried'
@@ -194,6 +266,7 @@ export class ChatOrchestrator {
         context: PrContext,
         locale: Locale,
         explanation: ChatExplanation | null,
+        history: readonly HistoryExchange[] | string,
     ): Promise<EnqueueInput> {
         return materializeChatPayload(
             taskDir,
@@ -205,7 +278,7 @@ export class ChatOrchestrator {
                 diff: context.diff,
                 fileContent: context.fileContent,
                 route: this.route.read(),
-                history: this.store.read().exchanges.filter((exchange) => explanation === null || exchange.explanation?.diffId === explanation.diffId),
+                history,
                 explanation,
                 locale,
             }),
@@ -391,12 +464,12 @@ export class ChatOrchestrator {
      * Материал вопроса: шапка PR, дифф его итерации и, для якорного вопроса, текст файла.
      * Отказ любой части не отменяет вопрос, а сужает контекст.
      */
-    private async loadPrContext(anchor: { fileId: string; diffId?: string | undefined } | null, pinnedDiffId?: string): Promise<PrContext> {
+    private async loadPrContext(anchor: { fileId: string; diffId?: string | undefined } | null, pinnedDiffId?: string, strictPinned = true): Promise<PrContext> {
         const pinned = pinnedDiffId ?? (anchor?.diffId === undefined || anchor.diffId === LEGACY_DIFF_ID ? null : anchor.diffId);
         const diff = pinned === null
             ? await this.host?.getDiff().catch(() => null) ?? null
             : this.iterations?.get(pinned)?.diff ?? null;
-        if (pinned !== null && diff === null && this.host !== null) throw new RpcFailure('bad_request', `Дифф версии ${pinned} не импортирован.`);
+        if (pinned !== null && diff === null && strictPinned) throw new RpcFailure('bad_request', `Дифф версии ${pinned} не импортирован.`);
         const pr = diff?.metadata === undefined ? await this.host?.getPr().catch(() => null) ?? null : diff.metadata;
         const file = anchor === null ? undefined : diff?.files.find((entry) => entry.fileId === anchor.fileId);
         const fileContent = file === undefined || diff === null ? null : this.pinnedContent === undefined
@@ -426,6 +499,16 @@ function resolveAskAnchor(anchor: UiChatAskAnchor | null, diff: PrDiff | null): 
         throw new RpcFailure('bad_request', 'Якорь вопроса без diffId, а активной итерации нет: хост недоступен.');
     }
     return { ...anchor, diffId: diff.diffId };
+}
+
+function validatePinnedAnchor(anchor: ChatAnchor, context: PrContext): void {
+    const file = context.diff?.files.find((entry) => entry.fileId === anchor.fileId);
+    const expectedPath = anchor.side === 'old' ? file?.oldPath ?? file?.path : file?.path;
+    const source = anchor.side === 'old' ? context.fileContent?.oldText : context.fileContent?.newText;
+    if (file === undefined || anchor.diffId !== context.diff?.diffId || anchor.path !== expectedPath || source === null || source === undefined ||
+        anchor.end > source.split(/\r?\n/).length) {
+        throw new RpcFailure('bad_request', 'Выбранные строки недоступны в сохранённой версии файла. Обновите вложение.');
+    }
 }
 
 /** Что хост дал под этот вопрос; отказ любой части не отменяет вопрос, а сужает контекст. */

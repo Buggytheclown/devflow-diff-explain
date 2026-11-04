@@ -200,6 +200,7 @@ export type RouteCarried = z.infer<typeof routeCarriedSchema>;
  */
 const routeSnapshotBase = z.object({
     codeSnapshotId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    reviewRevision: z.number().int().positive().optional(),
     presentation: z.enum(['legacy', 'story']).optional(),
     storyContractVersion: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]).optional(),
     summaryEvidence: storyEvidenceBlockSchema.optional(),
@@ -403,7 +404,7 @@ export const readableSectionResultSchema = z.object({ contractVersion: z.literal
 export const overviewSkeletonResultSchema = readableSkeletonResultSchema.extend({
     contractVersion: z.literal(5), summary: z.string().trim().min(1).max(20_000),
 });
-export const sectionAssignmentSchema = z.object({ files: z.array(relativeCodePathSchema).min(1).max(10_000), introduction: z.boolean() }).strict();
+export const sectionAssignmentSchema = z.object({ files: z.array(relativeCodePathSchema).min(1), introduction: z.boolean() }).strict();
 export type SectionAssignment = z.infer<typeof sectionAssignmentSchema>;
 export const progressiveSectionResultSchema = z.object({
     contractVersion: z.literal(5),
@@ -467,12 +468,13 @@ export const allFilesWorkerResultSchema = z.object({
         blocks: z.array(architectureOverviewWorkerResultSchema.shape.stops.element.partial().required({ id: true })).min(1).optional(),
         removeBlocks: z.array(z.string().min(1)).min(1).optional(),
         blockOrder: z.array(z.string().min(1)).min(1).optional(),
-    }).optional(),
+    }).refine((value) => Object.keys(value).length > 0, 'Provide at least one overview field.').optional(),
     files: z.array(explainedFileResultSchema.extend({
         example: z.object({ text: z.string().trim().min(1), evidence: evidenceSourcesSchema }).strict().nullable().optional(),
     })).optional(),
 }).strict().refine((value) => (value.files?.length ?? 0) > 0 || value.overview !== undefined || value.update !== undefined,
-    'Return files or an overview update.');
+    'Return files or an overview update.')
+    .refine((value) => value.overview === undefined || value.update === undefined, 'Use overview or update in one checkpoint.');
 /** Envelope проверяется целиком; содержимое каждого файла — отдельно для частичной приёмки. */
 export const checkpointEnvelopeSchema = z.object({ ...allFilesWorkerResultSchema.shape, files: z.array(z.unknown()).optional() }).strict()
     .refine((value) => (value.files?.length ?? 0) > 0 || value.overview !== undefined || value.update !== undefined, 'Return files or an overview update.')

@@ -10,7 +10,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const root = resolve(packageRoot, '../..');
 const installer = join(root, 'scripts/install-local.mjs');
-const files = ['SKILL.md', 'agents/openai.yaml', 'version.json', 'bin/devflow-diff-explain.mjs', 'bin/devflow-diff-explain-server.mjs'];
+const files = ['SKILL.md', 'agents/openai.yaml', 'version.json', 'bin/devflow-diff-explain.mjs', 'bin/devflow-diff-explain-server.mjs', 'bin/devflow-diff-explain-arc.mjs'];
 let temp;
 const backups = [];
 beforeAll(() => {
@@ -38,6 +38,7 @@ it('устанавливает standalone-копию, проверяет сос�
     const hash = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
     for (const name of files) expect(hash(join(target, name))).toBe(hash(join(packageRoot, 'dist', name)));
     expect(lstatSync(join(target, 'bin/devflow-diff-explain.mjs')).mode & 0o111).toBe(0o111);
+    expect(lstatSync(join(target, 'bin/devflow-diff-explain-arc.mjs')).mode & 0o111).toBe(0o111);
     writeFileSync(join(target, 'stale'), 'previous');
     const second = install();
     expect(existsSync(join(target, 'stale'))).toBe(false);

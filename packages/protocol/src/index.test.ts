@@ -18,6 +18,7 @@ import {
     PROTOCOL_VERSION,
     protocolVersionsCompatible,
     RESULT_MAX_BYTES,
+    STRUCTURAL_RESULT_MAX_BYTES,
     reviewUserSchema,
     routeProvenanceSchema,
     routeSectionResultSchema,
@@ -87,7 +88,7 @@ describe('задача и аренда', () => {
         const parsed = workerNextResponseSchema.parse({
             kind: 'task',
             task: validTask,
-            lease: { taskId: 42, ttlSeconds: 600, expiresAt: '2026-08-19T12:00:00.000Z' },
+            lease: { taskId: 42, grantToken: 'b04cbbe4-0ed0-4d9b-98e4-39f5966adcf9', ttlSeconds: 600, expiresAt: '2026-08-19T12:00:00.000Z' },
         });
         expect(parsed.kind).toBe('task');
         expect(workerNextResponseSchema.safeParse({ kind: 'idle', message: 'задач нет' }).success).toBe(true);
@@ -101,13 +102,16 @@ describe('complete', () => {
         cliVersion: '0.1.0',
         workerId: 'w-1',
         taskId: 42,
+        grantToken: 'b04cbbe4-0ed0-4d9b-98e4-39f5966adcf9',
     };
 
     it('лимит результата считается в байтах, не в символах', () => {
         // Кириллица — 2 байта на символ: длина строки меньше лимита, байтов — больше.
         const oversized = 'я'.repeat(RESULT_MAX_BYTES / 2 + 1);
-        expect(taskCompleteRequestSchema.safeParse({ ...base, result: oversized }).success).toBe(false);
+        expect(taskCompleteRequestSchema.safeParse({ ...base, result: oversized }).success).toBe(true);
+        expect(taskCompleteRequestSchema.safeParse({ ...base, result: 'x'.repeat(STRUCTURAL_RESULT_MAX_BYTES + 1) }).success).toBe(false);
         expect(taskCompleteRequestSchema.safeParse({ ...base, result: 'ok' }).success).toBe(true);
+        expect(taskCompleteRequestSchema.safeParse({ ...base, grantToken: undefined, result: 'ok' }).success).toBe(false);
     });
 
     it('ответ various: accepted / rejected со списком ошибок / noop', () => {

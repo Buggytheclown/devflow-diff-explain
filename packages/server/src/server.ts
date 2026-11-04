@@ -3,7 +3,7 @@ import http from 'node:http';
 import { hostname } from 'node:os';
 
 import type { ServerManifest } from '@sherpa/protocol';
-import { LONG_POLL_DEFAULT_SECONDS, PROTOCOL_VERSION, READER_APPEARANCE } from '@sherpa/protocol';
+import { LONG_POLL_DEFAULT_SECONDS, PROTOCOL_VERSION, READER_APPEARANCE, resultLimitForTask } from '@sherpa/protocol';
 
 import { createToken } from './auth.js';
 import { BlobCache } from './blob-cache.js';
@@ -230,7 +230,8 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
         });
         // Локальные патчи итераций и кэш срезов: наполняется отовсюду, где грузится дифф.
         const iterationStore = new IterationStore(options.now === undefined ? { db } : { db, now: options.now });
-        const snapshots = new CodeSnapshots(db, prKey);
+        const blobs = new BlobCache(sherpaDir, blobsDirOf(sherpaDir, prKey));
+        const snapshots = new CodeSnapshots(db, prKey, (blobId) => blobs.read(blobId));
         if (options.snapshot !== undefined) await snapshots.importSnapshot(options.snapshot);
         const reader = new SnapshotReader(snapshots, iterationStore);
         const selectedReader = options.reader === undefined ? reader : options.reader;
@@ -343,7 +344,7 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
                 queue,
                 prepareResult: async (taskId, result) => {
                     const task = queue.getTask(taskId);
-                    if (task?.status !== 'leased' || Buffer.byteLength(result, 'utf8') > 256 * 1024) return result;
+                    if (task?.status !== 'leased' || Buffer.byteLength(result, 'utf8') > resultLimitForTask(task.type)) return result;
                     const exchange = chatStore.exchangeForTask(taskId)?.exchange;
                     const diffId = routeOrchestrator.diffIdForTask(taskId) ?? exchange?.explanation?.diffId ?? exchange?.anchor?.diffId;
                     const diff = diffId == null ? null : iterationStore.get(diffId)?.diff;
@@ -374,13 +375,15 @@ export async function startServer(options: StartServerOptions): Promise<SherpaSe
             }),
             ...createReadRoutes({
                 host: source?.host ?? null, prMeta, iterations: iterationStore, iterationFeed, pinnedContent: (diff, file) => savedSources.file(diff, file),
-                blobs: new BlobCache(sherpaDir, blobsDirOf(sherpaDir, prKey)),
+                codeSnapshot: (id) => snapshots.get(id)?.diff ?? null,
+                blobs,
             }),
             // Настройки глобальные: ручка не зависит ни от ревью-хоста, ни от стейта этого PR.
             ...createSettingsRoutes({
                 settings: settingsStore,
             }),
-            ...createRouteRoutes({ store: routeStore, orchestrator: routeOrchestrator, iterationFeed }),
+            ...createRouteRoutes({ store: routeStore, orchestrator: routeOrchestrator, iterationFeed,
+                codeDiffId: (id) => snapshots.get(id)?.diff.diffId ?? null }),
             ...createChatRoutes({ store: chatStore, orchestrator: chatOrchestrator }),
             // Дев-ручки есть только у фикстурного хоста; у остальных этих маршрутов не существует.
             ...(advanceIteration === undefined

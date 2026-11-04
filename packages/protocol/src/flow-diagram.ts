@@ -46,21 +46,26 @@ export const architectureDiagramSchema = z.object({
     mermaid: architectureMermaidSchema,
     views: z.array(z.object({ title: z.string().trim().min(1).max(160), mermaid: architectureMermaidSchema }).strict()).max(12).optional(),
     nodes: z.array(z.object({
-        id: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/), label: z.string().trim().min(1).max(160).default('Architecture node'),
+        id: z.string().min(1), label: z.string().trim().min(1).max(160).default('Architecture node'),
         change: z.enum(['existing', 'added', 'modified', 'affected', 'unknown']),
-        sources: z.array(flowCitationSchema).max(4).default([]), limitation: z.string().trim().min(1).max(400).nullable().default(null),
-    }).strict()).max(120).default([]),
-    edges: z.array(flowDiagramSchema.shape.edges.element).max(256).optional().default([]),
+        sources: z.array(flowCitationSchema).default([]), limitation: z.string().trim().min(1).max(400).nullable().default(null),
+    }).strict()).default([]),
+    edges: z.array(z.union([z.object({
+        id: z.string().min(1), viewIndex: z.number().int().min(0).optional(), change: z.enum(['existing', 'added', 'modified', 'affected', 'unknown']),
+        sources: z.array(flowCitationSchema).default([]), limitation: z.string().trim().min(1).max(400).nullable().default(null),
+    }).strict(), flowDiagramSchema.shape.edges.element])).optional().default([]),
 }).strict().superRefine((diagram, ctx) => {
     const ids = new Set(diagram.nodes.map((node) => node.id));
     if (ids.size !== diagram.nodes.length) ctx.addIssue({ code: 'custom', message: 'Use unique architecture node IDs.' });
     for (const node of diagram.nodes) {
-        if (!new RegExp(`(^|[^a-zA-Z0-9_-])${node.id}(?=$|[^a-zA-Z0-9_-])`, 'm').test([diagram.mermaid, ...(diagram.views ?? []).map((view) => view.mermaid)].join('\n'))) ctx.addIssue({ code: 'custom', message: `Architecture node ${node.id} is missing from the flowchart.` });
         if (node.change === 'unknown' && node.limitation === null) ctx.addIssue({ code: 'custom', message: `Unknown architecture node ${node.id} needs an explicit evidence limitation.` });
     }
+    for (const edge of diagram.edges) if ('id' in edge && (edge.change === 'unknown' || edge.change === 'affected') && edge.sources.length === 0 && edge.limitation === null)
+        ctx.addIssue({ code: 'custom', message: `Architecture edge ${edge.id} needs a source or local limitation.` });
 });
 export type ArchitectureDiagram = z.infer<typeof architectureDiagramSchema>;
-export const readyFlowSchema = z.object({ status: z.literal('ready'), diagram: z.union([architectureDiagramSchema, flowDiagramSchema]), contexts });
+export type FlowCitation = z.infer<typeof flowCitationSchema>;
+export const readyFlowSchema = z.object({ status: z.literal('ready'), diagram: z.union([architectureDiagramSchema, flowDiagramSchema]), contexts, diagramHash: z.string().optional() });
 export const flowStateSchema = z.discriminatedUnion('status', [
     z.object({ status: z.literal('pending'), taskId: z.number().int().positive().nullable(), round: z.number().int().min(0).max(2), requests: z.array(flowContextRequestSchema).max(4), contexts, missing: z.array(z.string()).max(8) }),
     readyFlowSchema,
@@ -75,5 +80,5 @@ export type ReadyFlow = z.infer<typeof readyFlowSchema>;
 export function flowText(flow: FlowState | undefined): string {
     if (flow?.status !== 'ready') return '';
     return [...('mermaid' in flow.diagram ? ['Architecture flowchart:', flow.diagram.mermaid, ...(flow.diagram.views ?? []).flatMap((view) => [view.title, view.mermaid])] : []), 'Data flow: '+flow.diagram.title, ...flow.diagram.nodes.map((node) => `${node.id}: ${node.label} [${node.change}]${node.limitation === null ? '' : ` (${node.limitation})`}`),
-        ...flow.diagram.edges.map((edge) => `${edge.from} -> ${edge.to}: ${edge.label} [${edge.kind}, ${edge.change}]${edge.limitation === null ? '' : ` (${edge.limitation})`}`)].join('\n');
+        ...flow.diagram.edges.map((edge) => 'id' in edge ? `${edge.id}: [${edge.change}]${edge.limitation === null ? '' : ` (${edge.limitation})`}` : `${edge.from} -> ${edge.to}: ${edge.label} [${edge.kind}, ${edge.change}]${edge.limitation === null ? '' : ` (${edge.limitation})`}`)].join('\n');
 }

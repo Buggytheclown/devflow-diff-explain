@@ -1,4 +1,4 @@
-import type { ChatExchange, ChatExplanation, FileContent, Locale, PrDiff, PriorityClass, UiCancelResponse, UiChatAskAnchor, UiChatAskRequest, UiChatCancelResponse, UiChatResponse, UiChatRetryResponse, UiEnqueueResponse, UiRouteFillStopRequest, UiRouteFillStopResponse, UiRouteGenerateRequest, UiRouteGenerateResponse, UiReviewRouteResponse, UiSettings, UiSettingsPatch, UiTask } from '@sherpa/protocol';
+import type { ChatExchange, ChatCodeRef, ChatExplanationRef, FileContent, Locale, PrDiff, PriorityClass, UiCancelResponse, UiChatAskAnchor, UiChatAskRequest, UiChatCancelResponse, UiChatResponse, UiChatRetryResponse, UiEnqueueResponse, UiRouteFillStopRequest, UiRouteFillStopResponse, UiRouteGenerateRequest, UiRouteGenerateResponse, UiReviewRouteResponse, UiSettings, UiSettingsPatch, UiTask } from '@sherpa/protocol';
 import { rpcErrorSchema, UI_ENDPOINTS, uiCancelResponseSchema, uiChatAskResponseSchema, uiChatCancelResponseSchema, uiChatResponseSchema, uiChatRetryResponseSchema, uiEnqueueResponseSchema, uiReviewDiffResponseSchema, uiReviewFileContentResponseSchema, uiReviewRouteResponseSchema, uiRouteFillStopResponseSchema, uiRouteGenerateResponseSchema, uiSettingsResponseSchema } from '@sherpa/protocol';
 import type { z } from 'zod';
 
@@ -38,7 +38,7 @@ export async function cancelTask(token: string, taskId: number): Promise<UiCance
  * Выбор диффа для ручки: без него — активная итерация, `diffId` — сохранённая итерация
  * (пикер снапшотов), `base`/`head` — срез между итерациями.
  */
-export type ReviewDiffSelection = { readonly diffId: string | null } | { readonly base: string; readonly head: string };
+export type ReviewDiffSelection = { readonly diffId: string | null } | { readonly codeSnapshotId: string } | { readonly base: string; readonly head: string };
 
 /** Дифф приходит в UI здесь — и сразу в порядке дерева: порядок хоста дальше не виден никому. */
 export async function fetchReviewDiff(token: string, selection?: ReviewDiffSelection | null): Promise<PrDiff> {
@@ -47,7 +47,7 @@ export async function fetchReviewDiff(token: string, selection?: ReviewDiffSelec
             ? {}
             : 'diffId' in selection
               ? { diffId: selection.diffId }
-              : { base: selection.base, head: selection.head };
+              : 'codeSnapshotId' in selection ? { codeSnapshotId: selection.codeSnapshotId } : { base: selection.base, head: selection.head };
     return withTreeOrder((await get(withQuery(UI_ENDPOINTS.reviewDiff, query), token, uiReviewDiffResponseSchema)).diff);
 }
 
@@ -102,12 +102,16 @@ export async function fetchBlob(token: string, blobId: string): Promise<Blob | n
 export async function fetchReviewRoute(
     token: string,
     snapshotId?: string | null,
+    codeSnapshotId?: string | null,
 ): Promise<UiReviewRouteResponse> {
-    return get(withQuery(UI_ENDPOINTS.reviewRoute, { snapshot: snapshotId }), token, uiReviewRouteResponseSchema);
+    return get(withQuery(UI_ENDPOINTS.reviewRoute, { snapshot: snapshotId, codeSnapshotId }), token, uiReviewRouteResponseSchema);
 }
 
-export async function retryRouteDiagram(token: string, snapshotId: string, renderFailure?: true): Promise<void> {
-    await post(UI_ENDPOINTS.reviewRouteRetryDiagram, token, { snapshotId, ...(renderFailure === true ? { renderFailure } : {}) }, uiReviewWriteAckSchema);
+export async function retryRouteDiagram(token: string, snapshotId: string, report?: { diagramHash: string; viewIndex: number; missingId?: string; reason: string }): Promise<void> {
+    await post(UI_ENDPOINTS.reviewRouteRetryDiagram, token, { snapshotId, ...(report === undefined ? {} : {
+        renderFailure: true, reportVersion: 1, diagramHash: report.diagramHash, viewIndex: report.viewIndex,
+        ...(report.missingId === undefined ? {} : { missingId: report.missingId }), reason: report.reason,
+    }) }, uiReviewWriteAckSchema);
 }
 
 export async function cancelRouteGeneration(token: string, generationId: string): Promise<void> {
@@ -161,9 +165,9 @@ export async function askReviewChat(
     text: string,
     anchor: UiChatAskAnchor | undefined,
     locale: Locale | undefined,
-    explanation?: ChatExplanation,
+    context?: ChatExplanationRef | ChatCodeRef,
 ): Promise<ChatExchange> {
-    const request: UiChatAskRequest = { text, ...(locale === undefined ? {} : { locale }), ...(anchor === undefined ? {} : { anchor }), ...(explanation === undefined ? {} : { explanation }) };
+    const request: UiChatAskRequest = { text, ...(locale === undefined ? {} : { locale }), ...(anchor === undefined ? {} : { anchor }), ...(context === undefined ? {} : 'reviewId' in context ? { explanationRef: context } : { codeRef: context }) };
     return (await post(UI_ENDPOINTS.reviewChatAsk, token, request, uiChatAskResponseSchema)).exchange;
 }
 

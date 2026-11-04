@@ -23,10 +23,11 @@ interface IterationRow extends SqlRow {
     created_at: string;
     status: string;
     diff_json: string;
+    code_snapshot_id: string | null;
 }
 
 /**
- * Итерации PR и их патчи в SQLite этого PR (docs/spec.md).
+ * Каталог итераций. Старые строки хранят патч; новые ссылаются на канонический CodeSnapshot.
  *
  * Зачем хранить патч у себя: после force-push хост прошлую итерацию не отдаёт вовсе, а старый
  * снапшот маршрута обязан остаться читаемым — значит, дифф, по которому он строился, должен
@@ -70,6 +71,11 @@ export class IterationStore {
             );
         }
 
+        const existing = this.get(parsedDiff.diffId);
+        if (existing?.diff.codeSnapshotId !== undefined && JSON.stringify(existing.diff) !== JSON.stringify(parsedDiff)) {
+            throw new Error(`Canonical snapshot for ${parsedDiff.diffId} cannot be overwritten.`);
+        }
+
         this.db
             .prepare(
                 `INSERT INTO iterations (
@@ -78,7 +84,8 @@ export class IterationStore {
                  ON CONFLICT(diff_id) DO UPDATE SET
                     base_commit = excluded.base_commit, head_commit = excluded.head_commit,
                     created_at = excluded.created_at, status = excluded.status,
-                    diff_json = excluded.diff_json, fetched_at = excluded.fetched_at`,
+                    diff_json = CASE WHEN iterations.code_snapshot_id IS NULL THEN excluded.diff_json ELSE iterations.diff_json END,
+                    fetched_at = excluded.fetched_at`,
             )
             .run(
                 parsedIteration.diffId,
@@ -89,6 +96,27 @@ export class IterationStore {
                 JSON.stringify(parsedDiff),
                 this.now().toISOString(),
             );
+    }
+
+    /** Новая итерация хранит только ссылку; legacy JSON при дополнении остаётся нетронутым. */
+    registerSnapshot(diff: PrDiff, codeSnapshotId: string, iteration: Iteration): void {
+        const parsedDiff = prDiffSchema.parse(diff);
+        const parsedIteration = iterationSchema.parse(iteration);
+        if (parsedDiff.diffId !== parsedIteration.diffId || parsedDiff.codeSnapshotId !== codeSnapshotId) {
+            throw new Error('Iteration and canonical code snapshot do not match.');
+        }
+        const row = this.db.prepare('SELECT data FROM code_snapshots WHERE id = ? AND diff_id = ?').get(codeSnapshotId, parsedDiff.diffId) as { data: string } | undefined;
+        if (row === undefined || JSON.stringify(prDiffSchema.parse((JSON.parse(row.data) as { diff: unknown }).diff)) !== JSON.stringify(parsedDiff)) {
+            throw new Error('Canonical code snapshot is unavailable or different.');
+        }
+        this.db.prepare(`INSERT INTO iterations (diff_id, base_commit, head_commit, created_at, status, diff_json, fetched_at, code_snapshot_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(diff_id) DO UPDATE SET
+                base_commit = excluded.base_commit, head_commit = excluded.head_commit,
+                created_at = excluded.created_at, status = excluded.status,
+                code_snapshot_id = excluded.code_snapshot_id, fetched_at = excluded.fetched_at`)
+            .run(parsedIteration.diffId, parsedIteration.baseCommit, parsedIteration.headCommit, parsedIteration.createdAt,
+                parsedIteration.status, JSON.stringify({ kind: 'code-snapshot-ref', codeSnapshotId }), this.now().toISOString(), codeSnapshotId);
     }
 
     /** Итерация с её патчем; null — патча этой итерации локально нет (или строка повреждена). */
@@ -148,6 +176,10 @@ export class IterationStore {
 
     private parseRow(row: IterationRow): StoredIteration | null {
         try {
+            const referenced = row.code_snapshot_id === null ? null : this.db.prepare('SELECT data FROM code_snapshots WHERE id = ? AND diff_id = ?')
+                .get(row.code_snapshot_id, row.diff_id) as { data: string } | undefined;
+            const diff = referenced === null ? JSON.parse(row.diff_json) as unknown
+                : referenced === undefined ? null : (JSON.parse(referenced.data) as { diff: unknown }).diff;
             return {
                 iteration: iterationSchema.parse({
                     diffId: row.diff_id,
@@ -156,7 +188,7 @@ export class IterationStore {
                     createdAt: row.created_at,
                     status: row.status,
                 }),
-                diff: prDiffSchema.parse(JSON.parse(row.diff_json) as unknown),
+                diff: prDiffSchema.parse(diff),
             };
         } catch (error) {
             process.stderr.write(

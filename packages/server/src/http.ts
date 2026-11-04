@@ -1,6 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 
 import type { RpcError, RpcErrorCode } from '@sherpa/protocol';
+import { STRUCTURAL_RESULT_MAX_BYTES } from '@sherpa/protocol';
 
 import { extractBearerToken, tokenMatches } from './auth.js';
 import { RpcFailure } from './errors.js';
@@ -13,6 +14,9 @@ import { isStaticPath, serveStatic } from './static.js';
  * умеренный перебор доходил до очереди и завершал задачу ошибкой, а не отбивался как кривой запрос.
  */
 export const REQUEST_BODY_MAX_BYTES = 1024 * 1024;
+
+/** JSON может кодировать один исходный байт шестью ASCII-байтами (`\\u0000`). */
+export const TASK_COMPLETE_REQUEST_BODY_MAX_BYTES = STRUCTURAL_RESULT_MAX_BYTES * 6 + REQUEST_BODY_MAX_BYTES;
 
 /** HTTP-статус по коду ошибки контракта — единственное место, где они связаны. */
 const HTTP_STATUS_BY_CODE: Record<RpcErrorCode, number> = {

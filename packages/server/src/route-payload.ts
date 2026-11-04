@@ -58,6 +58,8 @@ export interface RouteTaskContext extends RoutePayloadContext {
     readonly flow?: FlowState | undefined;
     readonly version?: number;
     readonly assignment?: SectionAssignment;
+    readonly snapshotId?: string;
+    readonly reviewRevision?: number;
 }
 
 export interface RoutePayloadWriterOptions {
@@ -77,6 +79,9 @@ export class RoutePayloadWriter {
     private readonly shared: SharedPayloadStore;
     private readonly budgetBytes: number;
     private generationDir: string | null = null;
+    private readonly recoveryCache = new Map<string, string>();
+    private readonly writtenFiles = new Map<string, string>();
+    private readonly schemas = new Map<string, string>();
 
     constructor(options: RoutePayloadWriterOptions) {
         this.payloadDir = options.payloadDir;
@@ -97,7 +102,7 @@ export class RoutePayloadWriter {
         return {
             type: 'route.prepare',
             priority: 'background',
-            instructions: 'Help explain this pinned PR: draw its affected architecture, connect blocks and assign all files. Publish overview together with any ready file explanations; continue with useful checkpoints. Choose your research; context paths are available selectively. Follow the result schema.\n' + pinnedTarget(context),
+            instructions: 'Prepare the pinned PR. The target JSON context path provides the complete file map and selective source paths. Publish overview with any ready files, then useful checkpoints.\n' + pinnedTarget(context),
             // Своего у скелета нет: и методичка, и дифф — общие пути.
             contextFiles: [
                 this.shared.guide('skeleton-guide', architectureGuide('overview', locale)),
@@ -119,15 +124,16 @@ export class RoutePayloadWriter {
         intents: ReadonlyMap<number, string>,
     ): EnqueueInput {
         const locale = context.locale;
-        const name = `section-${planIndexes.map(pad2).join('-')}${context.assignment === undefined ? '' : `-${randomBytes(4).toString('hex')}`}-plan.md`;
-        const accepted = JSON.stringify({ summary: context.introduction, evidence: context.introductionEvidence, flow: context.flow, blocks: stops }, null, 2);
-        const known = this.writeFile(`accepted-${createHash('sha256').update(accepted).digest('hex').slice(0, 12)}.json`, accepted);
-        const plan = this.writeFile(name, explanationPlanContext(planIndexes, stops, intents, context) + `\nAccepted overview and files (read when useful): ${known}\n`);
+        const recovery = this.recoveryFile(stops, context);
+        const planText = explanationPlanContext(planIndexes, stops, intents, context) +
+            `\nCold recovery for accepted overview and files (read only if prior context is unavailable): ${recovery}\n`;
+        const name = `section-${planIndexes.map(pad2).join('-')}-${createHash('sha256').update(planText).digest('hex').slice(0, 8)}-plan.md`;
+        const plan = this.writeFile(name, planText);
         const prDiff = this.prDiff(context);
         return {
             type: 'route.prepare',
             priority: 'background',
-            instructions: 'Explain the remaining assigned files. Choose your research and publish useful checkpoints; context paths are available selectively. Follow the result schema.\n' + pinnedTarget(context),
+            instructions: 'Explain the assigned files or repair the requested structure. The plan and target JSON context path are available; publish useful checkpoints in the flat files array.\n' + pinnedTarget(context),
             contextFiles: [
                 this.shared.guide('section-guide', architectureGuide('files', locale)),
                 prDiff.target,
@@ -209,29 +215,67 @@ export class RoutePayloadWriter {
 
     private writeFile(name: string, content: string): string {
         const file = path.join(this.currentDir(), name);
+        const digest = createHash('sha256').update(content).digest('hex');
+        if (this.writtenFiles.get(file) === digest && fs.existsSync(file)) return file;
         fs.writeFileSync(file, content, { mode: FILE_MODE });
+        this.writtenFiles.set(file, digest);
+        return file;
+    }
+
+    private recoveryFile(stops: readonly RouteStop[], context: RouteTaskContext): string {
+        const revisionKey = context.snapshotId === undefined || context.reviewRevision === undefined ? null
+            : `${context.snapshotId}:${String(context.reviewRevision)}:${context.flow?.status ?? 'none'}`;
+        const cached = revisionKey === null ? undefined : this.recoveryCache.get(revisionKey);
+        if (cached !== undefined && fs.existsSync(cached)) return cached;
+        const cold = {
+            summary: context.introduction, evidence: context.introductionEvidence, flow: context.flow,
+            blocks: stops.map((stop) => ({ id: stop.id, title: stop.title, paragraph: stop.paragraph,
+                nodeIds: stop.nodeIds, storyEvidence: stop.storyEvidence, relatedFiles: stop.relatedFiles,
+                files: stop.guidedFiles?.map((file) => ({ path: file.path,
+                    explanation: file.explanation, annotations: file.annotations, example: file.example })) })),
+        };
+        const content = JSON.stringify(cold);
+        const file = this.writeFile(`recovery-${createHash('sha256').update(content).digest('hex').slice(0, 12)}.json`, content);
+        if (revisionKey !== null) this.recoveryCache.set(revisionKey, file);
         return file;
     }
 
     /** Схема результата файлом (docs/protocol.md §4): канон — zod, JSON Schema — производная. */
     private writeSchema(kind: 'architectureOverview' | 'allFiles'): string {
+        const cached = this.schemas.get(kind);
+        if (cached !== undefined && fs.existsSync(cached)) return cached;
         const key = `${kind}Result`;
         const schema = generateJsonSchemas()[key];
-        return this.writeFile(`route-${kind}-result.schema.json`, `${JSON.stringify(schema)}\n`);
+        const file = this.writeFile(`route-${kind}-result.schema.json`, `${JSON.stringify(schema)}\n`);
+        this.schemas.set(kind, file);
+        return file;
     }
 }
 
 /** Краткий target ведёт к выбранным патчам; полный дифф остаётся необязательным источником. */
 export function materializeReviewTarget(shared: SharedPayloadStore, context: RoutePayloadContext, budgetBytes = CONTEXT_BUDGET_BYTES): { file: string; target: string; cap: UiGenerationCap } {
+    const diffKey = diffKeyOf(context.diff);
+    const presentation = JSON.stringify([context.meta?.url ?? null, context.meta?.title ?? null,
+        context.meta?.author?.login ?? null, context.meta?.author?.displayName ?? null,
+        context.meta?.fromBranch ?? null, context.meta?.toBranch ?? null,
+        context.meta?.state ?? null, context.meta?.statusLabel ?? null, budgetBytes]);
+    const cacheKey = createHash('sha256').update(JSON.stringify([diffKey, context.diff.diffId,
+        shared.sourceCatalogRevision(context.diff), presentation])).digest('hex');
+    return shared.cachedReviewTarget(cacheKey, () => buildReviewTarget(shared, context, budgetBytes));
+}
+
+function buildReviewTarget(shared: SharedPayloadStore, context: RoutePayloadContext, budgetBytes: number): { file: string; target: string; cap: UiGenerationCap } {
         const built = prDiffPayload(context, budgetBytes);
-        shared.prDiff(diffKeyOf(context.diff), built.content);
+        const key = diffKeyOf(context.diff);
+        // Создаёт ключ сборки и чистит прежние, пока индекс ещё не дописан к бюджетному файлу.
+        shared.prDiff(key, built.content);
         const index = context.diff.files.map((entry, i) => {
             const content = patchBlock(entry, i, false);
-            return { path: entry.path, file: shared.savedPatch(diffKeyOf(context.diff), i, content), bytes: Buffer.byteLength(content) };
+            return { path: entry.path, file: shared.savedPatch(key, i, content), bytes: Buffer.byteLength(content) };
         });
-        const savedPatchIndex = shared.savedPatchIndex(diffKeyOf(context.diff), JSON.stringify({ diffId: context.diff.diffId, headCommit: context.diff.headCommit, files: index }));
-        const file = shared.prDiff(diffKeyOf(context.diff), built.content);
-        const target = shared.target(diffKeyOf(context.diff), JSON.stringify({ pr: context.meta?.url ?? null, title: context.meta?.title ?? null,
+        const savedPatchIndex = shared.savedPatchIndex(key, JSON.stringify({ diffId: context.diff.diffId, headCommit: context.diff.headCommit, files: index }));
+        const file = shared.prDiff(key, built.content);
+        const target = shared.target(key, JSON.stringify({ pr: context.meta?.url ?? null, title: context.meta?.title ?? null,
             codeSnapshotId: context.diff.codeSnapshotId ?? null,
             importedSources: shared.codeIndex(context.diff),
             diffId: context.diff.diffId, baseCommit: context.diff.baseCommit, headCommit: context.diff.headCommit,
@@ -263,12 +307,16 @@ function explanationPlanContext(
     planIndexes: readonly number[], stops: readonly ExplanationBlock[],
     _intents: ReadonlyMap<number, string>, context: RouteTaskContext,
 ): string {
+    const assignment = new Set(context.assignment?.files ?? []);
     const blocks = stops.filter((stop) => planIndexes.includes(stop.planIndex)).map((stop) => ({
         id: stop.id, title: stop.title, nodeIds: stop.nodeIds,
-        files: stop.guidedFiles?.filter((file) => context.assignment === undefined || context.assignment.files.includes(file.path)).map((file) => file.path),
+        files: stop.guidedFiles?.filter((file) => context.assignment === undefined || assignment.has(file.path)).map((file) => ({
+            path: file.path, status: file.status, ...(file.failure == null ? {} : { error: file.failure }),
+        })),
+        ...(stop.validationNotes.length === 0 ? {} : { errors: stop.validationNotes }),
     }));
-    return ['## Assignment', JSON.stringify(context.assignment ?? null),
-        '## Accepted blocks and remaining files', JSON.stringify(blocks), ''].join('\n\n');
+    return ['## Current assignment', JSON.stringify(context.assignment ?? null),
+        '## Relevant blocks and file status', JSON.stringify(blocks), ''].join('\n\n');
 }
 
 /**

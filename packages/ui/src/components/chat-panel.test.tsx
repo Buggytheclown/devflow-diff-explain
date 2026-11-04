@@ -584,6 +584,27 @@ describe('подстановка вопроса в композер', () => {
 });
 
 describe('компактный чат', () => {
+    it('старый вопрос без версии показывает ограничение и не открывает код текущей версии', () => {
+        const link = '#code?path=src%2Fcache.ts&side=new&start=41&end=41';
+        const onNavigateCode = vi.fn();
+        const unknown = exchange(1, 'done', { answer: `См. [строку](${link}).` });
+        const { host } = mountPanel({ exchanges: [unknown], onNavigateCode });
+        expect(host.querySelector('.chat-message__context-warning')?.textContent).toContain('не сохранён');
+        expect(host.querySelector(`a[href^="#code?"]`)).toBeNull();
+        expect(host.textContent).toContain('строку');
+        expect(onNavigateCode).not.toHaveBeenCalled();
+    });
+    it('не повторяет старый вопрос без закреплённого контекста', () => {
+        const { host } = mountPanel({ exchanges: [exchange(1, 'failed')] });
+        expect(host.querySelector<HTMLButtonElement>('.chat-message__action')?.disabled).toBe(true);
+    });
+    it('сохранённый диапазон остаётся виден, но ссылка ответа без полной версии не ведёт к активному коду', () => {
+        const link = '#code?path=src%2Fcache.ts&side=new&start=41&end=41';
+        const { host } = mountPanel({ exchanges: [exchange(1, 'done', { anchor: ANCHOR, answer: `[строка](${link})` })], onNavigateCode: vi.fn() });
+        expect(host.querySelector('.chat-message__context-warning')).toBeNull();
+        expect(host.querySelector('.chat-message__anchor')).not.toBeNull();
+        expect(host.querySelector(`a[href^="#code?"]`)).toBeNull();
+    });
     it('пустая панель оставляет поле ввода, без вводной карточки и примеров', () => {
         const { host } = mountPanel();
         expect(host.querySelector('.chat-panel__empty')).toBeNull();

@@ -21,8 +21,11 @@ test('два этапа: контрастная вертикальная арх�
         nodes: fixture.diagram.nodes.map((node) => node.id === 'rejected' ? { ...node, change: 'added' as const } : node),
     } } };
     expect((await server.worker.complete(overview.taskId ?? 0, JSON.stringify(styled))).stdout).not.toContain('rejected');
-    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(6);
+    await expect(page.locator('.story-architecture-scroll g.node[data-architecture-node]')).toHaveCount(5);
     await expect(page.locator('.story-architecture-scroll .cluster')).toHaveCount(1);
+    expect(await page.locator('[data-architecture-node]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-architecture-node')).sort()))
+        .toEqual(['handler', 'rejected', 'request', 'rule', 'rules', 'saved']);
     await expect(page.locator('.story-architecture-scroll')).toContainText('Да');
     await expect(page.locator('.story-architecture-scroll')).toContainText('Нет');
     await page.locator('.story-nav-block .story-block-visit').nth(1).hover();
@@ -77,7 +80,25 @@ test('два этапа: контрастная вертикальная арх�
     const rows = await page.locator('.story-code .diff-row').allTextContents();
     const files = await server.worker.next(); expect(files.type).toBe('route.prepare');
     const assignment = files.stdout.split('\n').find((line) => line.endsWith('-plan.md'));
-    expect(await fs.readFile(assignment?.trim() ?? '', 'utf8')).toContain('Accepted overview and files (read when useful):');
+    const plan = await fs.readFile(assignment?.trim() ?? '', 'utf8');
+    const pending = /## Current assignment\n\n(.*?)\n\n## Relevant blocks/s.exec(plan)?.[1];
+    expect(pending).toBeDefined();
+    const current = JSON.parse(pending ?? '') as { files: string[] };
+    expect([...current.files].sort()).toEqual(fixture.diff.files.map((file) => file.path).sort());
+    expect(plan).toContain('## Relevant blocks and file status');
+    const recoveryPath = /Cold recovery for accepted overview and files \(read only if prior context is unavailable\): ([^\n]+)/.exec(plan)?.[1];
+    expect(recoveryPath).toMatch(/recovery-[0-9a-f]{12}\.json$/);
+    const recovery = JSON.parse(await fs.readFile(recoveryPath ?? '', 'utf8')) as {
+        summary: string; flow: { status: string }; blocks: { title: string; files: { path: string }[] }[];
+    };
+    expect(recovery.summary).toBe(fixture.outline.summary);
+    expect(recovery.flow.status).toBe('ready');
+    expect(recovery.blocks.map((block) => block.title)).toEqual(fixture.outline.stops.map((block) => block.title));
+    expect(recovery.blocks.flatMap((block) => block.files.map((file) => file.path)).sort()).toEqual(current.files.sort());
+    const targetPath = /(\/[^"'\s]+\/target-[0-9a-f]{8}\.json)/.exec(files.stdout)?.[1];
+    expect(targetPath).toBeDefined();
+    const target = JSON.parse(await fs.readFile(targetPath ?? '', 'utf8')) as { diffId: string; headCommit: string };
+    expect(target).toMatchObject({ diffId: fixture.diff.diffId, headCommit: fixture.diff.headCommit });
     expect((await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body))).stdout).not.toContain('rejected');
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
     await expect(page.locator('.story-inline-note')).not.toHaveCount(0);
@@ -85,24 +106,44 @@ test('два этапа: контрастная вертикальная арх�
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);
     await page.locator('.story-nav').getByRole('button', { name: 'Описание ПРа', exact: true }).click();
-    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(6);
     await openBlocks(page);
     await expect(page.locator(`[data-reading-file="${fixture.first.fileId}"] header code`)).toHaveText(fixture.first.path);
 });
 
-test('ошибка Mermaid не даёт 100%; повтор схемы сохраняет готовые блоки и файлы', async ({ page, launchSherpa }) => {
+test('сервер отклоняет синтаксически неверную Mermaid до создания схемы', async ({ page, launchSherpa }) => {
     const server = await launchSherpa('fixture-medium'); await page.goto(server.url); await server.worker.register('codex', 'ru');
     const overview = await server.worker.next();
-    const broken = { ...fixture.outline, flow: { ...fixture.outline.flow, diagram: { ...fixture.diagram, mermaid: 'flowchart TB\nrequest --> handler --> rule --> saved --> rejected\nrule --> [broken' } } };
-    await server.worker.complete(overview.taskId ?? 0, JSON.stringify(broken));
+    const broken = { ...fixture.outline, flow: { ...fixture.outline.flow, diagram: { ...fixture.diagram, mermaid: 'flowchart TB\nrequest --> handler\nrule --> [broken' } } };
+    expect((await server.worker.complete(overview.taskId ?? 0, JSON.stringify(broken))).stdout).toContain('rejected');
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(0);
+});
+
+test('ошибка браузерной отрисовки не даёт 100%; повтор схемы сохраняет готовые блоки и файлы', async ({ page, launchSherpa }) => {
+    await page.addInitScript(() => {
+        const nativeParser = new DOMParser();
+        const parse = nativeParser.parseFromString.bind(nativeParser);
+        let breakSvg = false;
+        (window as typeof window & { setArchitectureFault: (enabled: boolean) => void }).setArchitectureFault = (enabled) => { breakSvg = enabled; };
+        DOMParser.prototype.parseFromString = function (text, type) {
+            return parse(breakSvg && type === 'image/svg+xml' ? '<broken' : text, type);
+        };
+    });
+    const server = await launchSherpa('fixture-medium'); await page.goto(server.url); await server.worker.register('codex', 'ru');
+    const overview = await server.worker.next();
+    expect((await server.worker.complete(overview.taskId ?? 0, JSON.stringify(fixture.outline))).stdout).not.toContain('rejected');
     const files = await server.worker.next(); expect(files.type).toBe('route.prepare');
     await server.worker.complete(files.taskId ?? 0, JSON.stringify(fixture.body));
+    await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
+    await page.evaluate(() => { (window as typeof window & { setArchitectureFault: (enabled: boolean) => void }).setArchitectureFault(true); });
+    await page.getByRole('button', { name: 'Горизонтально', exact: true }).click();
     await expect(page.locator('.story-preparation')).toContainText('Разбор подготовлен частично');
     await expect(page.locator('[role=progressbar]')).not.toHaveAttribute('aria-valuenow', '100');
+    await page.evaluate(() => { (window as typeof window & { setArchitectureFault: (enabled: boolean) => void }).setArchitectureFault(false); });
     await page.getByRole('button', { name: 'Повторить схему', exact: true }).click();
     const retry = await server.worker.next(); expect(retry.type).toBe('route.prepare');
     expect((await server.worker.complete(retry.taskId ?? 0, JSON.stringify({ flow: fixture.outline.flow }))).stdout).not.toContain('rejected');
-    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(6);
     await expect(page.locator('[role=progressbar]')).toHaveAttribute('aria-valuenow', '100');
 });
 
@@ -130,7 +171,8 @@ test('Mermaid без перечня узлов → связи с блоками;
     const overview = await server.worker.next();
     const { nodes: _nodes, ...diagram } = fixture.diagram;
     await server.worker.complete(overview.taskId ?? 0, JSON.stringify({ ...fixture.outline, flow: { status: 'ready', diagram } }));
-    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(6);
+    await expect(page.locator('[data-architecture-node="rules"]')).toHaveCount(1);
     await page.locator('[data-architecture-node="rule"]').click();
     await expect(page.locator('.story-architecture-selection')).toContainText(fixture.diagram.nodes.find((node) => node.id === 'rule')?.label ?? '');
     await expect(page.locator('.story-architecture-selection')).toContainText(fixture.outline.stops[0]?.title ?? '');
@@ -202,13 +244,13 @@ test('единая сдача с ошибкой одного файла сохр
     const broken = { ...first, annotations: [{ side: 'new', start: 999999, end: 999999, text: 'Bad range' }] };
     const result = await server.worker.complete(task.taskId ?? 0, JSON.stringify({ contractVersion: 6, overview: fixture.outline, files: [broken, ...files.slice(1)] }));
     expect(result.stdout).toContain('Checkpoint saved');
-    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(6);
     const continuation = await server.worker.next();
     expect(continuation.type).toBe('route.prepare');
     await server.worker.complete(continuation.taskId ?? 0, JSON.stringify({ contractVersion: 6, files: [first] }));
     await expect(page.getByText('Разбор готов', { exact: false }).first()).toBeVisible();
     await page.reload();
-    await expect(page.locator('[data-architecture-node]')).toHaveCount(5);
+    await expect(page.locator('[data-architecture-node]')).toHaveCount(6);
     await expect(page.locator('[data-file-path]')).toHaveCount(files.length);
 });
 

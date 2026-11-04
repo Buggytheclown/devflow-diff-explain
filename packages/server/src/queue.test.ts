@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { LEASE_TTL_SECONDS, MAX_TASK_ATTEMPTS, RESULT_MAX_BYTES } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -105,6 +107,21 @@ describe('очередь с арендой', () => {
 
             expect(again.task.id).toBe(first.task.id);
             expect(again.lease.expiresAt).toBe(first.lease.expiresAt);
+        });
+
+        it('после restart поддерживаемая legacy-аренда без токена получает его ровно один раз', () => {
+            const task = enqueue({ instructions: 'Закреплённый контекст.', contextFiles: ['/tmp/pinned.md'] });
+            const first = takeNext('w-1');
+            db.prepare('UPDATE tasks SET grant_token = NULL WHERE id = ?').run(task.id);
+            db.close();
+            db = openDatabase(dbFile);
+            queue = new TaskQueue({ db, now: () => now });
+
+            const resumed = takeNext('w-1');
+            expect(resumed.task).toEqual(first.task);
+            expect(resumed.lease.grantToken).toBeTruthy();
+            expect(takeNext('w-1').lease.grantToken).toBe(resumed.lease.grantToken);
+            expect(queue.complete('w-1', task.id, 'готово', resumed.lease.grantToken).kind).toBe('accepted');
         });
     });
 
@@ -252,6 +269,55 @@ describe('очередь с арендой', () => {
     });
 
     describe('сдача результата', () => {
+        it('структурный обзор больше 256 КиБ принимается, чат сохраняет прежний предел', () => {
+            const structural = enqueue({ type: 'route.prepare' });
+            const routeGrant = takeNext('w-route').lease.grantToken;
+            const large = 'x'.repeat(RESULT_MAX_BYTES + 1);
+            expect(queue.complete('w-route', structural.id, large, routeGrant).kind).toBe('accepted');
+            expect(queue.getTask(structural.id)?.result).toBe(large);
+
+            const chat = enqueue({ type: 'chat', priority: 'interactive' });
+            const chatGrant = takeNext('w-chat').lease.grantToken;
+            expect(failureOf(() => queue.complete('w-chat', chat.id, large, chatGrant)).code).toBe('result_too_large');
+            expect(queue.getTask(chat.id)?.status).toBe('failed');
+        });
+
+        it('каждая повторная выдача тому же воркеру получает новый grant и отсекает старый', () => {
+            const task = enqueue();
+            const first = takeNext('w-1');
+            queue.releaseLeasesOf('w-1');
+            const second = takeNext('w-1');
+
+            expect(second.lease.grantToken).not.toBe(first.lease.grantToken);
+            expect(failureOf(() => queue.complete('w-1', task.id, 'старый', first.lease.grantToken)).code).toBe('lease_not_held');
+            expect(failureOf(() => queue.progress('w-1', task.id, 'старый', first.lease.grantToken)).code).toBe('lease_not_held');
+            expect(failureOf(() => queue.fail('w-1', task.id, 'старый', first.lease.grantToken)).code).toBe('lease_not_held');
+            expect(queue.complete('w-1', task.id, 'новый', second.lease.grantToken).kind).toBe('accepted');
+            expect(queue.getTask(task.id)?.result).toBe('новый');
+        });
+
+        it('после commit без ответа точная квитанция повторяется после restart', () => {
+            const task = enqueue();
+            const grant = takeNext('w-1').lease.grantToken;
+            const receipt = queue.complete('w-1', task.id, 'готово', grant);
+            db.close();
+            db = openDatabase(dbFile);
+            queue = new TaskQueue({ db, now: () => now });
+
+            expect(queue.complete('w-1', task.id, 'другой текст', grant)).toEqual(receipt);
+            expect(queue.getTask(task.id)?.result).toBe('готово');
+            expect(failureOf(() => queue.complete('w-1', task.id, 'чужой', randomUUID())).code).toBe('lease_not_held');
+        });
+
+        it('отмена выигрывает гонку с complete той же выдачи', () => {
+            const task = enqueue();
+            const grant = takeNext('w-1').lease.grantToken;
+            queue.cancel(task.id);
+
+            expect(queue.complete('w-1', task.id, 'поздний', grant).kind).toBe('noop');
+            expect(queue.getTask(task.id)).toMatchObject({ status: 'cancelled', result: null });
+        });
+
         it('результат принимается, повторный complete возвращает квитанцию', () => {
             const task = enqueue();
             takeNext('w-1');
@@ -605,11 +671,14 @@ it('откат queue commit не публикует память RouteStore и �
     const task = queue.enqueue({ type: 'route.prepare', priority: 'background', instructions: 'test', contextFiles: [] });
     queue.next('worker');
     queue.setResultAcceptor(() => ({ kind: 'accepted', persist: () => { store.setSmallPr(!before.smallPr); } }));
+    let notifications = 0;
+    queue.subscribeChanges(() => { notifications += 1; });
     db.exec("CREATE TRIGGER fail_done BEFORE UPDATE ON tasks WHEN NEW.status='done' BEGIN SELECT RAISE(ABORT, 'injected commit failure'); END");
     expect(() => queue.complete('worker', task.id, 'result')).toThrow('injected commit failure');
     expect(store.read()).toEqual(before);
     expect(new RouteStore({ db }).read()).toEqual(before);
     expect(queue.getTask(task.id)?.status).toBe('leased');
     expect(db.prepare("SELECT value FROM meta WHERE key=?").get(`task_receipt:${String(task.id)}`)).toBeUndefined();
+    expect(notifications).toBe(0);
     store.close(); db.close();
 });

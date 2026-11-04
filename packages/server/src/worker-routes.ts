@@ -11,6 +11,7 @@ import {
     PROTOCOL_VERSION,
     protocolVersionsCompatible,
     semverSchema,
+    grantTokenSchema,
     taskFailRequestSchema,
     taskIdSchema,
     taskProgressRequestSchema,
@@ -23,7 +24,7 @@ import { z } from 'zod';
 
 import { RpcFailure } from './errors.js';
 import type { RequestContext, Route } from './http.js';
-import { abortOnDisconnect, handlingRpcFailures, readJsonBody } from './http.js';
+import { abortOnDisconnect, handlingRpcFailures, readJsonBody, TASK_COMPLETE_REQUEST_BODY_MAX_BYTES } from './http.js';
 import type { TaskQueue } from './queue.js';
 import type { UiPresence } from './ui-presence.js';
 import type { WorkerRegistry } from './worker-registry.js';
@@ -60,6 +61,7 @@ const completeBodySchema = z.object({
     cliVersion: semverSchema,
     workerId: workerIdSchema,
     taskId: taskIdSchema,
+    grantToken: grantTokenSchema,
     result: z.string(),
 });
 
@@ -130,14 +132,18 @@ export function createWorkerRoutes(options: WorkerRoutesOptions): Route[] {
             method: 'POST',
             path: WORKER_ENDPOINTS.complete,
             handle: handlingRpcFailures(async (ctx) => {
-                const request = await readWorkerRequest(ctx, completeBodySchema);
+                const request = await readWorkerRequest(ctx, completeBodySchema, TASK_COMPLETE_REQUEST_BODY_MAX_BYTES);
                 heartbeat(ctx, request.workerId, () => options.registry.touch(request.workerId));
-                const prepared = options.prepareResult === undefined || options.queue.getTask(request.taskId)?.workerId !== request.workerId ? request.result : await options.prepareResult(request.taskId, request.result);
+                const prepared = options.prepareResult === undefined ||
+                    !options.queue.isCurrentGrant(request.workerId, request.taskId, request.grantToken)
+                    ? request.result
+                    : await options.prepareResult(request.taskId, request.result);
                 options.registry.touch(request.workerId);
                 const body: TaskCompleteResponse = options.queue.complete(
                     request.workerId,
                     request.taskId,
                     prepared,
+                    request.grantToken,
                 );
                 return { status: 200, body };
             }),
@@ -148,7 +154,7 @@ export function createWorkerRoutes(options: WorkerRoutesOptions): Route[] {
             handle: handlingRpcFailures(async (ctx) => {
                 const request = await readWorkerRequest(ctx, taskProgressRequestSchema);
                 heartbeat(ctx, request.workerId, () => options.registry.touch(request.workerId));
-                const body: TaskAckResponse = options.queue.progress(request.workerId, request.taskId, request.text);
+                const body: TaskAckResponse = options.queue.progress(request.workerId, request.taskId, request.text, request.grantToken);
                 return { status: 200, body };
             }),
         },
@@ -158,7 +164,7 @@ export function createWorkerRoutes(options: WorkerRoutesOptions): Route[] {
             handle: handlingRpcFailures(async (ctx) => {
                 const request = await readWorkerRequest(ctx, taskFailRequestSchema);
                 heartbeat(ctx, request.workerId, () => options.registry.touch(request.workerId));
-                const body: TaskAckResponse = options.queue.fail(request.workerId, request.taskId, request.reason);
+                const body: TaskAckResponse = options.queue.fail(request.workerId, request.taskId, request.reason, request.grantToken);
                 return { status: 200, body };
             }),
         },
@@ -169,8 +175,9 @@ export function createWorkerRoutes(options: WorkerRoutesOptions): Route[] {
 async function readWorkerRequest<T extends { protocolVersion: string }>(
     ctx: RequestContext,
     schema: z.ZodType<T>,
+    maxBytes?: number,
 ): Promise<T> {
-    const body = await readJsonBody(ctx.req);
+    const body = await readJsonBody(ctx.req, maxBytes);
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
         throw new RpcFailure(

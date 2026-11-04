@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { rawStoryEvidenceBlockSchema, routeSnapshotSchema } from '@sherpa/protocol';
 import type { PrDiff, RawStoryEvidenceBlock, RouteSnapshot } from '@sherpa/protocol';
 import { expect, it } from 'vitest';
@@ -5,6 +6,8 @@ import { expect, it } from 'vitest';
 import { mediumDiff, mediumReadySnapshot } from './route/fixture-support.js';
 import { contentHashOf } from './route-store.js';
 import { explanationEvidence, storyEvidenceContext, storyEvidenceResolver, rawEvidence } from './story-evidence.js';
+import { openDatabase } from './db.js';
+import { SavedSources, withSavedSources } from './saved-sources.js';
 
 const base = mediumDiff();
 const original = base.files[0];
@@ -112,4 +115,29 @@ it('сохраняет legacy contexts, ограничения и адреса �
     expect(text).toContain('Flow context ctx: extra.py @ revision-old:5-6\nlegacy source bytes');
     expect(text).toContain('No caller');
     expect(text).toContain('Evidence limit: Not wired');
+});
+
+it('целый источник вне диффа остаётся ссылкой на сохранённую версию для каждого тезиса', () => {
+    const db = openDatabase(':memory:');
+    try {
+        const id = 'c'.repeat(64);
+        const text = 'External design\nExact captured material';
+        const saved = { id, diffId: diff.diffId, revision: diff.headCommit, path: 'sources/design.md',
+            side: 'new', start: 1, end: 2, text, fullFile: true,
+            hash: createHash('sha256').update(text).digest('hex') };
+        db.prepare('INSERT INTO saved_sources (id, data) VALUES (?, ?)').run(id, JSON.stringify(saved));
+        const sources = new SavedSources(db, null);
+        const input = rawStoryEvidenceBlockSchema.parse({ sources: [{ kind: 'file', path: saved.path, sourceId: id }] });
+        withSavedSources(sources, () => {
+            const result = storyEvidenceResolver(diff)(input, 'Обоснование из сохранённого документа.');
+            if (!result.ok) throw new Error(result.errors.join('\n'));
+            expect(result.value.claims[0]?.sources[0]).toMatchObject({ sourceId: id, fileId: id });
+            const context = storyEvidenceContext({ contractVersion: 6, introduction: result.value,
+                sections: [{ id: 'block', evidence: result.value }] }, diff);
+            expect(context.match(/Saved full revision source:/g)).toHaveLength(1);
+            expect(context).toContain('## block\nSource S1:');
+            expect(context).toContain(saved.path);
+            expect(storyEvidenceResolver({ ...diff, headCommit: 'other' })(input, 'Other').ok).toBe(false);
+        });
+    } finally { db.close(); }
 });

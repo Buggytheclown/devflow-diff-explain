@@ -72,7 +72,13 @@ describe('короткий рассказ', () => {
         expect(tasks).toHaveLength(1);
         expect(server.route.stopsOfTask(tasks[0]?.id ?? 0)).toEqual([1, 2]);
         const payload = tasks[0]?.contextFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
-        expect(payload).toContain('Accepted overview and files (read when useful):');
+        const recovery = /Cold recovery for accepted overview and files \(read only if prior context is unavailable\): ([^\n]+)/.exec(payload ?? '')?.[1];
+        expect(recovery).toBeDefined();
+        const accepted = JSON.parse(fs.readFileSync(recovery ?? '', 'utf8')) as { summary: string; blocks: { files: { path: string }[] }[] };
+        expect(accepted.summary).toBe(partial.snapshot?.summary);
+        expect(accepted.blocks.flatMap((block) => block.files.map((file) => file.path))).toEqual(
+            partial.snapshot?.stops.flatMap((stop) => (stop.guidedFiles ?? []).map((file) => file.path)),
+        );
         complete(server, body);
         const ready = await read(server);
         expect(ready.phase).toBe('ready');

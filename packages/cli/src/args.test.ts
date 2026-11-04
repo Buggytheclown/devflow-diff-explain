@@ -5,6 +5,7 @@ import { parseArgs, sanitizeLabel } from './args.js';
 import { CliError } from './errors.js';
 
 describe('разбор аргументов', () => {
+    const lease = 'a'.repeat(64);
     it('служебные команды: версия и справка', () => {
         expect(parseArgs(['--version']).kind).toBe('version');
         expect(parseArgs(['-v']).kind).toBe('version');
@@ -50,6 +51,16 @@ describe('разбор аргументов', () => {
         expect(parseArgs(['up', '--no-open'])).toMatchObject({ kind: 'up', noOpen: true });
         expect(() => parseArgs(['up', '--no-open=true'])).toThrow('does not take a value');
         expect(() => parseArgs(['up', 'server'])).toThrow('devflow-diff-explain up [--pr <project> | --snapshot <manifest.json>]');
+    });
+
+    it('up адресует сохранённую версию и проверяет сочетания селекторов', () => {
+        const code = 'a'.repeat(64);
+        expect(parseArgs(['up', '--pr', 'arcanum-1', '--code', code, '--review', 'review-2'])).toMatchObject({ code, review: 'review-2' });
+        expect(parseArgs(['up', '--code', code, '--view', 'diff'])).toMatchObject({ code, view: 'diff' });
+        expect(() => parseArgs(['up', '--code', 'bad'])).toThrow('--code expects');
+        expect(() => parseArgs(['up', '--review', 'review-2'])).toThrow('--review needs');
+        expect(() => parseArgs(['up', '--code', code, '--review', 'review-2', '--view', 'diff'])).toThrow('cannot be combined');
+        expect(() => parseArgs(['worker', 'next', '--code', code])).toThrow('only available for `up`');
     });
 
     it('up --local: каталог проекта вместо PR, вместе с базой', () => {
@@ -150,28 +161,31 @@ describe('разбор аргументов', () => {
     });
 
     it('три команды задачи со своими обязательными флагами', () => {
-        expect(parseArgs(['task', 'complete', '42', '--file', 'ответ.md'])).toEqual({
+        expect(parseArgs(['task', 'complete', '42', '--file', 'ответ.md', '--lease', lease])).toEqual({
             kind: 'task-complete',
             prKey: undefined,
             taskId: 42,
             file: 'ответ.md',
+            leaseRef: lease,
         });
-        expect(parseArgs(['task', 'progress', '42', '--text', 'читаю дифф'])).toEqual({
+        expect(parseArgs(['task', 'progress', '42', '--text', 'читаю дифф', '--lease', lease])).toEqual({
             kind: 'task-progress',
             prKey: undefined,
             taskId: 42,
             text: 'читаю дифф',
+            leaseRef: lease,
         });
-        expect(parseArgs(['task', 'fail', '42', '--reason', 'нет доступа'])).toEqual({
+        expect(parseArgs(['task', 'fail', '42', '--reason', 'нет доступа', '--lease', lease])).toEqual({
             kind: 'task-fail',
             prKey: undefined,
             taskId: 42,
             reason: 'нет доступа',
+            leaseRef: lease,
         });
     });
 
     it('номер задачи принимается и в том виде, в каком он показан модели', () => {
-        expect(parseArgs(['task', 'fail', 'sherpa/7', '--reason', 'x'])).toMatchObject({ taskId: 7 });
+        expect(parseArgs(['task', 'fail', 'sherpa/7', '--reason', 'x', '--lease', lease])).toMatchObject({ taskId: 7 });
     });
 
     it('кривые вызовы объясняют, как звать правильно', () => {

@@ -12,6 +12,10 @@ test('рассказ → явный вопрос → ответ; старое р
     await page.goto(server.url);
     expect((await server.worker.register('codex', 'ru')).code).toBe(0);
     await expect(page.locator('.story-document')).toContainText(outline.summary);
+    const routeResponse = await page.request.get(new URL('/api/ui/review/route', server.url).href, { headers: sherpaAuth(server) });
+    expect(routeResponse.status()).toBe(200);
+    const savedRoute = await routeResponse.json() as { route: { snapshot: { snapshotId: string; reviewRevision?: number } | null } };
+    expect(savedRoute.route.snapshot).toMatchObject({ snapshotId: 'saved-legacy-v2', reviewRevision: 1 });
     await page.locator('[data-story-section="intro"]').getByRole('button', { name: 'Показать изменение', exact: true }).click();
     await expect(page.locator('.story-source-line')).not.toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Запись до уведомления' })).toBeVisible();

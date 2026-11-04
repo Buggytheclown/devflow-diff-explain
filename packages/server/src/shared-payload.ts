@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { PrDiff } from '@sherpa/protocol';
+import type { PrDiff, UiGenerationCap } from '@sherpa/protocol';
 
 import type { TaskRecord } from './queue.js';
 
@@ -54,6 +54,8 @@ export class SharedPayloadStore {
      * (`interdiff.md`) живут вместе, поэтому чистка на смену ключа обязана щадить оба.
      */
     private readonly liveKeys = new Set<string>();
+    /** Кэш до печати патчей и материализации оригиналов; каталог источников входит в ключ. */
+    private readonly reviewTargets = new Map<string, { file: string; target: string; cap: UiGenerationCap }>();
 
     constructor(sharedDir: string, openContextFiles: () => Iterable<string>, private readonly artifacts?: (diff: PrDiff) => { revision: string; path: string; hash: string; kind: string; read: () => Uint8Array | null }[]) {
         this.sharedDir = sharedDir;
@@ -89,6 +91,26 @@ export class SharedPayloadStore {
     target(key: string, content: string): string {
         const file = path.join(this.joinBuildDir(key), `target-${hashOf(content)}.json`);
         this.write(file, content); return file;
+    }
+
+    sourceCatalogRevision(diff: PrDiff): string {
+        const entries = this.artifacts?.(diff) ?? [];
+        const digest = createHash('sha256');
+        for (const entry of entries) {
+            digest.update(JSON.stringify([entry.revision, entry.path, entry.hash, entry.kind]));
+        }
+        return digest.digest('hex');
+    }
+
+    cachedReviewTarget(
+        key: string,
+        build: () => { file: string; target: string; cap: UiGenerationCap },
+    ): { file: string; target: string; cap: UiGenerationCap } {
+        const cached = this.reviewTargets.get(key);
+        if (cached !== undefined && fs.existsSync(cached.file) && fs.existsSync(cached.target)) return cached;
+        const result = build();
+        this.reviewTargets.set(key, result);
+        return result;
     }
 
     /**

@@ -58,7 +58,7 @@ it('не подтверждает отсутствующую сторону уд
     expect(read).not.toHaveBeenCalled();
 });
 
-it('сохранённый диапазон через промежуток ханков подтверждает реальные изменённые строки', async () => {
+it('сохранённый диапазон через промежуток ханков подтверждает существование всех строк', async () => {
     const { source, diff, read } = setup();
     read.mockResolvedValue(Array.from({ length: 12 }, (_, i) => `line ${String(i + 1)}`).join('\n'));
     const original = diff.files[0]; if (original === undefined) throw new Error('No file');
@@ -70,7 +70,7 @@ it('сохранённый диапазон через промежуток ха
     expect(withSavedSources(source, () => diagramSourceErrors(prepared, pinned, []))).toEqual([]);
     expect(diagramSourceErrors(prepared, pinned, [])).not.toEqual([]);
     const unchanged = { ...graph, nodes: graph.nodes.map((node) => ({ ...node, sources: node.sources.map((item) => ({ ...item, start: 10, end: 12 })) })) };
-    expect(withSavedSources(source, () => diagramSourceErrors(unchanged, pinned, []))).toContain('PR changes need supporting changed patch lines.');
+    expect(withSavedSources(source, () => diagramSourceErrors(unchanged, pinned, []))).toEqual([]);
 });
 
 it('HTTP complete сохраняет источник вне патча, перезапуск читает его без агента и сети', async () => {
@@ -81,11 +81,12 @@ it('HTTP complete сохраняет источник вне патча, пер�
     let server = await startServer({ sherpaDir: dir, prKey: 'fixture-medium', reviewSourceFactory: () => ({ name: 'fixture', host }) });
     try {
         server.workerRegistry.register('worker', 'test'); await server.route.warmup();
-        const task = server.queue.next('worker')?.task;
-        if (task === undefined) throw new Error('No task');
+        const leased = server.queue.next('worker');
+        const task = leased?.task;
+        if (task === undefined || leased === null) throw new Error('No task');
         const fixture = architectureStoryFixture();
         const result = { ...fixture.outline, evidence: { claims: [{ sources: [{ kind: 'lines', path: 'outside.ts', side: 'new', start: 1, end: 1 }], limitation: null }] } };
-        const response = await postJson(server.port, WORKER_ENDPOINTS.complete, { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.26.0', workerId: 'worker', taskId: task.id, result: checkpointJson(result) }, server.token);
+        const response = await postJson(server.port, WORKER_ENDPOINTS.complete, { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.26.0', workerId: 'worker', taskId: task.id, grantToken: leased.lease.grantToken, result: checkpointJson(result) }, server.token);
         expect(await response.json()).toMatchObject({ kind: 'accepted' });
         const state = uiReviewRouteResponseSchema.parse(await (await get(server.port, UI_ENDPOINTS.reviewRoute, server.token)).json());
         const saved = state.route.snapshot?.summaryEvidence?.claims[0]?.sources[0];
@@ -112,10 +113,10 @@ it('повтор архитектуры сохраняет внешние ист
         const saved = (await readRoute()).snapshot; if (saved === null) throw new Error('No snapshot');
         await server.route.retryDiagram(saved.snapshotId);
         await vi.waitFor(() => { expect(server.queue.listTasks().some((task) => task.type === 'route.prepare' && task.status === 'queued')).toBe(true); });
-        const task = server.queue.next('worker')?.task; if (task === undefined) throw new Error('No task');
+        const leased = server.queue.next('worker'); const task = leased?.task; if (task === undefined || leased === null) throw new Error('No task');
         const diagram = structuredClone(fixture.diagram); const node = diagram.nodes[0]; if (node === undefined) throw new Error('No node');
         node.sources = [{ kind: 'patch', path: 'outside.ts', side: 'new', start: 1, end: 1 }];
-        const response = await postJson(server.port, WORKER_ENDPOINTS.complete, { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.29.0', workerId: 'worker', taskId: task.id,
+        const response = await postJson(server.port, WORKER_ENDPOINTS.complete, { protocolVersion: PROTOCOL_VERSION, cliVersion: '0.29.0', workerId: 'worker', taskId: task.id, grantToken: leased.lease.grantToken,
             result: checkpointJson({ contractVersion: 6, update: { flow: { status: 'ready', diagram } } }) }, server.token);
         expect(await response.json()).toMatchObject({ kind: 'accepted' });
         expect(read).toHaveBeenCalledWith('outside.ts', fixture.diff.headCommit);

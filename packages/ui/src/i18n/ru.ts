@@ -45,6 +45,7 @@ export const ru = {
     'chat.file.remove': 'Убрать файл из контекста',
     'chat.context.open': 'Открыть версию вложения',
     'chat.context.stale': 'Вложение относится к другой версии кода.',
+    'chat.context.unknown': 'Контекст прежнего вопроса не сохранён.',
     'chat.aria': 'Чат с агентом',
     'chat.notes': (notes: number) => `Заметки ${num(notes)}`,
     'chat.history.loading': 'Загружаю историю чата…',
@@ -189,7 +190,7 @@ export type Dictionary = {
 
 export type MessageKey = keyof typeof ru;
 
-export const storyRu = { capturedSnapshot: 'Снимок', downloadOriginal: 'Скачать оригинал', attachFile: 'В чат',
+export const storyRu = { capturedSnapshot: 'Снимок', permalink: 'Ссылка на эту версию', currentVersion: 'Открыть текущую версию', downloadOriginal: 'Скачать оригинал', attachFile: 'В чат',
         showChange: 'Показать изменение', hideChange: 'Скрыть изменение', fragments: 'Фрагменты кода', hideFragments: 'Скрыть фрагменты',
         before: 'До', after: 'После', retrySource: 'Повторить загрузку', loadingSource: 'Загружаю источник…', binary: 'Бинарный файл',
         returnTo: 'К рассказу', newDiff: 'Открыть новый дифф', legacy: 'Этот рассказ создан без связей тезисов с источниками. Можно обновить его вручную.',

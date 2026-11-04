@@ -136,26 +136,27 @@ describe('chat payload с якорем', () => {
 
         expect(first.contextFiles.map((file) => path.basename(file))).toEqual([
             expect.stringMatching(/^chat-guide-[0-9a-f]{8}\.md$/),
+            expect.stringMatching(/^target-[0-9a-f]{8}\.json$/),
             expect.stringMatching(/\.new\.md$/),
             'question.md',
             'selection.patch.md',
             expect.stringMatching(/^chat-route-context\.md-[a-f0-9]{8}\.md$/),
             'history.md',
         ]);
-        // Первые два пути общие: при необходимости модель переиспользует уже прочитанное.
-        expect(first.contextFiles.slice(0, 2)).toEqual(second.contextFiles.slice(0, 2));
+        // Первые три пути общие: при необходимости модель переиспользует уже прочитанное.
+        expect(first.contextFiles.slice(0, 3)).toEqual(second.contextFiles.slice(0, 3));
         expect(first.contextFiles[0]?.startsWith(path.join(sharedDir, 'guides'))).toBe(true);
-        expect(first.contextFiles[1]?.startsWith(path.join(sharedDir, 'diff', diffKeyOf(mediumDiff()), 'files'))).toBe(
+        expect(first.contextFiles[2]?.startsWith(path.join(sharedDir, 'diff', diffKeyOf(mediumDiff()), 'files'))).toBe(
             true,
         );
         // Свои файлы — в своём каталоге вопроса: retry не перезаписывает payload прежней задачи.
-        expect(path.dirname(first.contextFiles[2] ?? '')).not.toBe(path.dirname(second.contextFiles[2] ?? ''));
-        expect(first.contextFiles.slice(2).filter((file) => !file.includes('chat-route-context')).every((file) => file.startsWith(payloadDir))).toBe(true);
+        expect(path.dirname(first.contextFiles[3] ?? '')).not.toBe(path.dirname(second.contextFiles[3] ?? ''));
+        expect(first.contextFiles.slice(3).filter((file) => !file.includes('chat-route-context')).every((file) => file.startsWith(payloadDir))).toBe(true);
         expect(first.contextFiles.every((file) => fs.existsSync(file))).toBe(true);
         expect(fs.readFileSync(first.contextFiles[0] ?? '', 'utf8')).toContain('Answer the reviewer\'s question.');
-        expect(fs.readFileSync(first.contextFiles[1] ?? '', 'utf8')).toContain(`File: ${anchor.path}`);
-        expect(fs.readFileSync(first.contextFiles[2] ?? '', 'utf8')).toContain(context.question);
-        const routeContext = fs.readFileSync(first.contextFiles[4] ?? '', 'utf8');
+        expect(fs.readFileSync(first.contextFiles[2] ?? '', 'utf8')).toContain(`File: ${anchor.path}`);
+        expect(fs.readFileSync(first.contextFiles[3] ?? '', 'utf8')).toContain(context.question);
+        const routeContext = fs.readFileSync(first.contextFiles[5] ?? '', 'utf8');
         const coveringStop = mediumReadySnapshot().stops.find((stop) =>
             (stop.anchors ?? []).some(
                 (candidate) =>
@@ -170,7 +171,7 @@ describe('chat payload с якорем', () => {
         expect(first.resultSchemaFile).toBeUndefined();
         expect(Buffer.byteLength(first.instructions, 'utf8')).toBeLessThan(8000);
         // Чтение выбирает агент; инструкция не требует перечитывания общих файлов.
-        expect(first.instructions).toContain('reuse evidence already known');
+        expect(first.instructions).toContain('Read context selectively');
         expect(fs.readFileSync(first.contextFiles[0] ?? '', 'utf8')).toContain('read or search additional sources when needed');
     });
 
@@ -215,7 +216,7 @@ describe('chat payload с якорем', () => {
             history: [],
         };
         const first = await materialize(base);
-        const filePath = first.contextFiles[1] ?? '';
+        const filePath = first.contextFiles[2] ?? '';
         const stamp = fs.statSync(filePath).mtimeMs;
         fs.writeFileSync(filePath, 'подменённый общий файл');
 
@@ -225,7 +226,7 @@ describe('chat payload с якорем', () => {
             anchor: { ...anchor, start: anchor.start + 1, end: anchor.end + 1 },
         });
 
-        expect(second.contextFiles[1]).toBe(filePath);
+        expect(second.contextFiles[2]).toBe(filePath);
         expect(fs.readFileSync(filePath, 'utf8')).toBe('подменённый общий файл');
         expect(fs.statSync(filePath).mtimeMs).toBeGreaterThanOrEqual(stamp);
     });
@@ -247,13 +248,14 @@ describe('chat payload с якорем', () => {
 
         expect(input.contextFiles.map((file) => path.basename(file))).toEqual([
             expect.stringMatching(/^chat-guide-[0-9a-f]{8}\.md$/),
+            expect.stringMatching(/^target-[0-9a-f]{8}\.json$/),
             'question.md',
             'selection.patch.md',
             'file-context.md',
             expect.stringMatching(/^chat-route-context\.md-[a-f0-9]{8}\.md$/),
             'history.md',
         ]);
-        const slice = input.contextFiles[3] ?? '';
+        const slice = input.contextFiles[4] ?? '';
         expect(slice.startsWith(payloadDir)).toBe(true);
         const text = fs.readFileSync(slice, 'utf8');
         expect(text).toContain('5000 | line 5000');
@@ -283,6 +285,15 @@ describe('chat payload с якорем', () => {
 
         expect(printed).toEqual(expected);
         expect(text).toContain('Numbers are produced by the same patch walk used for anchor validation.');
+    });
+
+    it('не подставляет патч и байты другого fileId при совпавшем пути якоря', () => {
+        const anchor = { ...fixtureAnchor(), fileId: 'wrong-file-id' };
+        const payload = buildChatPayload({ question: 'Что здесь?', anchor, pr: META, diff: mediumDiff(),
+            fileContent: fileContent(anchor), route: READY_ROUTE, history: [] });
+        expect(fileOf(payload, 'selection.patch.md')).toContain('[UNAVAILABLE: the selected file is absent');
+        expect(fileOf(payload, 'file-context.md')).toContain('[UNAVAILABLE: the host could not provide full contents');
+        expect(payload.shared.map((entry) => entry.kind)).toEqual(['guide', 'pr-target']);
     });
 
     it('центрирует большой файл на диапазоне и честно помечает урезание', () => {

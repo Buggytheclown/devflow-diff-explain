@@ -138,6 +138,13 @@
     white-space: pre-wrap;
 }
 
+.chat-message__context-warning {
+    display: block;
+    margin-top: 6px;
+    color: var(--text-link-muted);
+    font-size: var(--font-size-secondary);
+}
+
 .chat-message__body .md-p,
 .chat-message__body .md-list,
 .chat-message__body .md-pre {

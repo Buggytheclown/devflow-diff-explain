@@ -48,6 +48,7 @@ export interface RouteRoutesOptions {
     readonly orchestrator: RouteOrchestrator;
     /** Итерации PR; null — хоста нет, снапшот устареть не может. */
     readonly iterationFeed: IterationFeed | null;
+    readonly codeDiffId?: (codeSnapshotId: string) => string | null;
 }
 
 export function createRouteRoutes(options: RouteRoutesOptions): Route[] {
@@ -56,7 +57,7 @@ export function createRouteRoutes(options: RouteRoutesOptions): Route[] {
             method: 'POST', path: UI_ENDPOINTS.reviewRouteRetryDiagram,
             handle: handlingRpcFailures(async (ctx) => {
                 const request = await readRouteRequest(ctx, uiRouteRetryDiagramRequestSchema);
-                if (request.renderFailure === true) options.orchestrator.reportDiagramFailure(request.snapshotId);
+                if (request.renderFailure === true) options.orchestrator.reportDiagramFailure(request);
                 else await options.orchestrator.retryDiagram(request.snapshotId);
                 return respond(uiReviewWriteAckSchema, { acknowledged: true }, 'local');
             }),
@@ -76,14 +77,16 @@ export function createRouteRoutes(options: RouteRoutesOptions): Route[] {
                 (ctx): JsonResponse => {
                     const request = parseQuery(
                         uiReviewRouteRequestSchema,
-                        { ...optionalParam(ctx, 'snapshot') },
+                        { ...optionalParam(ctx, 'snapshot'), ...optionalParam(ctx, 'codeSnapshotId') },
                         'маршрута',
                     );
                     const body: UiReviewRouteResponse = {
                         route:
-                            request.snapshot === undefined
-                                ? withStale(options.store.read(), options.iterationFeed)
-                                : pastRouteState(options, request.snapshot),
+                            request.snapshot !== undefined
+                                ? pastRouteState(options, request.snapshot, request.codeSnapshotId)
+                                : request.codeSnapshotId === undefined
+                                    ? withStale(options.store.read(), options.iterationFeed)
+                                    : codeRouteState(options, request.codeSnapshotId),
                         routeRevision: routeRevisionOf(options.store, options.iterationFeed),
                     };
                     return respond(uiReviewRouteResponseSchema, body, 'local');
@@ -131,15 +134,34 @@ export function createRouteRoutes(options: RouteRoutesOptions): Route[] {
  * а провала и порога малого PR у него быть не может. `stale` считается от него же — старый
  * снапшот почти всегда устарел, и UI открывает его в режиме чтения.
  */
-function pastRouteState(options: RouteRoutesOptions, snapshotId: string): UiReviewRouteResponse['route'] {
+function pastRouteState(options: RouteRoutesOptions, snapshotId: string, codeSnapshotId?: string): UiReviewRouteResponse['route'] {
     const snapshot = options.store.getSnapshot(snapshotId);
     if (snapshot === null) {
         throw new RpcFailure('bad_request', `Снапшота маршрута ${snapshotId} у этого PR нет.`);
+    }
+    if (codeSnapshotId !== undefined && snapshot.codeSnapshotId !== codeSnapshotId) {
+        throw new RpcFailure('bad_request', 'Разбор относится к другой версии кода.');
+    }
+    if (options.store.current()?.snapshotId === snapshotId) {
+        const generationDiffId = options.store.generationDiffId();
+        if (generationDiffId === null || generationDiffId === snapshot.diffId) return withStale(options.store.read(), options.iterationFeed);
     }
     return withStale(
         { phase: 'ready', smallPr: false, snapshot, failure: null, stale: null },
         options.iterationFeed,
     );
+}
+
+function codeRouteState(options: RouteRoutesOptions, codeSnapshotId: string): UiReviewRouteResponse['route'] {
+    const current = options.store.read();
+    const snapshot = current.snapshot?.codeSnapshotId === codeSnapshotId ? current.snapshot : options.store.latestForCode(codeSnapshotId);
+    const diffId = options.codeDiffId?.(codeSnapshotId) ?? snapshot?.diffId;
+    if (diffId !== undefined && options.store.generationDiffId() === diffId) {
+        return withStale({ ...current, snapshot }, options.iterationFeed);
+    }
+    return snapshot === null
+        ? { phase: 'none', smallPr: false, snapshot: null, failure: null, stale: null }
+        : pastRouteState(options, snapshot.snapshotId, codeSnapshotId);
 }
 
 function summarize(options: RouteRoutesOptions): UiReviewSnapshotsResponse['snapshots'] {

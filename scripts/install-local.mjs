@@ -14,7 +14,7 @@ if (!process.argv.includes('--no-build')) {
     execFileSync('pnpm', ['--filter', '@sherpa/skill', 'build'], { cwd: root, stdio: 'inherit' });
 }
 const source = path.join(root, 'packages/skill/dist');
-const files = ['SKILL.md', 'agents/openai.yaml', 'version.json', 'bin/devflow-diff-explain.mjs', 'bin/devflow-diff-explain-server.mjs'];
+const files = ['SKILL.md', 'agents/openai.yaml', 'version.json', 'bin/devflow-diff-explain.mjs', 'bin/devflow-diff-explain-server.mjs', 'bin/devflow-diff-explain-arc.mjs'];
 const digest = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 for (const name of files) if (!fs.statSync(path.join(source, name)).isFile()) throw new Error(`Missing artifact: ${name}`);
 const id = randomUUID();
@@ -27,6 +27,7 @@ for (const name of files) {
     if (digest(path.join(source, name)) !== digest(path.join(staging, name))) throw new Error(`Copy verification failed: ${name}`);
 }
 fs.chmodSync(path.join(staging, 'bin/devflow-diff-explain.mjs'), 0o755);
+fs.chmodSync(path.join(staging, 'bin/devflow-diff-explain-arc.mjs'), 0o755);
 fs.mkdirSync(backup, { recursive: true });
 if (fs.existsSync(target)) {
     if (fs.lstatSync(target).isSymbolicLink()) throw new Error('Expected a standalone skill copy, found a symlink.');

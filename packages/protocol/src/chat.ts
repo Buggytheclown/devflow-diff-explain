@@ -56,10 +56,30 @@ export const chatExplanationSchema = z.object({
     sectionId: z.string().min(1).optional(),
     /** Явно прикреплённый файл; версия задаётся diffId/commit всего вопроса. */
     file: z.object({ fileId: hostIdSchema, path: z.string().min(1) }).strict().optional(),
-    text: z.string().max(40_000),
+    text: z.string(),
     evidence: storyExplanationEvidenceSchema.optional(),
 });
 export type ChatExplanation = z.infer<typeof chatExplanationSchema>;
+
+/** Адрес показанной редакции разбора. Текст восстанавливает сервер из сохранённой редакции. */
+export const chatExplanationRefSchema = z.object({
+    reviewId: z.string().min(1),
+    revision: z.number().int().positive(),
+    diffId: hostIdSchema,
+    commit: z.string().min(1),
+    codeSnapshotId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    sectionId: z.string().min(1).optional(),
+    file: z.object({ fileId: hostIdSchema, path: z.string().min(1) }).strict().optional(),
+}).strict();
+export type ChatExplanationRef = z.infer<typeof chatExplanationRefSchema>;
+
+export const chatCodeRefSchema = z.object({
+    diffId: hostIdSchema,
+    commit: z.string().min(1),
+    codeSnapshotId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    file: z.object({ fileId: hostIdSchema, path: z.string().min(1) }).strict().optional(),
+}).strict();
+export type ChatCodeRef = z.infer<typeof chatCodeRefSchema>;
 
 export const chatExchangeSchema = z.object({
     explanation: chatExplanationSchema.nullable().optional(),

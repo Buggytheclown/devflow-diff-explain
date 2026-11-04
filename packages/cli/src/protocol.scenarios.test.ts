@@ -85,7 +85,7 @@ describe('сценарии сессии-воркера', () => {
         expect(issued.stdout).toContain('attempt 1');
         // Путь результата — под tmp процесса, свой у каждой сессии и попытки.
         const firstFile = await resultFileOf(taskId, 1);
-        expect(issued.stdout).toContain(`--file ${firstFile}`);
+        expect(issued.stdout).toContain(`'--file' '${firstFile}'`);
 
         // Сессия исчезла молча: больше ни одного вызова, ждать нечего — двигаем часы.
         advance(PAST_LEASE_SECONDS);
@@ -98,7 +98,7 @@ describe('сценарии сессии-воркера', () => {
         expect(reissued.stdout).toContain('attempt 2');
         const secondFile = await resultFileOf(taskId, 2);
         expect(path.dirname(secondFile)).not.toBe(path.dirname(firstFile));
-        expect(reissued.stdout).toContain(`--file ${secondFile}`);
+        expect(reissued.stdout).toContain(`'--file' '${secondFile}'`);
 
         const completed = await worker.complete(taskId, 'Ответ второй сессии.');
         expect(completed.code).toBe(0);
@@ -121,7 +121,7 @@ describe('сценарии сессии-воркера', () => {
         expect(rejected.stdout).toContain('rejected');
         expect(rejected.stdout).toContain('1. ');
         expect(rejected.stdout).toContain(
-            `devflow-diff-explain task complete ${String(taskId)} --file ${path.join(workDir, 'result-1.md')}`,
+            `'task' 'complete' '${String(taskId)}' '--file' '${path.join(workDir, 'result-1.md')}'`,
         );
         expect(server.queue.getTask(taskId)).toMatchObject({ status: 'leased', result: null });
 
@@ -141,7 +141,7 @@ describe('сценарии сессии-воркера', () => {
 
         expect(repeated.code).toBe(0);
         expect(repeated.stdout).toContain('is accepted');
-        expect(repeated.stdout).toContain('devflow-diff-explain worker next');
+        expect(repeated.stdout).toContain("'worker' 'next'");
         expect(server.queue.getTask(taskId)).toMatchObject({ status: 'done', result: 'Первый результат.' });
     });
 
@@ -169,6 +169,31 @@ describe('сценарии сессии-воркера', () => {
         expect(server.queue.getTask(taskId)).toMatchObject({ status: 'done', result: 'Результат опоздавшего.' });
     });
 
+    it('same worker re-lease cannot turn old complete, progress or fail into the new issuance', async () => {
+        await worker.register();
+        const taskId = enqueue('Long task.');
+        const first = await worker.next();
+        expect(first.leaseRef).not.toBeNull();
+        advance(PAST_LEASE_SECONDS);
+        const second = await worker.next();
+        expect(second.taskId).toBe(taskId);
+        expect(second.leaseRef).not.toBe(first.leaseRef);
+
+        const oldProgress = await worker.progress(taskId, 'old status', first.leaseRef ?? '');
+        const oldFail = await worker.fail(taskId, 'old failure', first.leaseRef ?? '');
+        const oldComplete = await worker.complete(taskId, 'old result', first.leaseRef ?? '');
+        expect(oldProgress.code).toBe(1);
+        expect(oldFail.code).toBe(1);
+        expect(oldComplete.code).toBe(1);
+        expect(server.queue.getTask(taskId)).toMatchObject({ status: 'leased', result: null, progressText: null });
+
+        const newProgress = await worker.progress(taskId, 'new status', second.leaseRef ?? '');
+        expect(newProgress.code).toBe(0);
+        const completed = await worker.complete(taskId, 'new result', second.leaseRef ?? '');
+        expect(completed.code).toBe(0);
+        expect(server.queue.getTask(taskId)).toMatchObject({ status: 'done', result: 'new result' });
+    });
+
     it('отмена во время аренды: воркер узнаёт об этом при следующем вызове, задача не воскресает', async () => {
         await worker.register();
         const taskId = enqueue('Отменяемая задача.');
@@ -180,7 +205,7 @@ describe('сценарии сессии-воркера', () => {
         const progress = await worker.progress(taskId, 'всё ещё работаю');
         expect(progress.code).toBe(0);
         expect(progress.stdout).toContain('has been cancelled');
-        expect(progress.stdout).toContain('devflow-diff-explain worker next');
+        expect(progress.stdout).toContain("'worker' 'next'");
 
         const completed = await worker.complete(taskId, 'Результат по отменённой.');
         expect(completed.code).toBe(0);

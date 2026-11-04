@@ -23,6 +23,7 @@ import { resolveGenerationLocale } from './generation-locale.js';
 import type { IterationStore } from './iteration-store.js';
 import type { EnqueueInput, TaskQueue, TaskRecord, TaskResultAcceptance } from './queue.js';
 import { RoutePayloadWriter } from './route-payload.js';
+import { CURRENT_ROUTE_TASK_EPOCH } from './route-store.js';
 import type {
     RouteStopStatusUpdate,
     RouteStore,
@@ -121,7 +122,7 @@ export class RouteOrchestrator {
     start(): void {
         for (const task of this.queue.listTasks()) if (task.type === 'route.diagram' && (task.status === 'queued' || task.status === 'leased')) this.queue.cancel(task.id);
         const state = this.store.read();
-        if (this.store.generationTaskEpoch() !== 8 && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
+        if (this.store.generationTaskEpoch() !== CURRENT_ROUTE_TASK_EPOCH && (state.phase === 'reading' || state.phase === 'filling' || this.hasOpenRouteTask())) {
             const binding = [...this.store.bindings().values()].find((entry) => entry.diffId !== null);
             const pinned = state.phase === 'filling' ? state.snapshot?.diffId : binding?.diffId ?? this.store.generationDiffId();
             this.upgradingDiff = pinned ?? null;
@@ -283,10 +284,14 @@ export class RouteOrchestrator {
         return 'started';
     }
 
-    reportDiagramFailure(snapshotId: string): void {
+    reportDiagramFailure(report: { snapshotId: string; reportVersion?: 1 | undefined; diagramHash?: string | undefined; viewIndex?: number | undefined; missingId?: string | undefined; reason?: string | undefined }): void {
         const snapshot = this.store.current();
-        if (snapshot?.snapshotId !== snapshotId || snapshot.storyContractVersion !== 6 || snapshot.flow?.status !== 'ready' || !('mermaid' in snapshot.flow.diagram)) return;
-        this.store.setFlow(snapshotId, { status: 'unavailable', reason: snapshotLocale(snapshot) === 'ru'
+        if (snapshot?.snapshotId !== report.snapshotId || snapshot.storyContractVersion !== 6 || snapshot.flow?.status !== 'ready' || !('mermaid' in snapshot.flow.diagram)) return;
+        if (report.reportVersion !== 1 || report.diagramHash !== snapshot.flow.diagramHash || report.viewIndex === undefined || report.reason === undefined) return;
+        if (report.viewIndex > (snapshot.flow.diagram.views?.length ?? 0)) return;
+        if (report.missingId !== undefined && !snapshot.flow.diagram.nodes.some((node) => node.id === report.missingId)
+            && !snapshot.flow.diagram.edges.some((edge) => 'id' in edge && edge.id === report.missingId && (edge.viewIndex === undefined || edge.viewIndex === report.viewIndex))) return;
+        this.store.setFlow(report.snapshotId, { status: 'unavailable', reason: snapshotLocale(snapshot) === 'ru'
             ? 'Не удалось отобразить архитектурную схему. Описание, блоки и дифф доступны.'
             : 'Could not display the architecture diagram. The description, blocks and diff remain available.' });
     }
@@ -379,7 +384,7 @@ export class RouteOrchestrator {
             kind: 'accepted',
             receipt: partialReceipt(part),
             persist: () => {
-                this.store.recordFileOutcome(task.id, part);
+                this.store.recordFileOutcome(task.id, storedFileOutcome(part, diff));
                 const previous = this.store.current();
                 if (skeleton.storyContractVersion === 6 && previous?.diffId === diff.diffId && previous.storyContractVersion !== 6) {
                     const files = new Map(previous.stops.flatMap((block) => block.guidedFiles ?? []).filter((file) => file.explanation !== null).map((file) => [file.fileId, file]));
@@ -420,10 +425,9 @@ export class RouteOrchestrator {
         if (!checked.ok) return { kind: 'rejected', errors: checked.errors };
         const provenance = provenanceOf(this.registry.status(), locale);
         const part = checkIndividualFiles(split.files, diff, checked.value.overview?.stops ?? snapshot.stops, binding.assignment);
-        if (part.accepted.length === 0 && part.errors.length > 0 && split.body.overview === undefined && split.body.update === undefined) return { kind: 'rejected', errors: part.errors.flatMap((entry) => entry.errors) };
         return { kind: 'accepted', receipt: partialReceipt(part), persist: () => {
-            this.store.recordFileOutcome(task.id, part);
-            this.store.applyCheckpoint(checked.value.overview, part.files, provenance);
+            this.store.recordFileOutcome(task.id, storedFileOutcome(part, diff));
+            this.store.applyCheckpoint(checked.value.overview, part.files, provenance, checked.value.overview === undefined ? undefined : snapshot.reviewRevision);
         }, onCommitted: () => { this.reconcile(); } };
     }
 
@@ -505,16 +509,20 @@ export class RouteOrchestrator {
         const assignments = new Map<string, TaskRecord>();
         for (const { record, binding } of this.routeTasks()) for (const file of binding.assignment?.files ?? []) assignments.set(file, record);
         const corrections = this.store.fileCorrections();
-        if (corrections.some((entry) => entry.attempts >= 3)) { this.store.fail('Не удалось применить исправление файла: ' + corrections.map((entry) => entry.path).join(', '), null); return; }
-        const unscheduledCorrections = corrections.filter((entry) => { const task = assignments.get(entry.path); return task === undefined || task.status === 'done'; });
-        if (corrections.some((entry) => assignments.get(entry.path)?.status === 'failed')) { this.store.fail('Не удалось исправить файл. Повторите подготовку.', null); return; }
+        const exhausted = new Set(corrections.filter((entry) => entry.attempts >= 3 || assignments.get(entry.path)?.status === 'failed').map((entry) => entry.path));
+        const unscheduledCorrections = corrections.filter((entry) => { const task = assignments.get(entry.path); return !exhausted.has(entry.path) && (task === undefined || task.status === 'done'); });
         const pending: string[] = [];
         const targets: number[] = [];
         const updates = new Map<string, RouteStopStatusUpdate>();
         const strings = routeStrings(snapshotLocale(snapshot));
         for (const block of snapshot.stops) {
             for (const file of block.guidedFiles ?? []) {
-                if (file.explanation !== null && !corrections.some((entry) => entry.path === file.path)) continue;
+                if (exhausted.has(file.path)) {
+                    updates.set(file.fileId, { status: 'failed', note: 'Пояснение требует отдельного повтора.' });
+                    continue;
+                }
+                if (file.explanation !== null && !(file.status === 'queued' && file.failure != null)
+                    && !corrections.some((entry) => entry.path === file.path)) continue;
                 const task = assignments.get(file.path);
                 if (task === undefined || task.status === 'done') {
                     pending.push(file.path);
@@ -529,12 +537,13 @@ export class RouteOrchestrator {
             if (diff === null) { this.awaitOrAbandonDiff(snapshot.diffId); return; }
             const assignment = { files: [...new Set([...pending, ...unscheduledCorrections.map((entry) => entry.path)])], introduction: false };
             const input = this.payload.sectionTask({ diff, meta: this.meta, locale: snapshotLocale(snapshot), version: 6,
+                snapshotId: snapshot.snapshotId, ...(snapshot.reviewRevision === undefined ? {} : { reviewRevision: snapshot.reviewRevision }),
                 introduction: snapshot.summary, introductionEvidence: snapshot.summaryEvidence, flow: snapshot.flow, assignment },
                 targets, snapshot.stops, this.store.stopIntents());
             this.enqueueRouteTask('section', snapshot.diffId, targets, { ...input, instructions: input.instructions + (corrections.length === 0 ? '' : `\nCorrections still needed: ${JSON.stringify(corrections)}`) }, assignment);
             return;
         }
-        if (corrections.length > 0) return;
+        if (corrections.some((entry) => !exhausted.has(entry.path))) return;
         const current = this.store.current();
         if (current?.stops.every((block) => block.status === 'ready')) this.store.markReady();
         else if (!current?.stops.flatMap((block) => block.guidedFiles ?? []).some((file) => file.status === 'queued' || file.status === 'filling')) this.store.fail('Часть пояснений не готова. Повторите незавершённый блок.', null);
@@ -556,6 +565,7 @@ export class RouteOrchestrator {
         const diff = this.diffOf(snapshot.diffId);
         if (diff === null) { unavailable(); return; }
         const input = this.payload.sectionTask({ diff, meta: this.meta, locale: snapshotLocale(snapshot), version: 6,
+            snapshotId: snapshot.snapshotId, ...(snapshot.reviewRevision === undefined ? {} : { reviewRevision: snapshot.reviewRevision }),
             introduction: snapshot.summary, introductionEvidence: snapshot.summaryEvidence,
             flow: this.store.flowBeforeRetry(snapshot.snapshotId) ?? undefined }, [], snapshot.stops, this.store.stopIntents());
         this.store.enqueueTask(this.queue, { ...input, instructions: `Help repair or refine the PR architecture. Choose your research using ordinary PR/code tools. Return update.flow and any block changes needed to preserve architecture-block-file links. You may correct files in the same checkpoint.\n${input.instructions}` },
@@ -615,6 +625,21 @@ export class RouteOrchestrator {
         this.store.beginSkeleton({ locale, presentation: 'story', version: 6, commit: diff.headCommit, diffId: diff.diffId });
         // Payload прошлой генерации больше никому не нужен: её задачи только что отменены.
         this.payload.beginGeneration();
+        if (diff.files.length === 0) {
+            const summary = locale === 'ru' ? 'В этой версии изменений нет.' : 'There are no changes in this version.';
+            this.store.acceptSkeleton({
+                skeleton: { storyContractVersion: 6, summary,
+                    summaryEvidence: { claims: [{ sources: [], limitation: locale === 'ru'
+                        ? 'Сохранённый снимок не содержит изменённых файлов.' : 'The saved snapshot contains no changed files.' }] },
+                    flow: { status: 'not_applicable', reason: locale === 'ru'
+                        ? 'Нет изменений для архитектурной схемы.' : 'There are no changes to diagram.' },
+                    stops: [], tourOrder: [], intents: new Map() },
+                presentation: 'story', diff, provenance: provenanceOf(this.registry.status(), locale),
+                snapshotId: randomUUID(), previousSnapshotId: this.store.current()?.snapshotId ?? null,
+            });
+            this.store.markReady();
+            return;
+        }
         this.startSkeletonTask();
     }
 
@@ -927,4 +952,12 @@ function provenanceOf(status: WorkerStatus, locale: Locale): RouteProvenance {
 function partialReceipt(part: { accepted: string[]; errors: { path: string; errors: string[] }[] }): TaskCompleteResponse {
     return part.errors.length === 0 ? { kind: 'accepted', message: 'Checkpoint saved. Continue with the next task.' }
         : { kind: 'partial', message: `Checkpoint saved; accepted files: ${part.accepted.join(', ')}. Corrections needed: ${JSON.stringify(part.errors)}. Continue with the next task.`, accepted: part.accepted, errors: part.errors };
+}
+
+/** Ошибки без адреса в инвентаре остаются в квитанции, но не создают фиктивную задачу файла. */
+function storedFileOutcome(part: { accepted: string[]; errors: { path: string; errors: string[] }[] }, diff: PrDiff) {
+    const known = new Set(diff.files.map((file) => file.path));
+    const errors = new Map<string, string[]>();
+    for (const item of part.errors) if (known.has(item.path)) errors.set(item.path, [...(errors.get(item.path) ?? []), ...item.errors]);
+    return { accepted: part.accepted, errors: [...errors].map(([path, messages]) => ({ path, errors: messages })) };
 }

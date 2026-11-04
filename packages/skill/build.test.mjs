@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
@@ -12,6 +12,7 @@ const packageRoot = dirname(fileURLToPath(import.meta.url));
 const distDir = join(packageRoot, 'dist');
 const binDir = join(distDir, 'bin');
 const cliPath = join(binDir, 'devflow-diff-explain.mjs');
+const arcEntryPath = join(binDir, 'devflow-diff-explain-arc.mjs');
 const serverPath = join(binDir, 'devflow-diff-explain-server.mjs');
 const uiRoot = resolve(packageRoot, '../ui');
 /** Версия поставки — из корневого package.json: единственный источник на все три бандла. */
@@ -33,11 +34,13 @@ describe('сборка пакета скилла', () => {
         expect(readdirSync(distDir).sort()).toEqual(['SKILL.md', 'agents', 'bin', 'version.json']);
         expect(readdirSync(join(distDir, 'agents'))).toEqual(['openai.yaml']);
         expect(readFileSync(join(distDir, 'agents/openai.yaml'), 'utf8')).toBe(readFileSync(join(packageRoot, 'agents/openai.yaml'), 'utf8'));
-        expect(readdirSync(binDir).sort()).toEqual(['devflow-diff-explain-server.mjs', 'devflow-diff-explain.mjs']);
+        expect(readdirSync(binDir).sort()).toEqual(['devflow-diff-explain-arc.mjs', 'devflow-diff-explain-server.mjs', 'devflow-diff-explain.mjs']);
         expect(statSync(cliPath).isFile()).toBe(true);
+        expect(statSync(arcEntryPath).isFile()).toBe(true);
         expect(statSync(serverPath).isFile()).toBe(true);
         // Команда одна: модуль сервера не запускается напрямую, его грузит CLI.
         expect(statSync(cliPath).mode & 0o111).toBe(0o111);
+        expect(statSync(arcEntryPath).mode & 0o111).toBe(0o111);
         expect(statSync(serverPath).mode & 0o111).toBe(0);
         expect(readFileSync(join(distDir, 'SKILL.md'), 'utf8')).toBe(
             readFileSync(join(packageRoot, 'SKILL.md'), 'utf8'),
@@ -66,6 +69,13 @@ describe('сборка пакета скилла', () => {
         expect(stdout.trim()).toBe(releaseVersion);
     });
 
+    it('собранный Arc producer запускается из собственного standalone-бандла', () => {
+        const stdout = execFileSync(process.execPath, [arcEntryPath, '--help'], { encoding: 'utf8' });
+        expect(stdout).toContain('devflow-diff-explain-arc.mjs');
+        expect(stdout).toContain('--arc-dir');
+        expect(readFileSync(arcEntryPath, 'utf8')).not.toContain("../../../scripts/arc-export.mjs");
+    });
+
     // Петля воркера дёргает CLI на каждый вызов: сервер и UI утяжелили бы каждый её шаг.
     it('сервер и UI живут в модуле сервера, а не в CLI', () => {
         expect(statSync(cliPath).size).toBeLessThan(statSync(serverPath).size);
@@ -77,8 +87,8 @@ describe('сборка пакета скилла', () => {
         const skill = readFileSync(join(packageRoot, 'SKILL.md'), 'utf8');
 
         expect(skill).toMatch(/^---\nname: devflow-diff-explain\n/u);
-        expect(skill).toContain('bin/devflow-diff-explain.mjs up --snapshot');
-        expect(skill).toContain('bin/devflow-diff-explain.mjs worker next --pr');
+        expect(skill).toContain("bin/devflow-diff-explain.mjs' up --snapshot");
+        expect(skill).toContain('worker next --pr');
         expect(skill).toContain('--model');
         expect(skill).toContain('DONE');
         // Общий контекст переиспользуется, а необходимое чтение выбирает агент.
@@ -216,6 +226,39 @@ describe('собранный дистрибутив в работе', () => {
         expect(existsSync(marker)).toBe(true);
     }, 60_000);
 });
+
+it('установленный Arc producer запускает нативный экспорт и up одной командой', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sherpa-arc-entry-'));
+    const skill = join(root, 'skill');
+    const checkout = join(root, 'arc-project');
+    const fakeBin = join(root, 'fake-bin');
+    const state = join(root, 'state');
+    const key = 'arcanum-16729612';
+    cpSync(distDir, skill, { recursive: true });
+    mkdirSync(checkout, { recursive: true });
+    mkdirSync(fakeBin, { recursive: true });
+    const arc = join(fakeBin, 'arc');
+    const ya = join(fakeBin, 'ya');
+    writeFileSync(arc, `#!/usr/bin/env node\nconst a=process.argv.slice(2); if(a[0]==='info') console.log(JSON.stringify({repository:'arcadia'})); else if(a[0]==='root') console.log(${JSON.stringify(checkout)}); else if(a[0]==='diff') console.log(JSON.stringify([{names:[]}])); else process.exitCode=2;\n`, { mode: 0o755 });
+    writeFileSync(ya, `#!/usr/bin/env node\nconst a=process.argv.slice(2); if(a[3]==='pr') console.log(JSON.stringify([{id:39933879,published:true,pull_request_id:16729612}])); else if(a[3]==='diff') console.log(JSON.stringify({id:39933879,commit_ids:{base:'${'a'.repeat(40)}',merge:'${'b'.repeat(40)}'}})); else process.exitCode=2;\n`, { mode: 0o755 });
+    try {
+        const { SHERPA_SERVER_BIN: _bin, SHERPA_PR: _pr, SHERPA_WORKER_ID: _worker, ...inherited } = process.env;
+        const result = spawnSync(process.execPath, [join(skill, 'bin', 'devflow-diff-explain-arc.mjs'), '16729612', '--arc-dir', checkout, '--no-open'], {
+            cwd: root, encoding: 'utf8', timeout: 30_000,
+            env: { ...inherited, PATH: `${fakeBin}:${process.env.PATH}`, SHERPA_DIR: state },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout, JSON.stringify(result)).not.toBe('');
+        const receipt = JSON.parse(result.stdout.split('\n')[0]);
+        expect(receipt.codeSnapshotId).toMatch(/^[a-f0-9]{64}$/u);
+        expect(result.stdout).toContain(`&code=${receipt.codeSnapshotId}&view=diff`);
+        expect(result.stdout).toContain("'worker' 'next'");
+    } finally {
+        const manifest = join(state, 'servers', `${key}.json`);
+        if (existsSync(manifest)) await stopProcess(JSON.parse(readFileSync(manifest, 'utf8')).pid);
+        rmSync(root, { recursive: true, force: true });
+    }
+}, 60_000);
 
 /** Снимает демона по PID: SIGTERM и ожидание, чтобы сервер не пережил тест. */
 async function stopProcess(pid) {

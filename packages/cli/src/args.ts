@@ -30,6 +30,9 @@ export type Command =
           /** Не открывать браузер после холодного старта. */
           readonly noOpen: boolean;
           readonly snapshot?: string;
+          readonly code?: string;
+          readonly review?: string;
+          readonly view?: 'diff' | 'route';
       }
     | {
           readonly kind: 'worker-next';
@@ -50,6 +53,7 @@ export type Command =
           readonly prKey: string | undefined;
           readonly taskId: number;
           readonly file: string;
+          readonly leaseRef: string;
           readonly next?: boolean;
       }
     | {
@@ -57,12 +61,14 @@ export type Command =
           readonly prKey: string | undefined;
           readonly taskId: number;
           readonly text: string;
+          readonly leaseRef: string;
       }
     | {
           readonly kind: 'task-fail';
           readonly prKey: string | undefined;
           readonly taskId: number;
           readonly reason: string;
+          readonly leaseRef: string;
       };
 
 const OPTIONS = [
@@ -76,6 +82,10 @@ const OPTIONS = [
     '--model',
     '--lang',
     '--snapshot',
+    '--code',
+    '--review',
+    '--view',
+    '--lease',
 ] as const;
 const FLAGS = ['--no-open', '--next'] as const;
 type OptionName = (typeof OPTIONS)[number];
@@ -118,6 +128,12 @@ export function parseArgs(argv: readonly string[]): Command {
     }
     if (group !== 'up' && (options.has('--local') || options.has('--base'))) {
         throw new CliError('devflow-diff-explain: --local and --base are only available for `devflow-diff-explain up`.');
+    }
+    if (group !== 'up' && (options.has('--code') || options.has('--review') || options.has('--view'))) {
+        throw new CliError('devflow-diff-explain: --code, --review and --view are only available for `up`.');
+    }
+    if (!(group === 'task' && ['complete', 'progress', 'fail'].includes(positionals[1] ?? '')) && options.has('--lease')) {
+        throw new CliError('devflow-diff-explain: --lease is only available for a task command.');
     }
     if (flags.has('--next') && !(group === 'task' && positionals[1] === 'complete')) {
         throw new CliError('devflow-diff-explain: --next is only available for `task complete`.');
@@ -187,6 +203,14 @@ function parseUpCommand(
         );
     }
     const snapshot = options.get('--snapshot');
+    const code = options.get('--code');
+    const review = options.get('--review');
+    const view = options.get('--view');
+    if (code !== undefined && !/^[a-f0-9]{64}$/.test(code)) throw new CliError('devflow-diff-explain: --code expects a 64-character code snapshot ID.');
+    if (review !== undefined && (review.trim() === '' || code === undefined)) throw new CliError('devflow-diff-explain: --review needs both a review ID and --code <codeSnapshotId>.');
+    if (view !== undefined && view !== 'diff' && view !== 'route') throw new CliError('devflow-diff-explain: --view expects diff or route.');
+    if (view !== undefined && code === undefined) throw new CliError('devflow-diff-explain: --view requires --code <codeSnapshotId>.');
+    if (review !== undefined && view === 'diff') throw new CliError('devflow-diff-explain: --review cannot be combined with --view diff.');
     return {
         kind: 'up',
         prKey,
@@ -197,6 +221,9 @@ function parseUpCommand(
         lang: parseLang(options.get('--lang')),
         noOpen: flags.has('--no-open'),
         ...(snapshot === undefined ? {} : { snapshot }),
+        ...(code === undefined ? {} : { code }),
+        ...(review === undefined ? {} : { review }),
+        ...(view === undefined ? {} : { view }),
     };
 }
 
@@ -281,14 +308,19 @@ function parseTaskCommand(
     }
 
     const taskId = parseTaskId(positionals[2], sub);
+    const required = requireOption(options, requiredOptionOf(sub), sub);
+    const leaseRef = options.get('--lease');
+    if (leaseRef === undefined || !/^[a-f0-9]{64}$/.test(leaseRef)) {
+        throw new CliError('devflow-diff-explain: task commands require the --lease reference printed with the task. Copy its complete, progress or fail command.');
+    }
 
     switch (sub) {
         case 'complete':
-            return { kind: 'task-complete', prKey, taskId, file: requireOption(options, '--file', sub), ...(flags.has('--next') ? { next: true } : {}) };
+            return { kind: 'task-complete', prKey, taskId, file: required, leaseRef, ...(flags.has('--next') ? { next: true } : {}) };
         case 'progress':
-            return { kind: 'task-progress', prKey, taskId, text: requireOption(options, '--text', sub) };
+            return { kind: 'task-progress', prKey, taskId, text: required, leaseRef };
         case 'fail':
-            return { kind: 'task-fail', prKey, taskId, reason: requireOption(options, '--reason', sub) };
+            return { kind: 'task-fail', prKey, taskId, reason: required, leaseRef };
     }
 }
 

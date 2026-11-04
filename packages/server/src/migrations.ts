@@ -498,6 +498,44 @@ export const MIGRATIONS: readonly Migration[] = [
         CREATE TABLE code_snapshots (id TEXT PRIMARY KEY, project TEXT NOT NULL, diff_id TEXT NOT NULL UNIQUE, data TEXT NOT NULL);
         CREATE TABLE code_sources (snapshot_id TEXT NOT NULL REFERENCES code_snapshots(id), revision TEXT NOT NULL, path TEXT NOT NULL, hash TEXT NOT NULL REFERENCES code_artifacts(hash), kind TEXT NOT NULL, origin TEXT, PRIMARY KEY(snapshot_id, revision, path));
     ` },
+    {
+        name: '026-lease-grants',
+        sql: `
+            ALTER TABLE tasks ADD COLUMN grant_token TEXT;
+            ALTER TABLE tasks ADD COLUMN receipt_grant_token TEXT;
+        `,
+    },
+    {
+        name: '027-review-revisions',
+        sql: `
+            CREATE TABLE review_revisions (
+                review_id TEXT NOT NULL,
+                revision INTEGER NOT NULL,
+                content_signature TEXT,
+                snapshot_json TEXT NOT NULL,
+                PRIMARY KEY(review_id, revision)
+            );
+            INSERT INTO review_revisions(review_id, revision, content_signature, snapshot_json)
+                SELECT snapshot_id, 1, NULL, snapshot_json FROM route_snapshots;
+        `,
+    },
+    {
+        name: '028-question-inputs',
+        sql: `ALTER TABLE chat_exchanges ADD COLUMN question_input TEXT;`,
+    },
+    {
+        name: '029-iterations-code-snapshot-ref',
+        sql: `ALTER TABLE iterations ADD COLUMN code_snapshot_id TEXT REFERENCES code_snapshots(id);`,
+    },
+    {
+        // Старые image.blobId — непрозрачные ID хоста. Снимок хранит их без замены, а
+        // эта локальная таблица разрешает их в проверенные SHA-256 импортированных байтов.
+        name: '030-code-artifact-aliases',
+        sql: `CREATE TABLE code_artifact_aliases (
+            blob_id TEXT PRIMARY KEY,
+            hash TEXT NOT NULL REFERENCES code_artifacts(hash)
+        );`,
+    },
 ];
 
 /** Ключ версии схемы в таблице `meta`. */

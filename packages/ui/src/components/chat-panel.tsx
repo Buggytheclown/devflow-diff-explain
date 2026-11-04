@@ -479,6 +479,8 @@ function ChatExchangeView({
     readonly longRunning: boolean;
 }) {
     const t = useT();
+    const explanation = exchange.explanation;
+    const unknownContext = explanation == null && exchange.anchor === null;
     const [actionError, setActionError] = useState<string | null>(null);
     const [actionPending, setActionPending] = useState(false);
     const run = (action: (exchangeId: number) => Promise<void>): void => {
@@ -503,6 +505,7 @@ function ChatExchangeView({
             <div className="chat-message chat-message--you">
                 <div className="chat-message__author visually-hidden">you</div>
                 <div className="chat-message__body chat-message__body--plain">{exchange.question}</div>
+                {unknownContext ? <span className="chat-message__context-warning">{t('chat.context.unknown')}</span> : null}
                 {exchange.explanation?.file === undefined ? null : <span className="chat-message__anchor" title={exchange.explanation.file.path}>↳ {exchange.explanation.file.path}</span>}
                 {exchange.anchor === null ? null : (
                     <button
@@ -524,9 +527,8 @@ function ChatExchangeView({
                 <div className="chat-message chat-message--agent">
                     <div className="chat-message__author visually-hidden">agent</div>
                     <div className="chat-message__body">
-                        <Markdown text={exchange.answer} profile="comment" onCodeLink={onNavigateCode === undefined || (exchange.explanation?.diffId ?? exchange.anchor?.diffId) === undefined ? undefined : (location) => {
-                            const diffId = exchange.explanation?.diffId ?? exchange.anchor?.diffId;
-                            if (diffId !== undefined) onNavigateCode(location, diffId);
+                        <Markdown text={exchange.answer} profile="comment" onCodeLink={onNavigateCode === undefined || explanation == null ? undefined : (location) => {
+                            onNavigateCode(location, explanation.diffId);
                         }} />
                     </div>
                     {note === null ? null : (
@@ -574,7 +576,7 @@ function ChatExchangeView({
                     <button
                         type="button"
                         className="ctl ctl--ghost chat-message__action"
-                        disabled={actionPending}
+                        disabled={actionPending || unknownContext}
                         onClick={() => {
                             run(onRetry);
                         }}

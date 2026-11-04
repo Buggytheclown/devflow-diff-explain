@@ -2,11 +2,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { RESULT_MAX_BYTES } from '@sherpa/protocol';
+import { RESULT_MAX_BYTES, STRUCTURAL_RESULT_MAX_BYTES } from '@sherpa/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { readResultFile } from './cli.js';
 import { CliError } from './errors.js';
+import { formatCommand } from './command.js';
 
 describe('пре-чек размера результата', () => {
     let workDir: string;
@@ -40,10 +41,18 @@ describe('пре-чек размера результата', () => {
         await expect(readResultFile(file, 42, 'arcanum-1')).rejects.toThrow(CliError);
     });
 
+    it('structural result can exceed the chat cap, but keeps its own cap', async () => {
+        const large = await writeResult('route.json', 'x'.repeat(RESULT_MAX_BYTES + 1));
+        await expect(readResultFile(large, 42, 'arcanum-1', 'route.prepare')).resolves.toHaveLength(RESULT_MAX_BYTES + 1);
+        const oversized = await writeResult('over-route.json', 'x'.repeat(STRUCTURAL_RESULT_MAX_BYTES + 1));
+        await expect(readResultFile(oversized, 42, 'arcanum-1', 'route.prepare')).rejects.toThrow('the limit is 16384 KB');
+    });
+
     it('нет файла или это каталог — понятная ошибка с подсказкой', async () => {
         const missing = path.join(workDir, 'нет.md');
-        await expect(readResultFile(missing, 42, 'arcanum-1')).rejects.toThrow(
-            `Write the result to ${missing} and call \`devflow-diff-explain task complete 42 --file ${missing} --pr arcanum-1\` again.`,
+        const leaseRef = 'a'.repeat(64);
+        await expect(readResultFile(missing, 42, 'arcanum-1', 'chat', leaseRef)).rejects.toThrow(
+            `Write the result to ${missing} and call \`${formatCommand(process.argv[1], 'task', 'complete', '42', '--file', missing, '--pr', 'arcanum-1', '--lease', leaseRef)}\` again.`,
         );
         await expect(readResultFile(workDir, 42, 'arcanum-1')).rejects.toThrow('is not a file');
     });

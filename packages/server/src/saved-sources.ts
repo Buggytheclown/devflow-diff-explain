@@ -16,6 +16,12 @@ export function sourceEvidence(diff: PrDiff | null, source: CodeLocation & { sou
         found.path === source.path && found.side === source.side && found.start <= source.start && found.end >= source.end ? found : null;
 }
 export function savedSourceById(id: string): SavedSource | null { return scope.getStore()?.get(id) ?? null; }
+export function sourceFileEvidence(diff: PrDiff | null, source: { path: string; sourceId?: string | undefined }): SavedSource | null {
+    if (diff === null || source.sourceId === undefined) return null;
+    const found = scope.getStore()?.get(source.sourceId) ?? null;
+    return found !== null && found.fullFile === true && found.diffId === diff.diffId &&
+        found.revision === diff.headCommit && found.path === source.path && found.side === 'new' ? found : null;
+}
 
 /** Источники привязаны к БД конкретного PR; AsyncLocalStorage изолирует параллельные серверы. */
 export class SavedSources {
@@ -56,7 +62,15 @@ export class SavedSources {
         if (location.side === 'new' && diff.files.some((file) => (file.path === location.path && file.changeType === 'delete') || (file.oldPath === location.path && file.path !== location.path && file.changeType === 'move')) && !diff.files.some((file) => file.path === location.path && file.changeType !== 'delete')) throw new Error('Source path is absent on the pinned new side.');
         const revision = location.side === 'old' ? diff.baseCommit : diff.headCommit;
         const id = digest(JSON.stringify([diff.diffId, revision, location]));
-        const cached = this.get(id); if (cached !== null) return cached;
+        const cached = this.get(id);
+        if (cached !== null) {
+            const pinned = this.snapshots?.source(diff.diffId, revision, location.path);
+            if (pinned !== undefined) {
+                const excerpt = pinned?.split('\n').slice(location.start - 1, location.end).join('\n');
+                if (excerpt !== cached.text) throw new Error(`Saved source conflicts with pinned snapshot: ${location.path}.`);
+            }
+            return cached;
+        }
         const text = this.snapshots === undefined
             ? await this.host?.getSourceAtRevision?.(location.path, revision) ?? null
             : this.snapshots.source(diff.diffId, revision, location.path);
@@ -68,6 +82,14 @@ export class SavedSources {
         const saved = savedSourceSchema.parse({ ...location, id, diffId: diff.diffId, revision, text: excerpt, hash: digest(excerpt),
             fullFile: artifact != null, ...(artifact?.origin === undefined ? {} : { origin: artifact.origin }) });
         this.db.prepare('INSERT OR IGNORE INTO saved_sources (id, data) VALUES (?, ?)').run(id, JSON.stringify(saved));
+        return saved;
+    }
+    /** Полный импортированный источник вне инвентаря: компактная ссылка на его первый ряд. */
+    async captureFile(diff: PrDiff, sourcePath: string): Promise<SavedSource> {
+        const artifact = this.snapshots?.sourceArtifact(diff.diffId, diff.headCommit, sourcePath);
+        if (artifact === undefined || artifact === null || artifact.kind === 'binary') throw new Error(`Full pinned source unavailable: ${sourcePath}.`);
+        const saved = await this.capture(diff, { path: sourcePath, side: 'new', start: 1, end: 1 });
+        if (saved.fullFile !== true) throw new Error(`Full pinned source unavailable: ${sourcePath}.`);
         return saved;
     }
     /** При сдаче разрешаем только реальные источники закреплённой версии задачи. */
@@ -97,6 +119,13 @@ export class SavedSources {
                 const location = codeLocationSchema.safeParse(record);
                 if (location.success && patch.range(patch.file(location.data.path, location.data.side), location.data) === null) {
                     const saved = await this.capture(diff, location.data); record.sourceId = saved.id;
+                }
+            }
+            if (record.kind === 'file' && typeof record.path === 'string') {
+                if (typeof record.sourceId === 'string') {
+                    if (sourceFileEvidence(diff, { path: record.path, sourceId: record.sourceId }) === null) throw new Error(`Unknown pinned source: ${record.sourceId}`);
+                } else if (!diff.files.some((file) => file.path === record.path && file.changeType !== 'delete')) {
+                    record.sourceId = (await this.captureFile(diff, record.path)).id;
                 }
             }
             for (const child of Object.values(record)) await visit(child);

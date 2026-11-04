@@ -3,6 +3,7 @@ import { chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(root, '../..');
@@ -12,9 +13,10 @@ const binDir = resolve(distDir, 'bin');
 const DIRTY_SUFFIX = '-dirty';
 
 /**
- * `dist/` — дистрибутив скилла: SKILL.md рядом с `bin/` из двух файлов. Именно `dist`
- * копируется в харнес (`~/.claude/skills/devflow-diff-explain`), чтобы туда не утекали исходники пакета.
- * Команда одна — исполняемый `devflow-diff-explain.mjs`; `devflow-diff-explain-server.mjs` — модуль сервера с зашитым UI,
+ * `dist/` — дистрибутив скилла: SKILL.md рядом с `bin/` из трёх самостоятельных файлов. Именно `dist`
+ * копируется в харнес (`~/.agents/skills/devflow-diff-explain`), чтобы туда не утекали исходники пакета.
+ * Основной CLI — исполняемый `devflow-diff-explain.mjs`; `devflow-diff-explain-arc.mjs` — внешний producer;
+ * `devflow-diff-explain-server.mjs` — модуль сервера с зашитым UI,
  * который CLI грузит `import()` только в `devflow-diff-explain server`. Поэтому петля воркера, дёргающая CLI
  * на каждый вызов, сервер не грузит.
  *
@@ -49,6 +51,21 @@ for (const bundle of bundles) {
     chmodSync(outfile, bundle.mode);
     process.stdout.write(`@sherpa/skill: ${outfile}\n`);
 }
+
+const arcEntry = resolve(binDir, 'devflow-diff-explain-arc.mjs');
+await build({
+    entryPoints: [resolve(root, 'src/arc-entry.mjs')],
+    outfile: arcEntry,
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node22.13',
+    packages: 'bundle',
+    banner: { js: '#!/usr/bin/env node' },
+    logLevel: 'info',
+});
+chmodSync(arcEntry, 0o755);
+process.stdout.write(`@sherpa/skill: ${arcEntry}\n`);
 
 writeVersionFile();
 

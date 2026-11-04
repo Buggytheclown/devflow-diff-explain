@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import type { PrDiff, CodeReader, FileContent } from '@sherpa/protocol';
 import { UI_ENDPOINTS, uiReviewBlobRequestSchema, uiReviewDiffRequestSchema, uiReviewDiffResponseSchema, uiReviewFileContentRequestSchema, uiReviewFileContentResponseSchema } from '@sherpa/protocol';
@@ -8,10 +9,13 @@ import { handlingRpcFailures, rpcFailureResponse, sendJson } from './http.js';
 import type { IterationFeed } from './iteration-feed.js';
 import type { IterationStore } from './iteration-store.js';
 import type { PrMetaCache } from './pr-meta.js';
+import { SnapshotReader } from './snapshot-reader.js';
 import { call, hostOf, messageOf, optionalParam, parseQuery, respond } from './host-http.js';
 
 export interface ReadRoutesOptions {
     host: CodeReader | null;
+    /** Прямая адресация импортированного кода работает до первого пояснения. */
+    codeSnapshot?: (id: string) => PrDiff | null;
     pinnedContent?: (diff: PrDiff, file: PrDiff['files'][number]) => Promise<FileContent | null>;
     iterations?: IterationStore | null;
     iterationFeed?: Pick<IterationFeed, 'active'> | null;
@@ -30,12 +34,17 @@ export function createReadRoutes(options: ReadRoutesOptions): Route[] {
                     uiReviewDiffRequestSchema,
                     {
                         ...optionalParam(ctx, 'diffId'),
-                        ...optionalParam(ctx, 'base'),
-                        ...optionalParam(ctx, 'head'),
+                        ...optionalParam(ctx, 'codeSnapshotId'),
                     },
                     'диффа',
                 );
-                const diff = await diffOfIteration(options, request.diffId);
+                const diff = request.codeSnapshotId === undefined
+                    ? await diffOfIteration(options, request.diffId)
+                    : options.codeSnapshot?.(request.codeSnapshotId) ?? null;
+                if (diff === null) throw new RpcFailure('not_found', 'Эта версия кода не импортирована.');
+                if (request.diffId !== undefined && diff.diffId !== request.diffId) {
+                    throw new RpcFailure('bad_request', 'Версия кода и дифф относятся к разным снимкам.');
+                }
                 return respond(uiReviewDiffResponseSchema, { diff });
             }),
         },
@@ -97,6 +106,24 @@ async function writeBlob(options: ReadRoutesOptions, ctx: StreamContext): Promis
         // Содержимое по этому id измениться не может — тела не нужно.
         ctx.res.writeHead(304, cacheHeaders(etag));
         ctx.res.end();
+        return;
+    }
+
+    // Зарегистрированный локальный адрес всегда идёт через проверенный SHA-256 в БД.
+    // До импорта старый opaque blobId может жить только в сохранённом BlobCache.
+    if (options.host instanceof SnapshotReader) {
+        if (options.host.hasRegisteredBlob(blobId)) {
+            const bytes = await options.host.getBlob(blobId);
+            if (bytes === null) throw new RpcFailure('not_found', 'Сохранённые байты картинки недоступны.');
+            sendBytes(ctx.res, bytes, etag);
+            return;
+        }
+        const legacy = (await options.blobs?.read(blobId)) ?? null;
+        if (legacy === null || (/^[a-fA-F0-9]{64}$/.test(blobId) &&
+            createHash('sha256').update(legacy).digest('hex') !== blobId.toLowerCase())) {
+            throw new RpcFailure('not_found', 'Сохранённые байты картинки недоступны.');
+        }
+        sendBytes(ctx.res, legacy, etag);
         return;
     }
 

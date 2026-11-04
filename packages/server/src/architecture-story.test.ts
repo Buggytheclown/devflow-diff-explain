@@ -1,8 +1,9 @@
 import { checkpointJson } from '@sherpa/fixtures';
 import { afterEach, expect, it, vi } from 'vitest';
-import { architectureStoryFixture } from '@sherpa/fixtures';
+import { architectureStoryFixture, makeFixtureHost } from '@sherpa/fixtures';
 import { architectureOverviewResultSchema, preparationProgress, routeSnapshotSchema, UI_ENDPOINTS, uiReviewRouteResponseSchema } from '@sherpa/protocol';
 import { architectureGuide, validateArchitectureOverview, validateAllFiles } from './architecture-story.js';
+import { checkIndividualFiles, readCheckpoint } from './architecture-checkpoint.js';
 import { startServer } from './test-support.js';
 import type { SherpaServer } from './server.js';
 import { get, makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
@@ -57,6 +58,26 @@ it('продолжение после лимита и рестарта сохр�
     expect((await read(restarted)).snapshot?.stops.map((block) => block.paragraph)).toEqual(before?.stops.map((block) => block.paragraph));
 });
 
+it('задача старой эпохи переиздаётся на исходном диффе после рестарта', async () => {
+    const { server, dir } = await start();
+    await complete(server, fixture.outline, 'route.prepare');
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    const first = files[0]; if (first === undefined) throw new Error('Missing file');
+    await complete(server, { contractVersion: 6, files: [first] }, 'route.prepare');
+    const saved = (await read(server)).snapshot; if (saved === null) throw new Error('Missing snapshot');
+    await server.close();
+    const { openDatabase } = await import('./db.js'); const { databasePathFor } = await import('./paths.js');
+    const db = openDatabase(databasePathFor(dir, 'fixture-medium'));
+    db.prepare("UPDATE meta SET value = '8' WHERE key = 'generation_story_contract_version'").run();
+    db.close();
+    const restarted = (await start(dir)).server;
+    const task = await next(restarted);
+    expect(restarted.route.diffIdForTask(task.id)).toBe(saved.diffId);
+    expect((await read(restarted)).snapshot?.stops.flatMap((block) => block.guidedFiles ?? [])
+        .find((file) => file.fileId === saved.stops[0]?.guidedFiles?.[0]?.fileId)?.explanation).toBe(first.explanation);
+    expect(restarted.queue.listTasks().filter((entry) => entry.status === 'queued')).toHaveLength(0);
+});
+
 it('не принимает потерянные файлы, подменённые ID и подмену файлов при продолжении', () => {
     const bad = structuredClone(fixture.outline);
     const firstBad = bad.stops[0]; if (firstBad === undefined) throw new Error('Missing block');
@@ -75,16 +96,49 @@ it('не принимает потерянные файлы, подменённ�
     expect(routeSnapshotSchema.safeParse(fixture.snapshot).success).toBe(true);
 });
 
+it('ошибки path и дублей изолированы от соседнего файла', () => {
+    const checked = validateArchitectureOverview(JSON.stringify(fixture.outline), fixture.diff);
+    if (!checked.ok) throw new Error(checked.errors.join('\n'));
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    const first = files[0]; const second = files[1];
+    if (first === undefined || second === undefined) throw new Error('Missing files');
+    const raw = checkpointJson({ contractVersion: 6, files: [{ explanation: 'No path' }, first, first, second] });
+    const envelope = readCheckpoint(raw);
+    expect(envelope.ok).toBe(true);
+    if (!envelope.ok) return;
+    const part = checkIndividualFiles(envelope.value.files, fixture.diff, checked.value.stops);
+    expect(part.accepted).toEqual([second.path]);
+    expect(part.errors.map((entry) => entry.path)).toEqual(['[missing path]', first.path, first.path]);
+});
+
 it('ошибка отрисовки отражается в прогрессе, локальный повтор не меняет описание и файлы', async () => {
     const { server } = await start(); await complete(server, fixture.outline, 'route.prepare'); await complete(server, fixture.body, 'route.prepare');
     const saved = (await read(server)).snapshot; if (saved === null) throw new Error('No snapshot');
-    server.route.reportDiagramFailure(saved.snapshotId);
+    if (saved.flow?.status !== 'ready' || saved.flow.diagramHash === undefined) throw new Error('Missing diagram hash');
+    server.route.reportDiagramFailure({ snapshotId: saved.snapshotId, reportVersion: 1, diagramHash: saved.flow.diagramHash, viewIndex: 0, reason: 'Synthetic render failure' });
     expect(preparationProgress((await read(server))).status).toBe('partial');
     await server.route.retryDiagram(saved.snapshotId); await server.route.retryDiagram(saved.snapshotId);
     await complete(server, { flow: fixture.outline.flow }, 'route.prepare');
     expect((await read(server)).snapshot?.stops).toEqual(saved.stops);
     expect(preparationProgress((await read(server))).percent).toBe(100);
     expect(architectureGuide('overview', 'ru')).not.toContain('3–6');
+});
+
+it('устаревший или неполный отчёт отрисовки не скрывает исправленную схему', async () => {
+    const { server } = await start(); await complete(server, fixture.outline, 'route.prepare');
+    const snapshot = (await read(server)).snapshot;
+    if (snapshot?.flow?.status !== 'ready' || snapshot.flow.diagramHash === undefined) throw new Error('Missing diagram');
+    const oldHash = snapshot.flow.diagramHash;
+    const corrected = structuredClone(fixture.outline.flow.diagram);
+    corrected.mermaid += '\n extra[Extra]';
+    await complete(server, { contractVersion: 6, update: { flow: { status: 'ready', diagram: corrected } }, files: [] }, 'route.prepare');
+    const current = (await read(server)).snapshot;
+    if (current?.flow?.status !== 'ready') throw new Error('Missing corrected diagram');
+    expect(current.flow.diagramHash).not.toBe(oldHash);
+    server.route.reportDiagramFailure({ snapshotId: current.snapshotId, reportVersion: 1, diagramHash: oldHash, viewIndex: 0, reason: 'Old render' });
+    server.route.reportDiagramFailure({ snapshotId: snapshot.snapshotId, reportVersion: 1, diagramHash: 'stale', viewIndex: 0, reason: 'Old render' });
+    server.route.reportDiagramFailure({ snapshotId: current.snapshotId, reportVersion: 1, diagramHash: current.flow.diagramHash, viewIndex: 99, reason: 'Wrong view' });
+    expect((await read(server)).snapshot?.flow?.status).toBe('ready');
 });
 
 it('повтор одного блока после общей ошибки не запускает остальные проваленные блоки', async () => {
@@ -123,6 +177,27 @@ it('несколько схем используют общие ID и прове
     expect(validateArchitectureOverview(JSON.stringify(unsafe), fixture.diff).ok).toBe(false);
 });
 
+it('метаданные не принимают ID только из подписи или комментария', () => {
+    const outline = structuredClone(fixture.outline);
+    outline.flow.diagram.mermaid += '\n%% ghost\n request["ghost"]';
+    const stop = outline.stops[0]; if (stop === undefined) throw new Error('Missing block');
+    stop.nodeIds = ['ghost'];
+    const checked = validateArchitectureOverview(JSON.stringify(outline), fixture.diff);
+    expect(checked.ok).toBe(false);
+    if (!checked.ok) expect(checked.errors).toContain('Block architecture node ghost is missing from Mermaid.');
+});
+
+it('параллельная связь требует точный ID и область представления', () => {
+    const outline = structuredClone(fixture.outline);
+    const mermaid = outline.flow.diagram.mermaid + '\n rule --> saved\n rule --> saved';
+    outline.flow.diagram.mermaid = mermaid;
+    outline.flow.diagram.views = [{ title: 'Repeat', mermaid }];
+    outline.flow.diagram.edges = [{ id: 'L_rule_saved_0', change: 'unknown', sources: [], limitation: 'The connection is not confirmed.' }];
+    expect(validateArchitectureOverview(JSON.stringify(outline), fixture.diff).ok).toBe(false);
+    outline.flow.diagram.edges[0] = { id: 'L_rule_saved_0', viewIndex: 0, change: 'unknown', sources: [], limitation: 'The connection is not confirmed.' };
+    expect(validateArchitectureOverview(JSON.stringify(outline), fixture.diff).ok).toBe(true);
+});
+
 it('приложение выводит метаданные из связей блоков и принимает Markdown без повторения узлов', () => {
     const outline = structuredClone(fixture.outline);
     const { nodes: _nodes, ...diagram } = outline.flow.diagram;
@@ -132,7 +207,7 @@ it('приложение выводит метаданные из связей �
     if (!checked.ok) throw new Error(checked.errors.join('\n'));
     expect(checked.value.flow?.status).toBe('ready');
     if (checked.value.flow?.status === 'ready') {
-        expect(checked.value.flow.diagram.nodes.map((node) => node.id)).toEqual([...new Set(outline.stops.flatMap((stop) => stop.nodeIds))]);
+        expect(new Set(checked.value.flow.diagram.nodes.map((node) => node.id))).toEqual(new Set(['request', 'rules', ...outline.stops.flatMap((stop) => stop.nodeIds)]));
     }
     const malformed = { ...raw, stops: raw.stops.map((stop, index) => index === 0 ? { ...stop, nodeIds: ['[bad'] } : stop) };
     expect(validateArchitectureOverview(JSON.stringify(malformed), fixture.diff).ok).toBe(false);
@@ -219,7 +294,9 @@ it('незамкнутое обновление графа/владельцев 
     const { server } = await start(); await complete(server, fixture.outline, 'route.prepare');
     const task = await next(server);
     const before = (await read(server)).snapshot;
-    const broken = { contractVersion: 6, update: { stops: fixture.outline.stops.slice(1) } };
+    const goodFile = fixture.body.stops[0]?.files[0]; if (goodFile === undefined) throw new Error('Missing file');
+    const broken = { contractVersion: 6, update: { stops: fixture.outline.stops.slice(1) },
+        files: [goodFile] };
     expect(server.queue.complete('worker', task.id, checkpointJson(broken)).kind).toBe('rejected');
     expect((await read(server)).snapshot).toEqual(before);
     expect(server.queue.complete('worker', task.id, checkpointJson({ contractVersion: 6, update: { summary: 'Корректный checkpoint.' } })).kind).toBe('accepted');
@@ -319,6 +396,26 @@ it('первый checkpoint публикует overview и все файлы б�
     expect(preparationProgress(await read(server)).percent).toBe(100);
 });
 
+it('пустой дифф завершается без worker-задачи', async () => {
+    const root = await makeTempSherpaDir(); dirs.push(root);
+    const fixtureHost = makeFixtureHost('medium');
+    const diff = { ...await fixtureHost.getDiff(), files: [] };
+    const server = await startServer({ prKey: 'fixture-medium', sherpaDir: root,
+        reviewSourceFactory: () => ({ name: 'empty-diff', host: {
+            getPr: () => fixtureHost.getPr(), getDiff: () => Promise.resolve(diff),
+            listIterations: () => fixtureHost.listIterations(), subscribeVersions: (listener) => fixtureHost.subscribeVersions(listener),
+        } }) });
+    servers.push(server);
+    server.workerRegistry.register('worker', 'codex', 'test');
+    await server.route.warmup();
+    const state = await read(server);
+    expect(state.phase).toBe('ready');
+    expect(state.snapshot?.summary).toContain('изменений нет');
+    expect(state.snapshot?.stops).toEqual([]);
+    expect(preparationProgress(state).status).toBe('ready');
+    expect(server.queue.listTasks()).toHaveLength(0);
+});
+
 it('принимает соседние файлы, хранит квитанцию и исправляет оставшийся после рестарта', async () => {
     const { server, dir } = await start();
     const files = fixture.body.stops.flatMap((block) => block.files);
@@ -362,6 +459,44 @@ it('ошибка исправления готового файла остаёт
     expect(saved?.failure).toContain('999999');
     await server.route.warmup(); await server.route.warmup();
     expect(server.queue.listTasks().filter((entry) => entry.status === 'queued')).toHaveLength(1);
+    await complete(server, { contractVersion: 6, files: [{ ...second, explanation: 'Corrected explanation' }] }, 'route.prepare');
+    await vi.waitFor(async () => { expect((await read(server)).phase).toBe('ready'); });
+});
+
+it('исчерпанная коррекция одного файла не останавливает остальные', async () => {
+    const { server } = await start();
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    const first = files[0]; if (first === undefined) throw new Error('Missing file');
+    await complete(server, fixture.outline, 'route.prepare');
+    const bad = { ...first, annotations: [{ side: 'new', start: 999999, end: 999999, text: 'Bad range' }] };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const task = await next(server);
+        expect(server.queue.complete('worker', task.id, checkpointJson({ contractVersion: 6, files: [bad] })).kind).toBe('partial');
+    }
+    expect((await read(server)).phase).toBe('filling');
+    await complete(server, { contractVersion: 6, files: files.slice(1) }, 'route.prepare');
+    await vi.waitFor(async () => { expect((await read(server)).phase).toBe('failed'); });
+    expect(preparationProgress(await read(server)).files.ready).toBe(files.length - 1);
+});
+
+it('исчерпанную коррекцию готового файла можно повторить без потери принятого текста', async () => {
+    const { server } = await start();
+    const files = fixture.body.stops.flatMap((block) => block.files);
+    const first = files[0]; const second = files[1];
+    if (first === undefined || second === undefined) throw new Error('Missing files');
+    await complete(server, { contractVersion: 6, overview: fixture.outline, files: files.slice(1) }, 'route.prepare');
+    const bad = { ...second, annotations: [{ side: 'new', start: 999999, end: 999999, text: 'Bad range' }] };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const task = await next(server);
+        expect(server.queue.complete('worker', task.id, checkpointJson({ contractVersion: 6,
+            files: attempt === 0 ? [first, bad] : [bad] })).kind).toBe('partial');
+    }
+    const failed = await read(server);
+    expect(failed.phase).toBe('failed');
+    const block = failed.snapshot?.stops.find((entry) => entry.guidedFiles?.some((file) => file.path === second.path));
+    expect(block?.guidedFiles?.find((file) => file.path === second.path)?.explanation).toBe(second.explanation);
+    if (failed.snapshot === null || block === undefined) throw new Error('Missing block');
+    expect(await server.route.fillStop(failed.snapshot.snapshotId, block.planIndex)).toBe('started');
     await complete(server, { contractVersion: 6, files: [{ ...second, explanation: 'Corrected explanation' }] }, 'route.prepare');
     await vi.waitFor(async () => { expect((await read(server)).phase).toBe('ready'); });
 });

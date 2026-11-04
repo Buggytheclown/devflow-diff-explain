@@ -7,7 +7,7 @@ import {
     codeSnapshotInputSchema, codeSnapshotReceiptSchema, sourcesInputSchema,
     imageMimeOf, prDiffSchema, capturedPrSchema,
 } from '@sherpa/protocol';
-import type { CodeSnapshotInput, CodeSnapshotReceipt, FileContent, PrDiff } from '@sherpa/protocol';
+import type { CodeSnapshotInput, CodeSnapshotReceipt, FileContent, FileImage, PrDiff } from '@sherpa/protocol';
 import type { SherpaDatabase, SqlRow } from './db.js';
 import { transaction } from './db.js';
 import { IterationStore } from './iteration-store.js';
@@ -26,7 +26,8 @@ type PreparedSource = Omit<CodeSnapshotInput['sources'][number], 'artifact'> & {
 
 /** Импорт только локальных байтов. Здесь нет клиентов провайдеров и запуска VCS. */
 export class CodeSnapshots {
-    constructor(private readonly db: SherpaDatabase, readonly project: string) {}
+    constructor(private readonly db: SherpaDatabase, readonly project: string,
+        private readonly readLocalBlob?: (blobId: string) => Promise<Uint8Array | null>) {}
 
     get(id: string): Stored | null {
         const row = this.db.prepare('SELECT data FROM code_snapshots WHERE id = ? AND project = ?').get(id, this.project) as SqlRow | undefined;
@@ -43,11 +44,20 @@ export class CodeSnapshots {
         return row === undefined ? null : this.get(String(row.value));
     }
 
-    bytes(hash: string): Uint8Array | null {
-        const row = this.db.prepare('SELECT bytes FROM code_artifacts WHERE hash = ?').get(hash) as SqlRow | undefined;
-        if (row === undefined || !(row.bytes instanceof Uint8Array)) return null;
-        if (digest(row.bytes) !== hash) throw new Error('Stored artifact hash mismatch.');
-        return row.bytes;
+    bytes(blobId: string): Uint8Array | null {
+        const direct = this.db.prepare('SELECT bytes FROM code_artifacts WHERE hash = ?').get(blobId) as SqlRow | undefined;
+        if (direct !== undefined) return verifiedBytes(direct, blobId);
+        const alias = this.db.prepare('SELECT hash FROM code_artifact_aliases WHERE blob_id = ?').get(blobId) as SqlRow | undefined;
+        if (alias === undefined) return null;
+        const hash = String(alias.hash);
+        const target = this.db.prepare('SELECT bytes FROM code_artifacts WHERE hash = ?').get(hash) as SqlRow | undefined;
+        return target === undefined ? null : verifiedBytes(target, hash);
+    }
+
+    /** Адрес уже закреплён в БД: ошибка/пропажа байтов не разрешает fallback к файловому кешу. */
+    hasRegisteredBlob(blobId: string): boolean {
+        return this.db.prepare('SELECT 1 FROM code_artifacts WHERE hash = ?').get(blobId) !== undefined ||
+            this.db.prepare('SELECT 1 FROM code_artifact_aliases WHERE blob_id = ?').get(blobId) !== undefined;
     }
 
     file(diff: PrDiff, fileId: string): FileContent | null {
@@ -84,6 +94,7 @@ export class CodeSnapshots {
         const blobs = new Map<string, Uint8Array>();
         const files: Stored['files'] = [];
         const changes: PrDiff['files'] = [];
+        const aliases = new Map<string, string>();
         const sources: PreparedSource[] = [];
         const paths = new Set<string>();
         const ids = new Set<string>();
@@ -93,8 +104,13 @@ export class CodeSnapshots {
             legacy.diff.files.length !== input.files.length || legacy.diff.files.some((file) => !input.files.some((entry) => entry.path === file.path && entry.oldPath === file.oldPath && entry.changeType === file.changeType)))) {
             throw new Error('This manifest conflicts with the saved inventory or revisions of this diffId.');
         }
-        const load = (artifact: InputArtifact): Promise<Artifact> => loadArtifact(root, artifact, blobs);
-        for (const file of input.files) {
+        const load = artifactLoader(root, blobs);
+        // Импортёр может перечислить те же файлы в другом порядке; старые ссылки и чтение
+        // должны видеть прежнюю последовательность, заданную сохранённым диффом.
+        const historicalOrder = new Map(legacy?.diff.files.map((file, index) => [file.path, index]) ?? []);
+        const orderedFiles = [...input.files].sort((a, b) =>
+            (historicalOrder.get(a.path) ?? 0) - (historicalOrder.get(b.path) ?? 0));
+        for (const file of orderedFiles) {
             const historical = legacy?.diff.files.find((entry) => entry.path === file.path);
             const fileId = historical?.fileId ?? file.fileId ?? file.path;
             if (paths.has(file.path) || ids.has(fileId)) throw new Error(`Duplicate changed file: ${file.path}.`);
@@ -106,9 +122,15 @@ export class CodeSnapshots {
             const before = file.before === null ? null : await load(file.before);
             const after = file.after === null ? null : await load(file.after);
             const binary = before?.kind === 'binary' || after?.kind === 'binary';
+            if (historical !== undefined && historical.binary !== binary) {
+                throw new Error(`This manifest conflicts with saved file metadata for ${file.path} under this diffId.`);
+            }
             const oldText = before === null ? '' : binary ? null : decode(requiredBlob(blobs, before.hash));
             const newText = after === null ? '' : binary ? null : decode(requiredBlob(blobs, after.hash));
             let patch: string | null = file.patch === null ? historical?.patch ?? null : decode(await readArtifact(root, file.patch));
+            if (historical?.patch != null && patch !== historical.patch) {
+                throw new Error(`This manifest conflicts with the saved patch or coordinates of ${file.path} for this diffId.`);
+            }
             const patchOrigin = file.patch === null && registered !== null
                 ? registered.files.find((entry) => entry.fileId === fileId)?.patchOrigin ?? (binary ? 'binary' : 'provided')
                 : binary ? 'binary' : patch === null ? 'generated' : 'provided';
@@ -132,10 +154,13 @@ export class CodeSnapshots {
                 }
             }
             const mime = imageMimeOf(file.path);
+            const image = mime === null ? null : { mime, before: before === null ? null : { blobId: before.hash, size: before.size }, after: after === null ? null : { blobId: after.hash, size: after.size } };
+            if (historical?.image != null) recordImageAliases(historical.image, image, aliases, file.path);
             changes.push({ fileId, path: file.path, oldPath: file.oldPath, changeType: file.changeType, binary,
-                generated: file.generated, patch, additions: patchStats(patch, '+'), deletions: patchStats(patch, '-'),
-                viewed: null, blameUrl: null, hostFileUrl: file.hostFileUrl,
-                image: mime === null ? null : { mime, before: before === null ? null : { blobId: before.hash, size: before.size }, after: after === null ? null : { blobId: after.hash, size: after.size } },
+                generated: historical?.generated ?? file.generated, patch, additions: historical?.additions ?? patchStats(patch, '+'), deletions: historical?.deletions ?? patchStats(patch, '-'),
+                viewed: historical?.viewed ?? null, blameUrl: historical?.blameUrl ?? null,
+                hostFileUrl: historical === undefined ? file.hostFileUrl : historical.hostFileUrl,
+                image: historical?.image ?? image,
             });
             files.push({ fileId, before, after, patchOrigin });
             if (before !== null) sources.push({ path: file.oldPath ?? file.path, revision: input.baseCommit, artifact: before });
@@ -145,24 +170,35 @@ export class CodeSnapshots {
         const diff = prDiffSchema.parse({ diffId: input.diffId, baseCommit: input.baseCommit, headCommit: input.headCommit, files: changes });
         const identity = { project: input.project, baseCommit: input.baseCommit, headCommit: input.headCommit,
             files: changes.map((file, index) => ({ path: file.path, oldPath: file.oldPath, changeType: file.changeType, patchHash: file.patch === null ? null : digest(file.patch), ...files[index] })).sort((a, b) => a.path.localeCompare(b.path)) };
-        const id = digest(JSON.stringify(identity));
+        // Старые ID без diffId остаются адресуемыми при точном повторном импорте. Новые
+        // включают opaque diffId: одинаковые локальные байты могут быть разными версиями.
+        const previousIdentityId = digest(JSON.stringify(identity));
+        const id = registered?.id === previousIdentityId ? previousIdentityId : digest(JSON.stringify({ diffId: input.diffId, ...identity }));
         diff.codeSnapshotId = id;
-        diff.capturedAt = input.capturedAt;
-        diff.metadata = input.pr;
-        const stored = storedSchema.parse({ id, project: input.project, capturedAt: input.capturedAt, pr: input.pr, diff, files });
+        diff.capturedAt = legacy?.diff.capturedAt ?? input.capturedAt;
+        diff.metadata = legacy?.diff.metadata ?? input.pr;
+        const stored = storedSchema.parse({ id, project: input.project, capturedAt: registered?.capturedAt ?? diff.capturedAt,
+            pr: registered?.pr ?? diff.metadata, diff, files });
+        if (this.readLocalBlob !== undefined) {
+            for (const [blobId, hash] of aliases) {
+                const cached = await this.readLocalBlob(blobId);
+                if (cached !== null && digest(cached) !== hash) throw new Error(`Conflicting local image blob: ${blobId}.`);
+            }
+        }
         transaction(this.db, () => {
             const existing = this.forDiff(input.diffId);
             if (existing !== null && existing.id !== id) throw new Error('This diffId already names different immutable bytes.');
             const same = this.get(id);
             if (same !== null && same.diff.diffId !== input.diffId) throw new Error(`These bytes already belong to diffId ${same.diff.diffId}. Reuse that snapshot.`);
             this.saveBlobs(blobs);
+            this.saveAliases(aliases);
             this.db.prepare('INSERT OR IGNORE INTO code_snapshots (id, project, diff_id, data) VALUES (?, ?, ?, ?)').run(id, this.project, input.diffId, JSON.stringify(stored));
             this.saveSources(id, sources);
             const active = this.active();
             const activate = input.activate && (active === null || (registered?.capturedAt ?? input.capturedAt) >= active.capturedAt);
             const iterations = new IterationStore({ db: this.db });
             if (activate) this.db.prepare("UPDATE iterations SET status = 'previous' WHERE status = 'active'").run();
-            iterations.upsert(existing?.diff ?? diff, { diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit, createdAt: legacy?.iteration.createdAt ?? input.capturedAt, status: activate ? 'active' : legacy?.iteration.status ?? 'previous' });
+            iterations.registerSnapshot(existing?.diff ?? diff, id, { diffId: diff.diffId, baseCommit: diff.baseCommit, headCommit: diff.headCommit, createdAt: legacy?.iteration.createdAt ?? input.capturedAt, status: activate ? 'active' : legacy?.iteration.status ?? 'previous' });
             if (activate) {
                 this.db.prepare("UPDATE iterations SET status = 'active' WHERE diff_id = ?").run(input.diffId);
                 this.db.prepare("INSERT INTO meta (key, value) VALUES ('active_code_snapshot', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(id);
@@ -178,9 +214,10 @@ export class CodeSnapshots {
         if (input.project !== this.project || snapshot === null) throw new Error('Unknown code snapshot or project.');
         const blobs = new Map<string, Uint8Array>();
         const sources: PreparedSource[] = [];
+        const load = artifactLoader(root, blobs);
         for (const source of input.sources) {
             if (source.revision !== snapshot.diff.baseCommit && source.revision !== snapshot.diff.headCommit) throw new Error('Source revision is outside this code snapshot.');
-            sources.push({ ...source, artifact: await loadArtifact(root, source.artifact, blobs) });
+            sources.push({ ...source, artifact: await load(source.artifact) });
         }
         transaction(this.db, () => { this.saveBlobs(blobs); this.saveSources(snapshot.id, sources); })();
         return { codeSnapshotId: snapshot.id, diffId: snapshot.diff.diffId, files: snapshot.files.length, sources: sources.length };
@@ -204,13 +241,26 @@ export class CodeSnapshots {
         for (const [hash, bytes] of blobs) this.db.prepare('INSERT OR IGNORE INTO code_artifacts (hash, bytes) VALUES (?, ?)').run(hash, bytes);
     }
 
+    private saveAliases(aliases: Map<string, string>): void {
+        for (const [blobId, hash] of aliases) {
+            // Канонический SHA всегда обозначает собственные байты, даже если ещё не был сохранён.
+            if (/^[a-f0-9]{64}$/.test(blobId) && blobId !== hash) throw new Error(`Conflicting canonical image blob: ${blobId}.`);
+            const direct = this.db.prepare('SELECT bytes FROM code_artifacts WHERE hash = ?').get(blobId) as SqlRow | undefined;
+            if (direct !== undefined && blobId !== hash) throw new Error(`Conflicting canonical image blob: ${blobId}.`);
+            const existing = this.db.prepare('SELECT hash FROM code_artifact_aliases WHERE blob_id = ?').get(blobId) as SqlRow | undefined;
+            if (existing !== undefined && existing.hash !== hash) throw new Error(`Conflicting immutable image blob: ${blobId}.`);
+            if (blobId !== hash) this.db.prepare('INSERT OR IGNORE INTO code_artifact_aliases (blob_id, hash) VALUES (?, ?)').run(blobId, hash);
+        }
+    }
+
     private saveSources(snapshotId: string, sources: PreparedSource[]): void {
         const snapshot = this.get(snapshotId);
         if (snapshot === null) throw new Error('Unknown code snapshot.');
         for (const source of sources) {
             if (source.revision !== snapshot.diff.baseCommit && source.revision !== snapshot.diff.headCommit) throw new Error('Source revision is outside this code snapshot.');
-            const found = this.db.prepare('SELECT hash, kind FROM code_sources WHERE snapshot_id = ? AND revision = ? AND path = ?').get(snapshotId, source.revision, source.path) as SqlRow | undefined;
-            if (found !== undefined && (found.hash !== source.artifact.hash || found.kind !== source.artifact.kind)) throw new Error(`Conflicting immutable source: ${source.path} @ ${source.revision}.`);
+            const found = this.db.prepare('SELECT hash, kind, origin FROM code_sources WHERE snapshot_id = ? AND revision = ? AND path = ?').get(snapshotId, source.revision, source.path) as SqlRow | undefined;
+            const origin = source.origin === undefined ? null : JSON.stringify(source.origin);
+            if (found !== undefined && (found.hash !== source.artifact.hash || found.kind !== source.artifact.kind || found.origin !== origin)) throw new Error(`Conflicting immutable source: ${source.path} @ ${source.revision}.`);
             this.db.prepare('INSERT OR IGNORE INTO code_sources (snapshot_id, revision, path, hash, kind, origin) VALUES (?, ?, ?, ?, ?, ?)').run(snapshotId, source.revision, source.path, source.artifact.hash, source.artifact.kind, source.origin === undefined ? null : JSON.stringify(source.origin));
         }
     }
@@ -239,8 +289,39 @@ async function loadArtifact(root: string, input: InputArtifact, blobs: Map<strin
     return { hash, size: bytes.length, kind: input.kind, ...(input.mode === undefined ? {} : { mode: input.mode }) };
 }
 
+/** Один импорт видит одни байты для каждого локального пути/типа/режима; следующий импорт читает заново. */
+function artifactLoader(root: string, blobs: Map<string, Uint8Array>): (input: InputArtifact) => Promise<Artifact> {
+    const cache = new Map<string, Promise<Artifact>>();
+    return (input: InputArtifact): Promise<Artifact> => {
+        const key = JSON.stringify([input.file, input.kind, input.mode ?? null]);
+        const cached = cache.get(key);
+        if (cached !== undefined) return cached;
+        const loaded = loadArtifact(root, input, blobs);
+        cache.set(key, loaded);
+        return loaded;
+    };
+}
+
 function requiredBlob(blobs: Map<string, Uint8Array>, hash: string): Uint8Array {
     const bytes = blobs.get(hash); if (bytes === undefined) throw new Error('Missing import bytes.'); return bytes;
+}
+function verifiedBytes(row: SqlRow, hash: string): Uint8Array {
+    if (!(row.bytes instanceof Uint8Array) || digest(row.bytes) !== hash) throw new Error('Stored artifact hash mismatch.');
+    return row.bytes;
+}
+function recordImageAliases(historical: FileImage, imported: FileImage | null, aliases: Map<string, string>, filePath: string): void {
+    if (imported === null) throw new Error(`This manifest conflicts with saved image addresses for ${filePath} under this diffId.`);
+    if (historical.mime !== imported.mime) throw new Error(`This manifest conflicts with saved image addresses for ${filePath} under this diffId.`);
+    for (const side of ['before', 'after'] as const) {
+        const oldSide = historical[side], newSide = imported[side];
+        if ((oldSide === null) !== (newSide === null) || (oldSide !== null && newSide !== null && oldSide.size !== newSide.size)) {
+            throw new Error(`This manifest conflicts with saved image addresses for ${filePath} under this diffId.`);
+        }
+        if (oldSide === null || newSide === null || oldSide.blobId === newSide.blobId) continue;
+        const previous = aliases.get(oldSide.blobId);
+        if (previous !== undefined && previous !== newSide.blobId) throw new Error(`Conflicting immutable image blob: ${oldSide.blobId}.`);
+        aliases.set(oldSide.blobId, newSide.blobId);
+    }
 }
 function decode(bytes: Uint8Array): string { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
 function digest(value: string | Uint8Array): string { return createHash('sha256').update(value).digest('hex'); }

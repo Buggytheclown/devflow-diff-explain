@@ -23,8 +23,6 @@ export function readCheckpoint(raw: string) {
     const parsed = parseResult(raw, checkpointEnvelopeSchema, 'checkpoint');
     if (!parsed.ok) return parsed;
     const { files = [], ...structure } = parsed.value;
-    const paths = files.map((file) => file !== null && typeof file === 'object' && 'path' in file ? file.path : undefined);
-    if (paths.some((path) => typeof path !== 'string') || new Set(paths).size !== paths.length) return { ok: false as const, errors: ['Return a path for each file, without duplicates.'] };
     return { ok: true as const, value: { body: parsed.value, files, structure: JSON.stringify({ ...internalEvidence(structure) as object, files: [] }) } };
 }
 
@@ -95,12 +93,19 @@ export function checkIndividualFiles(files: unknown[], diff: PrDiff, blocks: Par
     const errors: { path: string; errors: string[] }[] = [];
     const fillings: ExplanationFilling[] = [];
     const validate = createFileValidator(diff, blocks, assignment);
-    for (const file of files) {
+    const paths = files.map((file) => file !== null && typeof file === 'object' && 'path' in file && typeof file.path === 'string' ? file.path : null);
+    const counts = new Map<string, number>();
+    for (const path of paths) if (path !== null) counts.set(path, (counts.get(path) ?? 0) + 1);
+    for (const [index, file] of files.entries()) {
         const path = file !== null && typeof file === 'object' && 'path' in file && typeof file.path === 'string' ? file.path : '[missing path]';
+        if ((counts.get(path) ?? 0) > 1) {
+            errors.push({ path, errors: [`files[${String(index)}].path: Return each file path once: ${path}.`] });
+            continue;
+        }
         const parsed = explainedFileWorkerResultSchema.safeParse(file);
         const checked = parsed.success
             ? validate(internalEvidence(parsed.data))
-            : { ok: false as const, errors: parsed.error.issues.map((issue) => `${path}.${issue.path.join('.')}: ${issue.message}`) };
+            : { ok: false as const, errors: parsed.error.issues.map((issue) => `files[${String(index)}]${issue.path.length === 0 ? '' : `.${issue.path.join('.')}`}: ${issue.message}`) };
         if (checked.ok) { accepted.push(path); fillings.push(checked.value); }
         else errors.push({ path, errors: checked.errors });
     }

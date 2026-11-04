@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SherpaDatabase } from './db.js';
 import { openDatabase } from './db.js';
+import { MIGRATIONS, SCHEMA_VERSION_KEY } from './migrations.js';
 import { IterationStore } from './iteration-store.js';
 import { makeTempSherpaDir, removeTempSherpaDir } from './test-support.js';
 
@@ -148,6 +149,17 @@ describe('хранилище итераций', () => {
         } finally {
             stderr.mockRestore();
         }
+    });
+
+    it('отказывается открыть более новую схему до первой записи', () => {
+        const db = open();
+        db.prepare('INSERT INTO migrations (name, applied_at) VALUES (?, ?)').run('future-migration', '2026-11-05T00:00:00.000Z');
+        db.prepare('UPDATE meta SET value = ? WHERE key = ?').run(String(MIGRATIONS.length + 1), SCHEMA_VERSION_KEY);
+        db.close(); opened.splice(opened.indexOf(db), 1);
+        expect(() => openDatabase(file)).toThrow('newer or incompatible');
+        const check = openDatabase(file, [...MIGRATIONS, { name: 'future-migration', sql: 'SELECT 1;' }]);
+        opened.push(check);
+        expect(check.prepare('SELECT value FROM meta WHERE key = ?').get(SCHEMA_VERSION_KEY)?.value).toBe(String(MIGRATIONS.length + 1));
     });
 
 });
