@@ -240,7 +240,7 @@ it('установленный Arc producer запускает нативный 
     const arc = join(fakeBin, 'arc');
     const ya = join(fakeBin, 'ya');
     writeFileSync(arc, `#!/usr/bin/env node\nconst a=process.argv.slice(2); if(a[0]==='info') console.log(JSON.stringify({repository:'arcadia'})); else if(a[0]==='root') console.log(${JSON.stringify(checkout)}); else if(a[0]==='diff') console.log(JSON.stringify([{names:[]}])); else process.exitCode=2;\n`, { mode: 0o755 });
-    writeFileSync(ya, `#!/usr/bin/env node\nconst a=process.argv.slice(2); if(a[3]==='pr') console.log(JSON.stringify([{id:39933879,published:true,pull_request_id:16729612}])); else if(a[3]==='diff') console.log(JSON.stringify({id:39933879,commit_ids:{base:'${'a'.repeat(40)}',merge:'${'b'.repeat(40)}'}})); else process.exitCode=2;\n`, { mode: 0o755 });
+    writeFileSync(ya, `#!/usr/bin/env node\nconst a=process.argv.slice(2); if(a[3]==='pr') console.log(JSON.stringify([{id:39933879,published:false,pull_request_id:16729612}])); else if(a[3]==='diff') console.log(JSON.stringify({id:39933879,commit_ids:{base:'${'a'.repeat(40)}',merge:'${'b'.repeat(40)}'}})); else process.exitCode=2;\n`, { mode: 0o755 });
     try {
         const { SHERPA_SERVER_BIN: _bin, SHERPA_PR: _pr, SHERPA_WORKER_ID: _worker, ...inherited } = process.env;
         const result = spawnSync(process.execPath, [join(skill, 'bin', 'devflow-diff-explain-arc.mjs'), '16729612', '--arc-dir', checkout, '--no-open'], {

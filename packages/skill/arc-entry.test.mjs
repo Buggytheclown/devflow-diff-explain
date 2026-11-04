@@ -18,7 +18,7 @@ it('accepts a PR number or URL with one native checkout directory', () => {
     expect(() => parseArcEntryArgs([pr, '--diff-set', 'draft'])).toThrow('positive numeric');
 });
 
-it('pins latest published native diff, exports it, invokes standalone CLI, and removes private export', async () => {
+it('pins the latest diff even when it is a draft, exports it, invokes standalone CLI, and removes private export', async () => {
     const calls = [];
     const output = [];
     let manifest;
@@ -31,7 +31,7 @@ it('pins latest published native diff, exports it, invokes standalone CLI, and r
             { id: 39940000, pull_request_id: 16729612, published: false },
             { id: 39898740, pull_request_id: 16729612, published: true },
         ]), stderr: '' };
-        if (file === 'ya' && args[3] === 'diff') return { status: 0, stdout: JSON.stringify({ id: 39933879, commit_ids: { base, merge: head } }), stderr: '' };
+        if (file === 'ya' && args[3] === 'diff') return { status: 0, stdout: JSON.stringify({ id: 39940000, pull_request_id: 16729612, published: false, commit_ids: { base, merge: head } }), stderr: '' };
         if (file === process.execPath) return { status: 0, stdout: 'http://127.0.0.1:4000/#t=new&code=pinned\n', stderr: '' };
         throw new Error(`Unexpected command: ${file} ${args.join(' ')}`);
     };
@@ -49,7 +49,10 @@ it('pins latest published native diff, exports it, invokes standalone CLI, and r
         err: (text) => output.push(`ERROR: ${text}`),
     });
     expect(code).toBe(0);
-    expect(exportOptions).toMatchObject({ cwd: '/arc/billing', project: `arcanum-${pr}`, diffId: '39933879', baseCommit: base, headCommit: head });
+    expect(exportOptions).toMatchObject({ cwd: '/arc/billing', project: `arcanum-${pr}`, diffId: '39940000', baseCommit: base, headCommit: head });
+    expect(calls.find((call) => call.file === 'ya' && call.args[3] === 'diff').args).toEqual([
+        'tool', 'gena-arcanum-cli', '--json', 'diff', 'get', '39940000', '--fields', 'id,commit_ids(base,merge)',
+    ]);
     expect(calls.find((call) => call.file === process.execPath).args).toEqual([
         '/installed skill/bin/devflow-diff-explain.mjs', 'up', '--snapshot', manifest,
         '--harness', 'codex', '--model', 'gpt-6', '--lang', 'ru', '--no-open',
@@ -58,27 +61,53 @@ it('pins latest published native diff, exports it, invokes standalone CLI, and r
     await expect(fs.stat(path.dirname(manifest))).rejects.toThrow();
 });
 
-it('selects an explicitly named published iteration and refuses a draft', async () => {
-    const make = async (diffSet) => {
-        const errors = [];
-        let exported = false;
-        const code = await runArcEntry([pr, '--diff-set', diffSet], {
+it('selects a draft-only PR and an explicitly named older published or draft iteration', async () => {
+    async function select(rows, requestedDiffSet) {
+        let exported;
+        const calls = [];
+        await runArcEntry([pr, ...(requestedDiffSet === undefined ? [] : ['--diff-set', requestedDiffSet])], {
+            cwd: '/arc/billing',
+            invoke: (file, args) => {
+                calls.push({ file, args });
+                if (file === 'arc') return { status: 0, stdout: JSON.stringify({ repository: 'arcadia' }), stderr: '' };
+                if (file === 'ya' && args[3] === 'pr') return { status: 0, stdout: JSON.stringify(rows), stderr: '' };
+                if (file === 'ya' && args[3] === 'diff') return { status: 0, stdout: JSON.stringify({ id: Number(args[5]), commit_ids: { base, merge: head } }), stderr: '' };
+                throw new Error('unexpected command');
+            },
+            exportSnapshot: async (options) => { exported = options; throw new Error('selection checked'); },
+            out: () => undefined, err: () => undefined,
+        });
+        return { exported, calls };
+    }
+    const draftOnly = [{ id: 39940000, published: false }];
+    expect((await select(draftOnly)).exported).toMatchObject({ diffId: '39940000', baseCommit: base, headCommit: head });
+    const mixed = [
+        { id: 39898740, pull_request_id: 16729612, published: false },
+        { id: 39933879, pull_request_id: 16729612, published: true },
+        { id: 39940000, pull_request_id: 16729612, published: false },
+    ];
+    expect((await select(mixed, '39933879')).exported).toMatchObject({ diffId: '39933879' });
+    expect((await select(mixed, '39898740')).exported).toMatchObject({ diffId: '39898740' });
+});
+
+it('rejects a diff-set from another PR even if a native list or detail misreports it', async () => {
+    const errors = [];
+    let exported = false;
+    const code = await runArcEntry([pr, '--diff-set', '39940000'], {
         cwd: '/arc/billing',
         invoke: (file, args) => {
             if (file === 'arc') return { status: 0, stdout: JSON.stringify({ repository: 'arcadia' }), stderr: '' };
             if (file === 'ya' && args[3] === 'pr') return { status: 0, stdout: JSON.stringify([
-                { id: 39933879, published: true }, { id: 39940000, published: false },
+                { id: 39940000, pull_request_id: 16729612, published: false },
             ]), stderr: '' };
-            if (file === 'ya' && args[3] === 'diff') return { status: 0, stdout: JSON.stringify({ id: 39933879, commit_ids: { base, merge: head } }), stderr: '' };
-            return { status: 0, stdout: '', stderr: '' };
+            return { status: 0, stdout: JSON.stringify({ id: 39940000, pull_request_id: 999, published: false, commit_ids: { base, merge: head } }), stderr: '' };
         },
-            exportSnapshot: async () => { exported = true; throw new Error('export reached'); },
-            out: () => undefined, err: (text) => errors.push(text),
-        });
-        return { code, exported, errors: errors.join('') };
-    };
-    expect(await make('39940000')).toMatchObject({ code: 1, exported: false });
-    expect(await make('39933879')).toMatchObject({ code: 1, exported: true, errors: expect.stringContaining('export reached') });
+        exportSnapshot: async () => { exported = true; throw new Error('unexpected export'); },
+        out: () => undefined, err: (text) => errors.push(text),
+    });
+    expect(code).toBe(1);
+    expect(exported).toBe(false);
+    expect(errors.join('')).toContain('does not belong to PR');
 });
 
 it('preserves native Arc failure detail and tells a caller outside Arc how to select a checkout', async () => {
@@ -101,8 +130,8 @@ it('keeps a private export when the local import command fails', async () => {
             cwd: '/arc/billing',
             invoke: (file, args) => {
                 if (file === 'arc') return { status: 0, stdout: JSON.stringify({ repository: 'arcadia' }), stderr: '' };
-                if (file === 'ya' && args[3] === 'pr') return { status: 0, stdout: JSON.stringify([{ id: 39933879, published: true }]), stderr: '' };
-                if (file === 'ya' && args[3] === 'diff') return { status: 0, stdout: JSON.stringify({ id: 39933879, commit_ids: { base, merge: head } }), stderr: '' };
+                if (file === 'ya' && args[3] === 'pr') return { status: 0, stdout: JSON.stringify([{ id: 39933879, pull_request_id: 16729612, published: true }]), stderr: '' };
+                if (file === 'ya' && args[3] === 'diff') return { status: 0, stdout: JSON.stringify({ id: 39933879, pull_request_id: 16729612, published: true, commit_ids: { base, merge: head } }), stderr: '' };
                 return { status: 1, stdout: '', stderr: 'import failed' };
             },
             exportSnapshot: async () => {

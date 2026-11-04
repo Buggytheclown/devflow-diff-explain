@@ -15,7 +15,7 @@ For an Arcanum PR, run the installed skill from an available Arc checkout or pas
 node '<skill>/bin/devflow-diff-explain-arc.mjs' '<PR number or https://a.yandex-team.ru/review/number>' --arc-dir '<narrow project directory in Arc checkout>' --lang '<ru|en>'
 ```
 
-The entry command uses native `arc` and `ya tool gena-arcanum-cli` to pin the latest published diff-set, export its exact bytes and import them into the local application. Add `--diff-set <published ID>` to select an older published iteration; `--harness`, exact `--model`, and `--no-open` also pass through. Run the printed `node ...` commands for later calls. Do not assume a `devflow-diff-explain` executable is on PATH.
+The entry command uses native `arc` and `ya tool gena-arcanum-cli` to pin the latest diff-set, including a draft, export its exact bytes and import them into the local application. Add `--diff-set <ID>` to select a specific iteration; `--harness`, exact `--model`, and `--no-open` also pass through. Run the printed `node ...` commands for later calls. Do not assume a `devflow-diff-explain` executable is on PATH.
 
 For other providers or local changes, export the complete inventory and exact old/new bytes into a private directory using native tools. Preserve binary, symlink target and gitlink identity bytes, plus the original patch or enough full sides to generate it. Capture pinned sources used as evidence. Include all pages of the provider's inventory.
 

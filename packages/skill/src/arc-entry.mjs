@@ -34,7 +34,7 @@ export async function runArcEntry(argv, deps = {}) {
         }
         if (info?.repository !== 'arcadia') throw new Error(`Expected an Arcadia checkout at ${cwd}; got ${String(info?.repository)}.`);
 
-        const pin = resolvePublishedPin(options.prId, options.diffSet, cwd, invoke);
+        const pin = resolveDiffPin(options.prId, options.diffSet, cwd, invoke);
         manifest = await (deps.exportSnapshot ?? exportArcSnapshot)({
             cwd,
             baseCommit: pin.baseCommit,
@@ -88,7 +88,7 @@ export function parseArcEntryArgs(argv) {
     if (positionals.length !== 1) throw new Error(`Pass one PR number or URL.\n${usage()}`);
     const prId = parsePrId(positionals[0]);
     const diffSet = values['diff-set'];
-    if (diffSet !== undefined && !DIFF_SET.test(diffSet)) throw new Error('--diff-set expects a positive numeric published diff-set ID.');
+    if (diffSet !== undefined && !DIFF_SET.test(diffSet)) throw new Error('--diff-set expects a positive numeric diff-set ID.');
     if (values.lang !== undefined && values.lang !== 'ru' && values.lang !== 'en') throw new Error('--lang expects ru or en.');
     if (values['arc-dir'] === '') throw new Error('--arc-dir needs a checkout directory.');
     return {
@@ -113,21 +113,22 @@ function parsePrId(value) {
     throw new Error(`Expected an Arcanum PR number or https://a.yandex-team.ru/review/<number>.\n${usage()}`);
 }
 
-function resolvePublishedPin(prId, requestedDiffSet, cwd, invoke) {
+function resolveDiffPin(prId, requestedDiffSet, cwd, invoke) {
     const rows = parseJson(runNative(invoke, 'ya', ['tool', 'gena-arcanum-cli', '--json', 'pr', 'diffs', prId], cwd));
     if (!Array.isArray(rows)) throw new Error('The native PR diff-set list is invalid.');
-    const published = rows.filter((row) => row?.published === true && DIFF_SET.test(String(row.id)) &&
+    const candidates = rows.filter((row) => DIFF_SET.test(String(row?.id)) &&
         (row.pull_request_id === undefined || String(row.pull_request_id) === prId));
     const selected = requestedDiffSet === undefined
-        ? published.reduce((latest, row) => latest === null || BigInt(row.id) > BigInt(latest.id) ? row : latest, null)
-        : published.find((row) => String(row.id) === requestedDiffSet);
-    if (selected === null || selected === undefined) throw new Error(`PR ${prId} has no matching published diff-set.`);
+        ? candidates.reduce((latest, row) => latest === null || BigInt(row.id) > BigInt(latest.id) ? row : latest, null)
+        : candidates.find((row) => String(row.id) === requestedDiffSet);
+    if (selected === null || selected === undefined) throw new Error(`PR ${prId} has no matching diff-set.`);
     const diffId = String(selected.id);
     const detail = parseJson(runNative(invoke, 'ya', ['tool', 'gena-arcanum-cli', '--json', 'diff', 'get', diffId, '--fields', 'id,commit_ids(base,merge)'], cwd));
     const baseCommit = detail?.commit_ids?.base;
     const headCommit = detail?.commit_ids?.merge;
-    if (String(detail?.id) !== diffId || !HASH.test(baseCommit) || !HASH.test(headCommit)) {
-        throw new Error(`Published diff-set ${diffId} lacks a valid base/merge commit pair.`);
+    if (String(detail?.id) !== diffId || (detail?.pull_request_id !== undefined && String(detail.pull_request_id) !== prId) ||
+        !HASH.test(baseCommit) || !HASH.test(headCommit)) {
+        throw new Error(`Diff-set ${diffId} does not belong to PR ${prId} or lacks a valid base/merge commit pair.`);
     }
     return { diffId, baseCommit, headCommit };
 }
@@ -158,7 +159,7 @@ async function removeTemporaryExport(manifest) {
 }
 
 function usage() {
-    return `Usage: node <installed skill>/bin/${ENTRY_NAME} <PR number or Arcanum URL> --arc-dir <narrow Arc checkout directory> [--diff-set <published ID>] [--harness <name>] [--model <ID>] [--lang ru|en] [--no-open]\n`;
+    return `Usage: node <installed skill>/bin/${ENTRY_NAME} <PR number or Arcanum URL> --arc-dir <narrow Arc checkout directory> [--diff-set <ID>] [--harness <name>] [--model <ID>] [--lang ru|en] [--no-open]\n`;
 }
 
 if (process.argv[1] !== undefined && path.basename(process.argv[1]) === ENTRY_NAME) {
