@@ -7,6 +7,7 @@ import { openDatabase, transaction, afterDatabaseCommit } from './db.js';
 import { CodeSnapshots } from './code-snapshots.js';
 import { IterationStore } from './iteration-store.js';
 import { prDiffSchema } from '@sherpa/protocol';
+import { parseUnifiedPatch } from '@sherpa/protocol/diff';
 import { SavedSources, sourceFileEvidence, withSavedSources } from './saved-sources.js';
 import { SnapshotReader } from './snapshot-reader.js';
 import type { CodeSnapshotInput, CodeReader } from '@sherpa/protocol';
@@ -514,4 +515,36 @@ it('локальный cache старого blobId проверяется до �
     expect(db.prepare('SELECT count(*) AS n FROM code_snapshots').get()?.n).toBe(0);
     expect(db.prepare('SELECT count(*) AS n FROM code_artifacts').get()?.n).toBe(0);
     expect(db.prepare('SELECT count(*) AS n FROM code_artifact_aliases').get()?.n).toBe(0);
+});
+
+
+it('диагностика malformed не отклоняет исторически допустимую нормализацию пустой стороны', async () => {
+    const { input, root, manifest, snapshots, write } = await setup();
+    await fs.writeFile(path.join(root, 'old'), '');
+    await fs.writeFile(path.join(root, 'new'), 'new\n');
+    // diff/applyPatch нормализует заявленную 1 в 0, если у стороны нет строк тела.
+    const patch = '@@ -1 +1 @@\n+new';
+    expect(parseUnifiedPatch(patch).malformed).toBe(true);
+    await fs.writeFile(path.join(root, 'provided.patch'), patch);
+    firstFile(input).patch = 'provided.patch';
+    await write();
+    const receipt = await snapshots.importSnapshot(manifest);
+    const active = snapshots.active(); if (active === null) throw new Error('Missing snapshot');
+    expect(active.diff.files[0]?.patch).toBe(patch);
+    expect(snapshots.file(active.diff, 'src/a.ts')).toEqual({ oldText: '', newText: 'new\n' });
+    expect(await snapshots.importSnapshot(manifest)).toEqual(receipt);
+});
+
+it('сохранённый усечённый legacy patch остаётся читаемым и не переписывается', async () => {
+    const { db, input, snapshots } = await setup();
+    const patch = '@@ -1,2 +1,2 @@\n?unknown\n';
+    const diff = prDiffSchema.parse({ diffId: input.diffId, baseCommit: input.baseCommit, headCommit: input.headCommit,
+        files: [{ fileId: 'legacy-id', path: 'src/a.ts', oldPath: null, changeType: 'modify', binary: false,
+            generated: false, additions: 0, deletions: 0, patch, viewed: null, blameUrl: null, hostFileUrl: null }] });
+    const iterations = new IterationStore({ db });
+    iterations.upsert(diff, { diffId: input.diffId, baseCommit: input.baseCommit, headCommit: input.headCommit,
+        createdAt: input.capturedAt, status: 'active' });
+    const before = db.prepare('SELECT diff_json FROM iterations WHERE diff_id = ?').get(input.diffId)?.diff_json;
+    expect((await new SnapshotReader(snapshots, iterations).getDiff()).files[0]).toMatchObject({ fileId: 'legacy-id', patch });
+    expect(db.prepare('SELECT diff_json FROM iterations WHERE diff_id = ?').get(input.diffId)?.diff_json).toBe(before);
 });

@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { lowlight } from './languages.js';
+
+afterEach(() => { vi.restoreAllMocks(); });
 
 import type { LanguageId, SyntaxKind } from './model.js';
 import { highlightable, highlightText, languageByName, languageOf, tokenizeLine } from './syntax.js';
@@ -314,5 +317,22 @@ describe('предохранитель по длине', () => {
 
     it('сгенерированные данные — нет: фрагмент длиннее порога целиком', () => {
         expect(highlightable(new Array<string>(2000).fill('y'.repeat(200)))).toBe(false);
+    });
+});
+
+
+describe('необязательное оформление', () => {
+    it('ошибка лексера возвращает пустые токены каждой строки', () => {
+        vi.spyOn(lowlight, 'highlight').mockImplementation(() => { throw new Error('Injected lexer failure'); });
+        expect(highlightText('const a = 1;\n\n', 'typescript')).toEqual([[], [], []]);
+    });
+
+    it('ошибка преобразования после первого токена не публикует частичную подсветку', () => {
+        const tree = { type: 'root' as const, children: [
+            { type: 'element' as const, tagName: 'span', properties: { className: ['hljs-keyword'] }, children: [{ type: 'text' as const, value: 'const' }] },
+            { type: 'text' as const, get value(): string { throw new Error('Injected token conversion failure'); } },
+        ], data: { language: 'typescript', relevance: 1 } };
+        vi.spyOn(lowlight, 'highlight').mockReturnValue(tree);
+        expect(highlightText('const a\nsecond', 'typescript')).toEqual([[], []]);
     });
 });

@@ -203,12 +203,14 @@ function registered(name: string): LanguageId | null {
  */
 export function highlightText(text: string, language: LanguageId): SyntaxToken[][] {
     const lines: SyntaxToken[][] = text.split('\n').map(() => []);
-    if (!lowlight.registered(language)) {
-        return lines;
+    try {
+        if (!lowlight.registered(language)) return lines;
+        walk(lowlight.highlight(language, text).children, null, lines, { line: 0, column: 0 }, language);
+        return lines.map(merge);
+    } catch {
+        // Не публикуем даже уже накопленные токены: ошибка оформления не закрывает код.
+        return lines.map(() => []);
     }
-
-    walk(lowlight.highlight(language, text).children, null, lines, { line: 0, column: 0 }, language);
-    return lines.map(merge);
 }
 
 /** Токены одной строки — тонкая обёртка над `highlightText` для одиночных строк. */

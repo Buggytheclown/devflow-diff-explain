@@ -40,6 +40,6 @@ pnpm --filter @sherpa/ui dev
 
 Dev-запуск fixture-ключа экспортирует синтетические байты и использует обычный importer; в production-бандле фикстурного провайдера нет. Сервер печатает порт и ссылку с токеном. Vite проксирует `/api` на `SHERPA_SERVER` или сервер из манифеста в `~/.sherpa/servers`. Открывай `http://localhost:5173/#t=<token>`. Галерея без сервера: `http://localhost:5173/gallery.html`.
 
-Для браузерных тестов нужен Chromium Playwright. Можно указать установленный бинарник через `SHERPA_E2E_EXECUTABLE_PATH`. E2E самостоятельно собирают UI/CLI и поднимают серверы в временных каталогах.
+Для фоновых браузерных тестов установи Chromium Headless Shell: `pnpm --filter @sherpa/e2e exec playwright install chromium --only-shell`. Обычно `SHERPA_E2E_EXECUTABLE_PATH` не нужен; на macOS свой бинарник должен быть `chrome-headless-shell`, а не браузер из `.app`, который мелькает в Dock даже с `--headless`. Если задан `PLAYWRIGHT_BROWSERS_PATH`, используй его и при установке, и при запуске. Для отладки с окном установи полный Chromium (`pnpm --filter @sherpa/e2e exec playwright install chromium`) и добавь `--headed` без `SHERPA_E2E_EXECUTABLE_PATH`. E2E самостоятельно собирают UI/CLI и поднимают серверы во временных каталогах.
 
 Контракты, язык, дизайн и обновление документации описаны в [AGENTS.md](AGENTS.md). Требования к продукту — в [единственной спецификации](docs/spec.md).

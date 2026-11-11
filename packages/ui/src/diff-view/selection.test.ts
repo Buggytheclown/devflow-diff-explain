@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { DiffFileModel } from '../diff/model.js';
 import { parseFileDiff } from '../diff/parse.js';
-import { expandAllGaps, expandFileContext } from './expand.js';
+import { expandFileContext } from './expand.js';
 import type { LineKey, LineSelection } from './selection.js';
 import { lineKey, selectedLines } from './selection.js';
 
@@ -81,7 +81,7 @@ describe('выделение строк', () => {
         const range = selection('d21', 'a21');
         const before = selectedTexts(model, range);
 
-        const expanded = expandFileContext(model, CONTENT, expandAllGaps(model, new Map()));
+        const expanded = expandFileContext(model, CONTENT);
         expect(selectedTexts(expanded, range)).toEqual(before);
     });
 

@@ -14,6 +14,7 @@ import { FlowDiagram, ExplanationExample } from '../../story/flow-diagram.tsx';
 import { OverviewSkeleton, Preparation } from '../../story/preparation.tsx';
 import { GuidedDocument } from '../../story/guided-document.tsx';
 import { ReadFile } from '../../story/read-file.tsx';
+import { DiffRows } from '../../diff-view/diff-rows.tsx';
 import { SavedSourceContent } from '../../story/saved-source.tsx';
 import { StoryDocument } from '../../story/app.tsx';
 import { ChatPanel, ChatSelectionContext } from '../../components/chat-panel.tsx';
@@ -87,6 +88,8 @@ export const STORY_STATES: readonly GalleryState[] = [
             origin: { url: 'https://example.test/process', capturedAt: '2026-11-03T10:00:00.000Z', scope: 'Описание процесса' } }} onReadFull={noop} /> },
     { id: 'story-source-limit', group: 'Рассказ', title: 'Известное ограничение без фиктивного источника',
         render: () => <main className="story-main"><StoryDocument snapshot={{ ...modern, stops: [], summaryEvidence: { claims: [{ quote: modern.summary, sources: [], limitation: 'Единицы поля не определены в доступном фрагменте.' }] } }} onAsk={noop} /></main> },
+    { id: 'file-expand-error', group: 'По диффу', title: 'Ошибка раскрытия файла · готовый дифф и локальный повтор',
+        render: () => <main className="story-main"><div className="story-code file-card"><header><code>{diff.files[0]?.path}</code></header><p role="alert">Не удалось загрузить контекст файла. <button className="ctl">Повторить загрузку</button></p>{diff.files[0] === undefined ? null : <DiffRows model={parseFileDiff(toParseRequest(diff.files[0]))} mode="unified" selection={null} />}</div></main> },
     { id: 'story-source-error', group: 'Рассказ', title: 'Ошибка одного источника и локальный повтор',
         render: () => <main className="story-main"><div className="story-code"><header><code>src/service.ts · После · 12–18</code></header><p role="alert">Не удалось загрузить источник. <button className="ctl">Повторить загрузку</button></p></div></main> },
     { id: 'story-return', group: 'Рассказ', title: 'Возврат к разделу из полного диффа',

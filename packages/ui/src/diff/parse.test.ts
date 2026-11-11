@@ -1,6 +1,11 @@
 import { FIXTURE_NAMES, fixtureIteration } from '@sherpa/fixtures';
 import type { FileDiff } from '@sherpa/protocol';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PATCH_CASES } from '../../../protocol/src/diff/patch-cases.js';
+import { lowlight } from './languages.js';
+import * as wordDiff from './word-diff.js';
+
+afterEach(() => { vi.restoreAllMocks(); });
 
 import type { DiffFileModel, DiffGap, DiffHunk } from './model.js';
 import { toParseRequest } from './model.js';
@@ -366,5 +371,47 @@ describe('сериализуемость модели', () => {
                 expect(structuredClone(model)).toEqual(model);
             }
         }
+    });
+});
+
+
+describe('UI-проекция общего корпуса', () => {
+    for (const item of PATCH_CASES) it(item.name, () => {
+        const model = modelOf(item.patch);
+        expect(hunks(model).flatMap((hunk) => hunk.lines).map((line) =>
+            [line.kind === 'add' ? `+${line.text}` : line.kind === 'del' ? `-${line.text}` : line.malformed ? line.text : line.text === '' ? '' : ` ${line.text}`, line.oldLine, line.newLine],
+        )).toEqual(item.rows);
+        expect(model.malformed).toBe(item.malformed);
+    });
+
+    it('сбой лексера и word-diff оставляет текст, координаты и EOF-маркеры', () => {
+        vi.spyOn(lowlight, 'highlight').mockImplementation(() => { throw new Error('Injected lexer failure'); });
+        vi.spyOn(wordDiff, 'diffWords').mockImplementation(() => { throw new Error('Injected word-diff failure'); });
+        const model = modelOf('@@ -1 +1 @@\n-const old = 1;\n\\ No newline at end of file\n+const next = 2;\n\\ No newline at end of file\n');
+        expect(hunks(model)[0]?.lines).toEqual([
+            { kind: 'del', oldLine: 1, newLine: null, text: 'const old = 1;', noNewline: true },
+            { kind: 'add', oldLine: null, newLine: 1, text: 'const next = 2;', noNewline: true },
+        ]);
+        expect(model.malformed).toBe(false);
+    });
+});
+
+
+describe('координаты контекста рядом с нулевыми диапазонами', () => {
+    for (const item of [
+        { name: 'вставка в начало', patch: '@@ -0,0 +1 @@\n+added\n', leading: 0, old: 1, next: 2 },
+        { name: 'вставка в конец', patch: '@@ -3,0 +4 @@\n+added\n', leading: 3, old: 4, next: 5 },
+        { name: 'удаление в начале', patch: '@@ -1 +0,0 @@\n-removed\n', leading: 0, old: 2, next: 1 },
+        { name: 'удаление в конце', patch: '@@ -4 +3,0 @@\n-removed\n', leading: 3, old: 5, next: 4 },
+    ]) it(item.name, () => {
+        const model = modelOf(item.patch);
+        expect(gaps(model).find((gap) => gap.edge === 'leading')?.hiddenLines ?? 0).toBe(item.leading);
+        expect(gaps(model).find((gap) => gap.edge === 'trailing')).toMatchObject({ oldStart: item.old, newStart: item.next });
+    });
+
+    it('между двумя вставками считает контекст по обеим сторонам', () => {
+        const model = modelOf('@@ -0,0 +1 @@\n+a\n@@ -2,0 +4 @@\n+b\n');
+        expect(gaps(model).find((gap) => gap.edge === 'inner'))
+            .toMatchObject({ oldStart: 1, newStart: 2, hiddenLines: 2 });
     });
 });

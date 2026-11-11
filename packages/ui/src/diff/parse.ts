@@ -1,4 +1,6 @@
 import type { FileChangeType } from '@sherpa/protocol';
+import { parseUnifiedPatch } from '@sherpa/protocol/diff';
+import type { PatchHunk } from '@sherpa/protocol/diff';
 
 import type {
     DiffBlock,
@@ -22,7 +24,6 @@ import { diffWords } from './word-diff.js';
  * как контекст с флагом `malformed`. UI лучше показать странный дифф, чем пустой экран.
  */
 
-const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const OLD_MODE_RE = /^old mode (\d+)$/;
 const NEW_MODE_RE = /^new mode (\d+)$/;
 const BINARY_RE = /^(?:GIT )?[Bb]inary (?:files|patch)/;
@@ -74,147 +75,37 @@ interface ParsedPatch {
 
 function parsePatch(patch: string | null, language: LanguageId | null): ParsedPatch {
     const result: ParsedPatch = { hunks: [], modeChange: null, binary: false, malformed: false };
-    if (patch === null) {
-        return result;
-    }
-
-    const lines = patch.split('\n');
-    // Патч кончается переводом строки — хвостовой пустой элемент split'а не часть диффа.
-    if (lines.at(-1) === '') {
-        lines.pop();
-    }
-
+    if (patch === null) return result;
+    const parsed = parseUnifiedPatch(patch);
     let oldMode: string | null = null;
     let newMode: string | null = null;
-    let index = 0;
-
-    while (index < lines.length) {
-        const line = lines[index] ?? '';
-        const header = HUNK_HEADER_RE.exec(line);
-        if (header !== null) {
-            const hunk = readHunk(lines, index, header, language);
-            result.hunks.push(hunk.hunk);
-            result.malformed ||= hunk.malformed;
-            index = hunk.next;
-            continue;
+    for (const part of parsed.parts) {
+        if (part.kind === 'hunk') {
+            result.hunks.push(renderHunk(part, language));
+        } else {
+            oldMode = OLD_MODE_RE.exec(part.raw)?.[1] ?? oldMode;
+            newMode = NEW_MODE_RE.exec(part.raw)?.[1] ?? newMode;
+            result.binary ||= BINARY_RE.test(part.raw);
         }
-
-        oldMode = OLD_MODE_RE.exec(line)?.[1] ?? oldMode;
-        newMode = NEW_MODE_RE.exec(line)?.[1] ?? newMode;
-        result.binary ||= BINARY_RE.test(line);
-        index += 1;
     }
-
+    result.malformed = parsed.malformed;
     if (oldMode !== null && newMode !== null && oldMode !== newMode) {
         result.modeChange = { from: oldMode, to: newMode };
     }
     return result;
 }
 
-interface ReadHunk {
-    hunk: DiffHunk;
-    malformed: boolean;
-    /** Индекс первой строки за ханком. */
-    next: number;
-}
-
-function readHunk(
-    lines: readonly string[],
-    start: number,
-    header: RegExpExecArray,
-    language: LanguageId | null,
-): ReadHunk {
-    const oldStart = Number(header[1]);
-    const oldCount = header[2] === undefined ? 1 : Number(header[2]);
-    const newStart = Number(header[3]);
-    const newCount = header[4] === undefined ? 1 : Number(header[4]);
-
-    const body: DiffLine[] = [];
-    let malformed = false;
-    let oldLine = oldStart;
-    let newLine = newStart;
-    let restOld = oldCount;
-    let restNew = newCount;
-    let index = start + 1;
-
-    while (index < lines.length && (restOld > 0 || restNew > 0)) {
-        const raw = lines[index] ?? '';
-        // Обрубленный ханк: следующий заголовок приходит раньше, чем кончились заявленные строки.
-        if (HUNK_HEADER_RE.test(raw) || raw.startsWith('diff --git ')) {
-            break;
-        }
-        index += 1;
-
-        // Служебный маркер патча — только `\ ` (слэш с пробелом); текст после него git локализует.
-        if (raw.startsWith('\\ ')) {
-            const last = body.at(-1);
-            if (last !== undefined) {
-                last.noNewline = true;
-            }
-            continue;
-        }
-
-        const prefix = raw.slice(0, 1);
-        const text = raw.slice(1);
-        if (prefix === '+') {
-            body.push({ kind: 'add', oldLine: null, newLine, text });
-            newLine += 1;
-            restNew -= 1;
-        } else if (prefix === '-') {
-            body.push({ kind: 'del', oldLine, newLine: null, text });
-            oldLine += 1;
-            restOld -= 1;
-        } else if (prefix === ' ' || raw === '') {
-            // Пустая строка без префикса — контекст: некоторые хосты режут хвостовой пробел.
-            body.push({ kind: 'context', oldLine, newLine, text });
-            oldLine += 1;
-            newLine += 1;
-            restOld -= 1;
-            restNew -= 1;
-        } else {
-            // Строку не опознали: сохраняем как есть и идём дальше (падать нельзя).
-            malformed = true;
-            body.push({ kind: 'context', oldLine, newLine, text: raw, malformed: true });
-            oldLine += 1;
-            newLine += 1;
-            restOld -= 1;
-            restNew -= 1;
-        }
-    }
-
-    // Маркер `\ No newline at end of file` идёт после последней строки ханка,
-    // а в заявленные счётчики не входит — иначе цикл выше до него не доберётся.
-    const lastLine = body.at(-1);
-    if (lastLine !== undefined && lines[index]?.startsWith('\\ ') === true) {
-        lastLine.noNewline = true;
-        index += 1;
-    }
-
-    // Заголовок разошёлся с телом: ханк обрублен следующим заголовком или концом патча,
-    // либо строк оказалось больше заявленного. В модель едут фактические счётчики —
-    // иначе пропуски считались бы по вранью заголовка, а наружу это никак не сигналилось.
-    const actualOldCount = oldLine - oldStart;
-    const actualNewCount = newLine - newStart;
-    if (actualOldCount !== oldCount || actualNewCount !== newCount) {
-        malformed = true;
-    }
-
-    markWords(body);
-    if (language !== null) {
-        highlightHunk(body, language);
-    }
-
-    const hunk: DiffHunk = {
-        kind: 'hunk',
-        oldStart,
-        oldCount: actualOldCount,
-        newStart,
-        newCount: actualNewCount,
-        whitespaceOnly: isWhitespaceOnly(body),
-        lines: body,
-    };
-
-    return { hunk, malformed, next: index };
+/** UI добавляет оформление, не пересчитывая координаты общего парсера. */
+function renderHunk(hunk: PatchHunk, language: LanguageId | null): DiffHunk {
+    const lines: DiffLine[] = hunk.lines.filter((line) => line.kind !== 'marker').map((line) => ({
+        kind: line.kind, text: line.text, oldLine: line.old, newLine: line.new,
+        ...(line.malformed ? { malformed: true as const } : {}),
+        ...(line.noNewline ? { noNewline: true as const } : {}),
+    }));
+    markWords(lines);
+    if (language !== null) highlightHunk(lines, language);
+    return { kind: 'hunk', oldStart: hunk.oldStart, newStart: hunk.newStart,
+        oldCount: hunk.oldCount, newCount: hunk.newCount, whitespaceOnly: isWhitespaceOnly(lines), lines };
 }
 
 /**
@@ -286,15 +177,15 @@ function markWords(lines: DiffLine[]): void {
             if (add === undefined) {
                 break;
             }
-            const words = diffWords(del.text, add.text);
-            if (words === null) {
-                continue;
-            }
-            if (words.old.length > 0) {
-                del.words = words.old;
-            }
-            if (words.new.length > 0) {
-                add.words = words.new;
+            try {
+                const words = diffWords(del.text, add.text);
+                if (words === null) continue;
+                const oldWords = words.old.length > 0 ? words.old : undefined;
+                const newWords = words.new.length > 0 ? words.new : undefined;
+                if (oldWords !== undefined) del.words = oldWords;
+                if (newWords !== undefined) add.words = newWords;
+            } catch {
+                // Оформление пары необязательно: текст и координаты остаются читаемыми.
             }
         }
     }
@@ -355,8 +246,8 @@ function withGaps(hunks: readonly DiffHunk[], wholeFile: boolean): DiffBlock[] {
             kind: 'gap',
             edge: 'trailing',
             hiddenLines: null,
-            oldStart: last.oldStart + last.oldCount,
-            newStart: last.newStart + last.newCount,
+            oldStart: sideStart(last, 'old') + last.oldCount,
+            newStart: sideStart(last, 'new') + last.newCount,
         });
     }
     return blocks;
@@ -369,16 +260,15 @@ function leadingGap(hunk: DiffHunk): DiffGap | null {
 }
 
 function innerGap(previous: DiffHunk, next: DiffHunk): DiffGap | null {
-    const oldStart = previous.oldStart + previous.oldCount;
-    const newStart = previous.newStart + previous.newCount;
+    const oldStart = sideStart(previous, 'old') + previous.oldCount;
+    const newStart = sideStart(previous, 'new') + previous.newCount;
 
-    // Стороны считаются независимо: у ханка без старой стороны `oldStart` — 0, и её счёт врёт.
     const sides: number[] = [];
-    if (previous.oldStart > 0 && next.oldStart > 0) {
-        sides.push(next.oldStart - oldStart);
+    if (sideStart(previous, 'old') > 0 && sideStart(next, 'old') > 0) {
+        sides.push(sideStart(next, 'old') - oldStart);
     }
-    if (previous.newStart > 0 && next.newStart > 0) {
-        sides.push(next.newStart - newStart);
+    if (sideStart(previous, 'new') > 0 && sideStart(next, 'new') > 0) {
+        sides.push(sideStart(next, 'new') - newStart);
     }
 
     const hidden = Math.max(0, ...sides);
@@ -391,4 +281,11 @@ function innerGap(previous: DiffHunk, next: DiffHunk): DiffGap | null {
  */
 function endsFile(hunk: DiffHunk): boolean {
     return hunk.lines.some((line) => line.noNewline === true);
+}
+
+/** Нулевой диапазон unified diff указывает строку ПЕРЕД местом вставки/удаления. */
+function sideStart(hunk: DiffHunk, side: 'old' | 'new'): number {
+    const count = side === 'old' ? hunk.oldCount : hunk.newCount;
+    const start = side === 'old' ? hunk.oldStart : hunk.newStart;
+    return start + (count === 0 ? 1 : 0);
 }

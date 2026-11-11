@@ -7,7 +7,7 @@ import { renderBlock } from '../markdown/markdown.tsx';
 import { downloadFileOriginal, fetchBlob, fetchFileContent } from '../api.js';
 import type { DiffFileModel } from '../diff/model.js';
 import { DiffRows } from '../diff-view/diff-rows.tsx';
-import { expandAllGaps, expandFileContext } from '../diff-view/expand.js';
+import { expandFileContext } from '../diff-view/expand.js';
 import { ImageBody } from '../diff-view/image-card.tsx';
 import { lineKey, lineKeyNumbers } from '../diff-view/selection.js';
 import { useLocale } from '../i18n/index.js';
@@ -27,35 +27,63 @@ export function ReadFile({ file, diffId, data, token, originals = false, navigat
     navigation?: CodeLocation | undefined; anchor?: UiChatAskAnchor | null; onSelect: (anchor: UiChatAskAnchor, text: string | null) => void; onLayout: () => void; onMediaLayout?: (() => void) | undefined;
 }) {
     const t = storyCopy[useLocale()];
-    const [model, setModel] = useState(() => data.file(diffId, file.fileId).model);
+    const [saved, setSaved] = useState(() => ({ diffId, fileId: file.fileId, model: data.file(diffId, file.fileId).model }));
+    const model = saved.diffId === diffId && saved.fileId === file.fileId ? saved.model : data.file(diffId, file.fileId).model;
     const selected = data.file(diffId, file.fileId).highlight ?? (anchor?.diffId === diffId && anchor.fileId === file.fileId ? anchor : null);
     const ranges = useLineRange(selected);
-    const [error, setError] = useState<string | null>(null);
+    const [failure, setFailure] = useState<{ diffId: string; fileId: string; message: string; retry: 'read' | 'expand' | null } | null>(null);
+    const error = failure?.diffId === diffId && failure.fileId === file.fileId ? failure : null;
+    const request = useRef(0);
+    useLayoutEffect(() => () => { request.current += 1; }, [data, diffId, file.fileId]);
     const [attempt, setAttempt] = useState(0);
     const loadBlob = useCallback((id: string) => fetchBlob(token, id), [token]);
     const mounted = useRef(false);
     useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
     const layout = useRef(onLayout); useLayoutEffect(() => { layout.current = onLayout; });
     const selection = model === null || selected === null ? null : selectionForRange(model, selected);
-    useEffect(() => {
-        let alive = true;
-        const cached = data.file(diffId, file.fileId).model;
-        void (cached === null ? data.parse(diffId, file) : Promise.resolve(cached)).then(async (value) => {
-            let next = value;
-            if (navigation !== undefined && selectionForRange(next, navigation) === null) {
-                if (next.content.kind !== 'text') throw new Error(t.unavailable);
-                const content = await fetchFileContent(token, file.fileId, diffId);
-                next = expandFileContext(next, content, expandAllGaps(next, new Map()));
-                if (selectionForRange(next, navigation) === null) throw new Error(t.unavailable);
+    const publish = useCallback((next: DiffFileModel, id: number): boolean => {
+        if (!mounted.current || request.current !== id) return false;
+        layout.current();
+        data.updateFile(diffId, file.fileId, { model: next });
+        setSaved({ diffId, fileId: file.fileId, model: next });
+        setFailure(null);
+        return true;
+    }, [data, diffId, file.fileId]);
+    const expand = useCallback(async (): Promise<void> => {
+        const id = ++request.current;
+        try {
+            const base = await (data.file(diffId, file.fileId).model ?? data.parse(diffId, file));
+            if (!publish(base, id)) return;
+            const content = await fetchFileContent(token, file.fileId, diffId);
+            if (content === null && base.content.kind === 'text' && base.content.blocks.some((block) => block.kind === 'gap')) throw new Error(t.unavailable);
+            publish(expandFileContext(base, content), id);
+        } catch (reason) {
+            if (mounted.current && request.current === id) {
+                layout.current(); setFailure({ diffId, fileId: file.fileId, message: String(reason), retry: 'expand' });
             }
-            data.updateFile(diffId, file.fileId, { model: next });
-            if (!alive) return;
-            layout.current(); setModel(next); setError(null);
-        }, (reason: unknown) => { throw reason; }).catch((reason: unknown) => {
-            if (alive) { layout.current(); setError(String(reason)); }
-        });
-        return () => { alive = false; };
-    }, [data, diffId, file, navigation, token, attempt, t.unavailable]);
+        }
+    }, [data, diffId, file, publish, token, t.unavailable]);
+    useEffect(() => {
+        const id = ++request.current;
+        void (async () => {
+            try {
+                const base = await (data.file(diffId, file.fileId).model ?? data.parse(diffId, file));
+                if (!publish(base, id)) return;
+                if (navigation !== undefined && selectionForRange(base, navigation) === null) {
+                    if (base.content.kind !== 'text') throw new Error(t.unavailable);
+                    const content = await fetchFileContent(token, file.fileId, diffId);
+                    const next = expandFileContext(base, content);
+                    if (selectionForRange(next, navigation) === null) throw new Error(t.unavailable);
+                    publish(next, id);
+                }
+            } catch (reason) {
+                if (mounted.current && request.current === id) {
+                    layout.current(); setFailure({ diffId, fileId: file.fileId, message: String(reason), retry: 'read' });
+                }
+            }
+        })();
+        return () => { request.current += 1; };
+    }, [data, diffId, file, navigation, token, attempt, t.unavailable, publish]);
     const select = (range: Pick<CodeLocation, 'side' | 'start' | 'end'>): void => {
         const next = { diffId, fileId: file.fileId, path: range.side === 'old' ? file.oldPath ?? file.path : file.path, ...range };
         const text = model === null ? null : selectedCode(model, next);
@@ -79,20 +107,13 @@ export function ReadFile({ file, diffId, data, token, originals = false, navigat
         <header tabIndex={-1} data-reading-focus={`file:${file.fileId}`}><span className="story-file-status" data-change={file.changeType} title={t.changeTypes[file.changeType]} aria-label={t.changeTypes[file.changeType]}>{changeMarks[file.changeType]}</span><FileGlyph /><code title={file.path}><span className="story-file-directory"><bdi>{file.oldPath != null && file.oldPath !== file.path ? `${file.oldPath} → ` : ''}{directory}</bdi></span><span className="story-file-basename">{file.path.split('/').at(-1)}</span></code><span className="story-file-stats"><span className="story-file-added">+{file.additions}</span><span className="story-file-deleted">−{file.deletions}</span></span>
             {onAttach === undefined ? null : <button className="ctl" onClick={onAttach}>{t.attachFile}</button>}
             {originals ? (['old', 'new'] as const).filter((side) => file.changeType !== (side === 'old' ? 'add' : 'delete')).map((side) => <button className="ctl" key={side} title={`${t.downloadOriginal}: ${side === 'old' ? t.before : t.after}`} onClick={() => {
-                void downloadFileOriginal(token, diffId, file.fileId, side, (side === 'old' ? file.oldPath ?? file.path : file.path).split('/').at(-1) ?? 'file').catch((reason: unknown) => { if (mounted.current) setError(String(reason)); });
+                const id = request.current;
+                void downloadFileOriginal(token, diffId, file.fileId, side, (side === 'old' ? file.oldPath ?? file.path : file.path).split('/').at(-1) ?? 'file').catch((reason: unknown) => { if (mounted.current && request.current === id) setFailure({ diffId, fileId: file.fileId, message: String(reason), retry: null }); });
             }}>↓ {side === 'old' ? t.before : t.after}</button>) : null}
-            {!file.binary ? <button className="ctl ctl--toolbar-icon story-file-expand" aria-label={t.expand} title={t.expand} onClick={() => {
-                void fetchFileContent(token, file.fileId, diffId).then((content) => {
-                    const base = data.file(diffId, file.fileId).model;
-                    if (base === null) return;
-                    const expanded = expandFileContext(base, content, expandAllGaps(base, new Map()));
-                    data.updateFile(diffId, file.fileId, { model: expanded });
-                    if (mounted.current) { layout.current(); setModel(expanded); setError(null); }
-                }, (reason: unknown) => { if (mounted.current) { layout.current(); setError(String(reason)); } });
-            }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button> : null}
+            {!file.binary ? <button className="ctl ctl--toolbar-icon story-file-expand" aria-label={t.expand} title={t.expand} onClick={() => { void expand(); }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg></button> : null}
         </header>
         {description === undefined ? null : <div className="story-file-description">{description}</div>}
-        {error === null ? null : <p role="alert">{error} <button className="ctl" onClick={() => { setAttempt((n) => n + 1); }}>{t.retrySource}</button></p>}
+        {error === null ? null : <p role="alert">{error.message} {error.retry === null ? null : <button className="ctl" onClick={() => { if (error.retry === 'expand') void expand(); else setAttempt((n) => n + 1); }}>{t.retrySource}</button>}</p>}
         <div onMouseDownCapture={(event) => {
             if (event.button !== 0 || !event.shiftKey || !selectLine(event.target, true)) return;
             // До focus: иначе фокус новой строки перезапишет первую границу диапазона.
@@ -112,7 +133,7 @@ export function ReadFile({ file, diffId, data, token, originals = false, navigat
             else if (first?.old != null && last?.old != null) select(ranges.fromText('old', first.old, last.old));
         }}>
             {file.image != null ? <ImageBody file={file} image={file.image} loadBlob={loadBlob} /> : model === null ? error === null ? <p data-reading-wait>{t.loading}</p> : null
-                : model.content.kind !== 'text' ? <p>{t.noPatch}</p> : <DiffRows showHunkHeaders model={model} mode="unified" content={null} selection={selection} contextAvailable={false} renderAfterLine={(side, line) => annotations.filter((note) => note.side === side && note.end === line).map((note, index) => <aside className="story-inline-note" key={index} data-reading={`note:${side}:${String(line)}:${String(index)}`}><span>{side === 'old' ? '−' : '+'} {note.start}–{note.end}</span>{parseExplanationBlocks(note.text).map((part, i) => renderBlock(part, i))}</aside>)} onLineFocus={(side, line) => { select(ranges.choose(side, line)); }} />}
+                : model.content.kind !== 'text' ? <p>{t.noPatch}</p> : <DiffRows showHunkHeaders model={model} mode="unified" selection={selection} renderAfterLine={(side, line) => annotations.filter((note) => note.side === side && note.end === line).map((note, index) => <aside className="story-inline-note" key={index} data-reading={`note:${side}:${String(line)}:${String(index)}`}><span>{side === 'old' ? '−' : '+'} {note.start}–{note.end}</span>{parseExplanationBlocks(note.text).map((part, i) => renderBlock(part, i))}</aside>)} onLineFocus={(side, line) => { select(ranges.choose(side, line)); }} />}
         </div>
     </div>;
 }

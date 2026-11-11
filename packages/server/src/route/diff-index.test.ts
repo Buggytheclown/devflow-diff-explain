@@ -1,7 +1,9 @@
 import type { PrDiff } from '@sherpa/protocol';
 import { describe, expect, it } from 'vitest';
 
-import { indexDiff } from './diff-index.js';
+import { indexDiff, walkPatch } from './diff-index.js';
+import { PATCH_CASES } from '../../../protocol/src/diff/patch-cases.js';
+import { savedPatchIndex } from '../saved-patch.js';
 import { mediumDiff } from './fixture-support.js';
 
 /**
@@ -88,5 +90,30 @@ describe('индекс изменённых строк: разметка хан�
 
         expect(file?.old.size).toBe(0);
         expect(file?.new.size).toBe(0);
+    });
+});
+
+
+describe('серверная проекция общего корпуса', () => {
+    for (const item of PATCH_CASES) it(item.name, () => {
+        expect([...walkPatch(item.patch)].map((line) => line.raw).join('\n')).toBe(item.patch);
+        const rows = [...walkPatch(item.patch)].filter((line) => line.old !== null || line.new !== null);
+        expect(rows.map((line) => [line.raw, line.old, line.new])).toEqual(item.rows);
+        const diff = diffWith(item.patch.split('\n'));
+        const saved = savedPatchIndex(diff);
+        const file = saved.file(PATH);
+        for (const [raw, old, next] of item.rows) {
+            for (const [side, n] of [['old', old], ['new', next]] as const) {
+                if (n !== null) expect(saved.range(file, { side, start: n, end: n })?.[0]?.raw).toBe(raw);
+            }
+        }
+    });
+
+    it('не разрешает фиктивную последнюю строку усечённого legacy patch', () => {
+        const diff = diffWith(['@@ -1,2 +1,2 @@', ' one', '']);
+        const saved = savedPatchIndex(diff);
+        expect(saved.range(saved.file(PATH), { side: 'new', start: 2, end: 2 })).toBeNull();
+        expect([...walkPatch(diff.files.find((file) => file.path === PATH)?.patch ?? '')].at(-1))
+            .toEqual({ raw: '', old: null, new: null, changed: false });
     });
 });

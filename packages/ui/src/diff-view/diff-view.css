@@ -118,98 +118,17 @@
     grid-template-columns: var(--gutter-col) 14px minmax(0, 1fr) var(--gutter-col) 14px minmax(0, 1fr);
 }
 
-.diff-gap:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
-}
-
-.diff-gap__slot,
-.diff-gap__empty {
-    height: 24px;
-}
-
-/* Мишень раскрытия — иконка тулбара из `styles/controls.css`, но во всю колонку номеров: это полоса, а не кнопка. */
-.diff-gap .diff-gap__target {
-    width: 100%;
-}
-
-/* Ряд однострочный: у split счётчик стоит в колонке левее мишени «вниз», и авто-размещение
-   сетки, идущее только вперёд, уронило бы его во вторую строку — за высоту ряда. */
-.diff-gap__slot,
-.diff-gap__counter,
-.diff-gap__error-label {
-    grid-row: 1;
-}
-
-.diff-gap__slot--up {
-    grid-column: 1;
-}
-
-.diff-gap--unified .diff-gap__slot--down {
-    grid-column: 2;
-}
-
-.diff-gap--split .diff-gap__slot--down {
-    grid-column: 4;
-}
-
-.diff-gap__empty {
-    display: block;
-}
-
-/* Выбранная стрелка видима только при клавиатурном фокусе группы —
-   в покое обе мишени прозрачны (таблица состояний §1a). */
-.diff-gap:focus-visible .diff-gap__target.is-active {
-    background: var(--surface-hover);
-}
-
-.diff-gap.is-loading .diff-gap__target.is-active {
-    background: var(--surface-pressed);
-}
-
-.diff-gap__target:disabled {
-    opacity: 1;
-    cursor: default;
-}
-
 .diff-gap__counter {
+    grid-row: 1;
     align-self: center;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    pointer-events: none;
 }
 
-.diff-gap--unified .diff-gap__counter {
-    grid-column: 4;
-}
-
-.diff-gap--split .diff-gap__counter {
-    grid-column: 3;
-}
-
-.diff-gap--error {
-    width: 100%;
-    text-align: left;
-    cursor: pointer;
-}
-
-.diff-gap--error:hover {
-    background: var(--surface-hover);
-}
-
-.diff-gap--unified .diff-gap__error-label {
-    grid-column: 4;
-}
-
-.diff-gap--split .diff-gap__error-label {
-    grid-column: 3;
-}
-
-.diff-gap__error-label {
-    align-self: center;
-}
+.diff-gap--unified .diff-gap__counter { grid-column: 4; }
+.diff-gap--split .diff-gap__counter { grid-column: 3; }
 
 .diff-row {
     position: relative;

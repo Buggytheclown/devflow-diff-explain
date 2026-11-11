@@ -1,5 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const executablePath = process.env.SHERPA_E2E_EXECUTABLE_PATH;
+// Полный Chrome даже с --headless кратко появляется в Dock на macOS.
+if (process.platform === 'darwin' && executablePath?.includes('.app/')) {
+    throw new Error(
+        'On macOS, SHERPA_E2E_EXECUTABLE_PATH must point to chrome-headless-shell, not a browser .app. '
+        + 'Unset it and run: pnpm --filter @sherpa/e2e exec playwright install chromium --only-shell. '
+        + 'For visible debugging, use --headed without SHERPA_E2E_EXECUTABLE_PATH.',
+    );
+}
+
 export default defineConfig({
     testDir: './src',
     // Приёмка продукта: desktop-флоу объяснения, включая чтение сохранённых v2/v3.
@@ -11,7 +21,8 @@ export default defineConfig({
     reporter: [['list']],
     use: {
         ...devices['Desktop Chrome'],
-        launchOptions: process.env.SHERPA_E2E_EXECUTABLE_PATH === undefined ? {} : { executablePath: process.env.SHERPA_E2E_EXECUTABLE_PATH },
+        headless: true,
+        launchOptions: executablePath === undefined ? {} : { executablePath },
         viewport: { width: 1440, height: 900 },
         // Детерминированное окружение; рабочий UI остаётся русским независимо от браузера.
         locale: 'ru-RU',
